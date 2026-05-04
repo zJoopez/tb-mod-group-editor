@@ -1,13 +1,10 @@
---should allow using seperate folder
-if not require("toriui/uielement") then
-	package.path = package.path .. ";../?.lua"
-end
+-- Created by joopez
+-- Project: Mod Group Editor v.0.9
+-- Built for Toribash v.5.76
+-- /ls tb-move-stuff/mge.lua
 
 require("tb-move-stuff/rotating")
-local uielement = require("toriui/uielement")
-local menu_defines = require("system/menu_defines")
-local menu_manager = require("system/menu_manager")
-local mods_manager = require("system/mods_manager")
+require("toriui/uielement")
 
 -- UI stuff
 local header = UIElement:new({
@@ -22,7 +19,7 @@ local title = UIElement:new({
 	size = { 250, 40 },
 	interactive = true,
 })
-title:addAdaptedText(false, "Mod Group Controls")
+title:addAdaptedText(false, "Mod Group Edit")
 title:addMouseHandlers(nil, function()
 	toggleWindow()
 end)
