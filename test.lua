@@ -1,7 +1,9 @@
 --- /ls tb-move-stuff/test.lua
 --- /lm mge-modmaker.tbm
 --- overwrite during dev
--- if (MGE == nil) then
+
+local devMode = true
+if (MGE == nil or devMode) then
 ---@class MGE
 ---@field tmpName string
 ---@field modName string?
@@ -19,7 +21,7 @@ MGE = {
     windowContainer = nil,
     atmosphere = nil,
 }
--- end
+end
 MGE.window, MGE.windowContainer = TBMenu:spawnMoveableWindow({
     x = 10,
     y = 100,
@@ -46,7 +48,7 @@ function MGE.updateSource()
     MGE.modName = get_game_rules().mod
     local path = find_mod(MGE.modName)
     MGE.atmosphere = Atmospheres.ParseFile(MGE.modPath .. path) -- Does't work for some mods (bad mod or old format?)
-    debugCheckAtmo()
+    if devMode then debugCheckAtmo() end
 end
 
 function MGE.SaveFile()
