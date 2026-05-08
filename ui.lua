@@ -1,15 +1,16 @@
 require("toriui.uielement")
 
+local windowContainer
 function MGE.initUI()
-    MGE.window, MGE.windowContainer = TBMenu:spawnMoveableWindow({
+    MGE.window, windowContainer = TBMenu:spawnMoveableWindow({
         x = 10,
         y = 100,
         w = 300,
         h = 500
     })
-    local content = MGE.windowContainer:addChild({
+    local content = windowContainer:addChild({
         pos = { 10, 10 },
-        size = { MGE.windowContainer.size.w - 20, MGE.windowContainer.size.h - 20 },
+        size = { windowContainer.size.w - 20, windowContainer.size.h - 20 },
     }, true)
 
     local saveBtn = content:addChild({
@@ -40,4 +41,8 @@ function MGE.initUI()
     end)
 
     MGE.window.killAction = MGE.quit
+end
+
+function MGE.initAssetUI()
+
 end

@@ -3,15 +3,14 @@
 ---@class MGE
 ---@field scriptPath string
 ---@field outputName string
----@field modName string?
+---@field modName string
 ---@field modPath string?
 ---@field modFolder string
 ---@field objects table
 ---@field hookname string
 ---@field window UIElement?
----@field windowContainer UIElement?
 MGE = {
-    scriptPath = "tb-move-stuff/",
+    scriptPath = "mge/",
     outputName = "mge-modmaker.tbm",
     modName = get_game_rules().mod,
     modPath = find_mod(get_game_rules().mod),
@@ -19,14 +18,8 @@ MGE = {
     objects = {},
     hookname = "mge",
     window = nil,
-    windowContainer = nil,
 }
-MgePath = "tb-move-stuff/"
-FileHandler = dofile(MgePath .. "file_handler.lua")
-
-function MGE.loadMod()
-    runCmd("lm " .. MGE.outputName)
-end
+FileHandler = dofile(MGE.scriptPath .. "file_handler.lua")
 
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod
@@ -39,6 +32,10 @@ function MGE.updateSource()
     end
 end
 
+function MGE.loadMod()
+    runCmd("lm " .. MGE.outputName)
+end
+
 function MGE.save()
     FileHandler.WriteMod(MGE.objects, MGE.modFolder .. MGE.outputName)
     print("saved")
@@ -48,8 +45,6 @@ function MGE.quit()
     remove_hooks(MGE.hookname)
 end
 
-
-
 add_hook("match_begin", MGE.hookname, function()
     MGE.updateSource()
 end)
@@ -58,5 +53,5 @@ end)
 MGE.updateSource()
 
 -- Load UI
-dofile(MgePath .. "ui.lua")
+dofile(MGE.scriptPath .. "ui.lua")
 MGE.initUI()
