@@ -10,7 +10,7 @@
 ---@field modName string
 ---@field modPath string?
 ---@field modFolder string
----@field objects table
+---@field objects ModEnvObjects
 ---@field hookname string
 ---@field window UIElement?
 ---@field assetWindow UIElement?
@@ -23,16 +23,17 @@ MGE = {
     objects = {},
     hookname = "mge",
 }
-local fileHandler = dofile(MGE.scriptPath .. "file_handler.lua")
+FileHandler = dofile(MGE.scriptPath .. "file_handler.lua")
 
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod
     MGE.modPath = find_mod(MGE.modName)
     if MGE.modPath then
-        MGE.objects = fileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
-        print("Parse complete")
+        MGE.objects = dofile(MGE.scriptPath .. "env_obj_extractor.lua")
+        print("Object list updated")
     else
         MGE.objects = nil
+        print("Failed to update object list")
     end
 end
 
@@ -41,7 +42,7 @@ function MGE.loadMod()
 end
 
 function MGE.save()
-    fileHandler.WriteMod(MGE.objects, MGE.modFolder .. MGE.outputName)
+    FileHandler.WriteMod(MGE.objects, MGE.modFolder .. MGE.outputName)
     print("saved")
 end
 

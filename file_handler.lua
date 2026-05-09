@@ -1,5 +1,28 @@
 local FileHandler = {}
 
+---@class FileParserBlock
+---@field kind "env_obj"|"env_obj_joint"
+---@field header string
+---@field lines string[]
+
+---@class FileParserEnvObj
+---@field id number
+---@field header string
+---@field props table<string, string>
+
+---@class FileParserEnvObjJoint
+---@field id number
+---@field obj1 number
+---@field obj2 number
+---@field header string
+---@field props table<string, string>
+
+---@class FileParserResult
+---@field env_obj table<number, FileParserEnvObj>?
+---@field env_obj_joint table<number, FileParserEnvObjJoint>
+---@field blocks FileParserBlock[]
+---@field ignores string[]
+
 function FileHandler.ParseMod(path)
     local file = Files.Open(path, FILES_MODE_READONLY)
     if not file then
@@ -18,6 +41,7 @@ function FileHandler.ParseMod(path)
         lines = data
     end
 
+    ---@type FileParserResult
     local parser = {
         env_obj = {},
         env_obj_joint = {},
@@ -64,6 +88,7 @@ function FileHandler.ParseMod(path)
 end
 
 function FileHandler.parseBlock(block)
+    ---@type FileParserEnvObj|FileParserEnvObjJoint
     local obj = { header = block.header, props = {} }
 
     if block.kind == "env_obj" then
@@ -75,7 +100,7 @@ function FileHandler.parseBlock(block)
         obj.obj2 = tonumber(c)
     end
 
-    for j = 2, #block.lines do
+    for j = 2, #block.lines do -- first line handled above
         local key, value = block.lines[j]:match("^%s*(%S+)%s*(.-)%s*$")
         if key then
             obj.props[key] = value

@@ -21,7 +21,10 @@ ModEnvObjects = { objects = {} }
 ---@field mass number
 ---@field shape integer
 ---@field vis integer
----@field parsed string[]
+---@field friction number
+---@field force XYZ
+---@field use_model number
+---@field model_name string
 
 ---@class ModEnvObjects
 ---@field objects EnvObject[]
@@ -66,29 +69,46 @@ local function matrix_to_euler_xyz(matrix)
     return { x = euler.x, y = euler.y, z = euler.z }
 end
 
-for i = 0, MAX_ENV_OBJECTS - 1, 1 do
--- for i = 1, 10 - 1, 1 do
-    if get_obj_pos(i) then
-        local obj = {}
-        local color = get_obj_color(i)
-        obj.id = i + 1
-        obj.pos = { get_obj_pos(i) }
-        obj.sides = { get_obj_sides(i) }
-        obj.rot = { matrix_to_euler_xyz(get_obj_rot(i)) }
-        obj.color = {
-            r = math.floor((color[1] or 0) * 255),
-            g = math.floor((color[2] or 0) * 255),
-            b = math.floor((color[3] or 0) * 255),
-            a = math.floor((color[4] or 0) * 255),
-        }
-        obj.flag = get_obj_flag(i)
-        obj.bounce = get_obj_bounce(i)
-        obj.mass = get_obj_mass(i)
-        obj.shape = get_obj_shape(i)
-        obj.vis = get_obj_vis(i)
+function ModEnvObjects:reloadObjects()
+    ---@type FileParserResult
+    local parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
 
-        setmetatable(obj, EnvObject)
-        ModEnvObjects.objects[#ModEnvObjects.objects + 1] = obj
+    -- for i = 0, MAX_ENV_OBJECTS - 1, 1 do
+    for i = 1, 10 - 1, 1 do
+        if get_obj_pos(i) then
+            local obj = {}
+            local color = get_obj_color(i)
+            obj.id = i + 1
+            obj.pos = { get_obj_pos(i) }
+            obj.sides = { get_obj_sides(i) }
+            obj.rot = { matrix_to_euler_xyz(get_obj_rot(i)) }
+            obj.color = {
+                r = math.floor((color[1] or 0) * 255),
+                g = math.floor((color[2] or 0) * 255),
+                b = math.floor((color[3] or 0) * 255),
+                a = math.floor((color[4] or 0) * 255),
+            }
+            obj.flag = get_obj_flag(i)
+            obj.bounce = get_obj_bounce(i)
+            obj.mass = get_obj_mass(i)
+            obj.shape = get_obj_shape(i)
+            obj.vis = get_obj_vis(i)
+
+            -- Include parsed data if available
+            --- imagine sir not providing all object data
+            if parsed and parsed.env_obj and parsed.env_obj[obj.id] then
+                local value = parsed.env_obj[obj.id]
+                local fx, fy, fz = value.props.force:match("(%S+)%s+(%S+)%s+(%S+)")
+
+                obj.friction = tonumber(value.props.friction)
+                obj.force = { x = tonumber(fx), y = tonumber(fy), z = tonumber(fz) }
+                obj.model_name = value.props.model_name
+                obj.use_model = tonumber(value.props.use_model)
+            end
+
+            setmetatable(obj, EnvObject)
+            ModEnvObjects.objects[#ModEnvObjects.objects + 1] = obj
+        end
     end
 end
 
@@ -101,7 +121,6 @@ for name, value in pairs(SHAPE) do
     SHAPE_NAMES[value] = name
 end
 
-print_r(ModEnvObjects)
-print(ModEnvObjects.objects[1]:is_static())
+ModEnvObjects:reloadObjects()
 
-return ModEnvObjects.objects
+return ModEnvObjects
