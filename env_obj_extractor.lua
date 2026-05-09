@@ -73,8 +73,8 @@ function ModEnvObjects:reloadObjects()
     ---@type FileParserResult
     local parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
 
-    -- for i = 0, MAX_ENV_OBJECTS - 1, 1 do
-    for i = 1, 10 - 1, 1 do
+    for i = 0, MAX_ENV_OBJECTS - 1, 1 do
+        -- for i = 1, 10 - 1, 1 do
         if get_obj_pos(i) then
             local obj = {}
             local color = get_obj_color(i)
@@ -94,16 +94,16 @@ function ModEnvObjects:reloadObjects()
             obj.shape = get_obj_shape(i)
             obj.vis = get_obj_vis(i)
 
-            -- Include parsed data if available
             --- imagine sir not providing all object data
             if parsed and parsed.env_obj and parsed.env_obj[obj.id] then
-                local value = parsed.env_obj[obj.id]
-                local fx, fy, fz = value.props.force:match("(%S+)%s+(%S+)%s+(%S+)")
-
-                obj.friction = tonumber(value.props.friction)
-                obj.force = { x = tonumber(fx), y = tonumber(fy), z = tonumber(fz) }
-                obj.model_name = value.props.model_name
-                obj.use_model = tonumber(value.props.use_model)
+                local item = parsed.env_obj[obj.id]
+                if item.props.force then
+                    local fx, fy, fz = item.props.force:match("(%S+)%s+(%S+)%s+(%S+)")
+                    obj.force = { x = tonumber(fx), y = tonumber(fy), z = tonumber(fz) }
+                end
+                obj.friction = tonumber(item.props.friction)
+                obj.model_name = item.props.model_name
+                obj.use_model = tonumber(item.props.use_model)
             end
 
             setmetatable(obj, EnvObject)
