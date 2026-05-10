@@ -4,7 +4,8 @@ require("toriui.uielement")
 ---@field window UIElement
 ---@field pageStr string
 ---@field page integer
-Main = { page = 1 }
+---@field pageSize integer
+Main = { page = 1, pageSize = 69 }
 
 local defaultPos = { 0, 0 }
 local margin = 10
@@ -79,21 +80,16 @@ local scrollbar = dofile(MGE.scriptPath .. "ui/scrollbar.lua")
 
 local function setDynamicStrings()
     titleObjCount:addAdaptedText("Objects " .. #MGE.modData.objects .. "/" .. MAX_ENV_OBJECTS)
-    Main.pageStr = "Page " .. Main.page .. "/" .. math.ceil(#MGE.modData.objects / 69)
+    Main.pageStr = "Page " .. Main.page .. "/" .. math.ceil(#MGE.modData.objects / Main.pageSize)
 end
 
 local function createScrollBar(bool)
     scrollbar.create(obj_selector, MGE.modData.objects, bool)
 end
 
-function Main.updateWindow()
+function Main.updateWindow(bool)
     obj_selector:kill(true)
-    createScrollBar(false)
     setDynamicStrings()
-end
-
-function Main.updateScroll(bool)
-    obj_selector:kill(true)
     createScrollBar(bool)
 end
 

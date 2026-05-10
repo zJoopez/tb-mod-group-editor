@@ -52,7 +52,7 @@ end
 add_hook("match_begin", MGE.hookname, function()
     MGE.updateSource()
     if Main.window.displayed then
-        MGE.window.updateWindow()
+        MGE.window.updateWindow(false)
     end
 end)
 
@@ -62,7 +62,7 @@ add_hook("key_up", MGE.hookname, function(key)
         Main.window:hide(false)
     else
         Main.window:show(false)
-        MGE.window.updateWindow()
+        MGE.window.updateWindow(false)
     end
 end)
 

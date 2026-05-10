@@ -4,13 +4,13 @@ require("toriui.uielement")
 POS_SHIFT = POS_SHIFT or { 0 }
 
 local function slice(arr, start, stop)
-  start = start or 1
-  stop = stop or #arr
-  local result = {}
-  for i = start, stop do
-    result[#result + 1] = arr[i]
-  end
-  return result
+    start = start or 1
+    stop = stop or #arr
+    local result = {}
+    for i = start, stop do
+        result[#result + 1] = arr[i]
+    end
+    return result
 end
 
 
@@ -19,7 +19,7 @@ end
 function scrollbar.create(view, fullList, toggleAll)
     -- Creating a global posShift table - this will store the last scrollbar position between script runs within one game session
     POS_SHIFT = POS_SHIFT or { 0 }
-    local list = slice(fullList, Main.page * 69 - 68, Main.page * 69)
+    local list = slice(fullList, Main.page * Main.pageSize - Main.pageSize - 1, Main.page * Main.pageSize)
 
     -- Spawning a parent element for any object that needs to be reloaded every frame
     local toReload = UIElement:new({
@@ -122,7 +122,7 @@ function scrollbar.create(view, fullList, toggleAll)
         end)
         table.insert(toggles, TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
             MGE.modData.objects[v.id].selected = value
-            highlight(v)
+            if value then highlight(v) end
         end))
 
         -- Hiding every object, ones that need to be made visible will be activated upon running makeScrollBar(...)
@@ -134,10 +134,45 @@ function scrollbar.create(view, fullList, toggleAll)
     TBMenu:spawnToggle2(topBar_l, toggleRect, toggleAll, function(value)
         for i, item in pairs(fullList) do
             MGE.modData.objects[item.id].selected = value
-            Main.updateScroll(not toggleAll)
+            Main.updateWindow(not toggleAll)
         end
     end)
-    topBar_r:addAdaptedText(Main.pageStr, topBar_r.size.h + 5, nil, nil, RIGHTMID, 0.7, nil, nil, nil)
+    local pageBtnNext = topBar_r:addChild({
+        interactive = true,
+        pos = { -topBar_r.size.h, 2 },
+        size = { topBar_r.size.h - 4, topBar_r.size.h - 4 },
+        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+        hoverColor = TB_MENU_DEFAULT_BG_COLOR,
+        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
+    })
+    pageBtnNext:addAdaptedText(">", nil, nil, nil, CENTER, 0.7, nil, nil, nil)
+    local txtPage = topBar_r:addChild({
+        pos = { -topBar_r.size.h - topBar_r.size.h * 3 - 2, 3 },
+        size = { topBar_r.size.h * 3, topBar_r.size.h }
+    })
+    pageBtnNext:addMouseUpHandler(function()
+        if Main.page * Main.pageSize < #fullList then
+            Main.page = Main.page + 1
+            Main.updateWindow(toggleAll)
+        end
+    end)
+    txtPage:addAdaptedText(Main.pageStr, nil, nil, nil, CENTER, 0.7, nil, nil)
+    local pageBtnPrev = topBar_r:addChild({
+        interactive = true,
+        pos = { topBar_r.size.w - topBar_r.size.h * 5, 2 },
+        size = { topBar_r.size.h - 4, topBar_r.size.h - 4 },
+        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+        hoverColor = TB_MENU_DEFAULT_BG_COLOR,
+        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
+    })
+    pageBtnPrev:addAdaptedText("<", nil, nil, nil, CENTER, 0.7, nil, nil, nil)
+    pageBtnPrev:addMouseUpHandler(function()
+        if Main.page > 1 then
+            Main.page = Main.page - 1
+            Main.updateWindow(toggleAll)
+        end
+    end)
+
 
 
     -- Calling makeScrollBar() method to make scrollable list
