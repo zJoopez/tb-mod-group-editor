@@ -20,6 +20,8 @@ function scrollbar.create(view, list)
     -- In case any of the scrollable list elements are interactive, these should be interactive aswell to prevent accidental clicking.
     -- Bars' height should be at least same as scrollable list's elements' height.
     local listElementHeight = 25
+    local toggleRect = { h = listElementHeight - 4, w = listElementHeight - 4, x = 2, y = 2 }
+
     local topBar = UIElement:new({
         parent = toReload,
         pos = { 0, 0 },
@@ -27,6 +29,9 @@ function scrollbar.create(view, list)
         bgColor = TB_MENU_DEFAULT_BG_COLOR,
         interactive = true
     })
+
+    topBar:addAdaptedText("Toggle All", topBar.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
+
     local botBar = UIElement:new({
         parent = toReload,
         pos = { 0, -listElementHeight },
@@ -75,6 +80,7 @@ function scrollbar.create(view, list)
 
     -- Populating the scrollable list with objects
     -- First, creating a table to store all list elements, then spawning them one-by-one and adding to the table
+    local toggles = {}
     local listElements = {}
     for i, v in pairs(list) do
         local listElement = UIElement:new({
@@ -87,12 +93,23 @@ function scrollbar.create(view, list)
             pressedColor = { 0, 0, 0, 0.4 },
         })
         listElement:addCustomDisplay(false, function()
-            listElement:uiText(v.id,nil,nil,nil,nil,0.7,nil,nil,nil)
+            listElement:uiText(v.id, nil, nil, nil, nil, 0.7, nil, nil, nil)
         end)
+        table.insert(toggles, TBMenu:spawnToggle2(listElement, toggleRect, false, function(value)
+            MGE.modData.objects[i].selected = value
+        end))
+
         -- Hiding every object, ones that need to be made visible will be activated upon running makeScrollBar(...)
         listElement:hide()
         table.insert(listElements, listElement)
     end
+
+    TBMenu:spawnToggle2(topBar, toggleRect, false, function(value)
+        for i, toggle in pairs(toggles) do
+            toggle:setValue(value)
+            MGE.modData.objects[i].selected = value
+        end
+    end)
 
     -- Calling makeScrollBar() method to make scrollable list
     listScrollBar:makeScrollBar(scrollableListHolder, listElements, toReload, POS_SHIFT, 0.4)

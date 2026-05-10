@@ -25,6 +25,7 @@ ModEnvObjects = { objects = {} }
 ---@field force XYZ
 ---@field use_model number
 ---@field model_name string
+---@field selected boolean? --custom
 
 ---@class ModExport
 ---@field objects EnvObject[]
@@ -66,7 +67,6 @@ local function matrix_to_euler_xyz(matrix)
     }
     -- Use UIElement3D's GetEulerFromMatrix with EULER_XYZ (returns degrees)
     local euler = Utils3D.GetEulerFromMatrix(R, EULER_XYZ)
-    -- Return in degrees
     return { x = euler.x, y = euler.y, z = euler.z }
 end
 

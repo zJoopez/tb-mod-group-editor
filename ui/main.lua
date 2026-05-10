@@ -70,7 +70,7 @@ local copyright = content:addChild({
     size = { content.size.w, 15 },
     bgColor = { 0, 0, 0, 0 }
 })
-copyright:addAdaptedText(true, "script by joopez", nil, nil, FONTS.SMALL, CENTER, 0.6)
+copyright:addAdaptedText(true, "Project Mod Group Editor by joopez", nil, nil, FONTS.SMALL, CENTER, 0.6)
 updateContentHeight(copyright.size.h)
 
 local scrollbar = dofile(MGE.scriptPath  .. "ui/scrollbar.lua")
