@@ -3,11 +3,23 @@ require("toriui.uielement")
 
 POS_SHIFT = POS_SHIFT or { 0 }
 
+local function slice(arr, start, stop)
+  start = start or 1
+  stop = stop or #arr
+  local result = {}
+  for i = start, stop do
+    result[#result + 1] = arr[i]
+  end
+  return result
+end
+
+
 ---@param view UIElement
----@param list EnvObject
-function scrollbar.create(view, list, toggleAll)
+---@param list EnvObject[]
+function scrollbar.create(view, fullList, toggleAll)
     -- Creating a global posShift table - this will store the last scrollbar position between script runs within one game session
     POS_SHIFT = POS_SHIFT or { 0 }
+    local list = slice(fullList, Main.page * 69 - 68, Main.page * 69)
 
     -- Spawning a parent element for any object that needs to be reloaded every frame
     local toReload = UIElement:new({
@@ -22,14 +34,21 @@ function scrollbar.create(view, list, toggleAll)
     local listElementHeight = 25
     local toggleRect = { h = listElementHeight - 4, w = listElementHeight - 4, x = 2, y = 2 }
 
-    local topBar = UIElement:new({
+    local topBar_l = UIElement:new({
         parent = toReload,
         pos = { 0, 0 },
-        size = { view.size.w, listElementHeight },
+        size = { view.size.w / 2, listElementHeight },
         bgColor = TB_MENU_DEFAULT_BG_COLOR,
         interactive = true
     })
-    topBar:addAdaptedText("Toggle All", topBar.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
+
+    local topBar_r = UIElement:new({
+        parent = toReload,
+        pos = { view.size.w / 2, 0 },
+        size = { view.size.w / 2, listElementHeight },
+        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+        interactive = true
+    })
 
     local botBar = UIElement:new({
         parent = toReload,
@@ -43,8 +62,8 @@ function scrollbar.create(view, list, toggleAll)
     -- Height should be equal to parent element's height minus the sum of bars' height.
     local listMainView = UIElement:new({
         parent = view,
-        pos = { 0, topBar.size.h },
-        size = { view.size.w, view.size.h - topBar.size.h - botBar.size.h }
+        pos = { 0, topBar_l.size.h },
+        size = { view.size.w, view.size.h - topBar_l.size.h - botBar.size.h }
     })
 
     -- Spawning scrollable list holder element.
@@ -111,12 +130,15 @@ function scrollbar.create(view, list, toggleAll)
         table.insert(listElements, listElement)
     end
 
-    TBMenu:spawnToggle2(topBar, toggleRect, toggleAll, function(value)
-        for i, toggle in pairs(toggles) do
-            MGE.modData.objects[i].selected = value
+    topBar_l:addAdaptedText("Toggle All", topBar_l.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
+    TBMenu:spawnToggle2(topBar_l, toggleRect, toggleAll, function(value)
+        for i, item in pairs(fullList) do
+            MGE.modData.objects[item.id].selected = value
             Main.updateScroll(not toggleAll)
         end
     end)
+    topBar_r:addAdaptedText(Main.pageStr, topBar_r.size.h + 5, nil, nil, RIGHTMID, 0.7, nil, nil, nil)
+
 
     -- Calling makeScrollBar() method to make scrollable list
     listScrollBar:makeScrollBar(scrollableListHolder, listElements, toReload, POS_SHIFT, 0.4)

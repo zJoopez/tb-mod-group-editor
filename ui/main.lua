@@ -2,7 +2,9 @@ require("toriui.uielement")
 
 ---@class Main
 ---@field window UIElement
-Main = {}
+---@field pageStr string
+---@field page integer
+Main = { page = 1 }
 
 local defaultPos = { 0, 0 }
 local margin = 10
@@ -73,10 +75,11 @@ local copyright = content:addChild({
 copyright:addAdaptedText(true, "Project Mod Group Editor by joopez", nil, nil, FONTS.SMALL, CENTER, 0.6)
 updateContentHeight(copyright.size.h)
 
-local scrollbar = dofile(MGE.scriptPath  .. "ui/scrollbar.lua")
+local scrollbar = dofile(MGE.scriptPath .. "ui/scrollbar.lua")
 
-local function createObjTitle()
+local function setDynamicStrings()
     titleObjCount:addAdaptedText("Objects " .. #MGE.modData.objects .. "/" .. MAX_ENV_OBJECTS)
+    Main.pageStr = "Page " .. Main.page .. "/" .. math.ceil(#MGE.modData.objects / 69)
 end
 
 local function createScrollBar(bool)
@@ -86,7 +89,7 @@ end
 function Main.updateWindow()
     obj_selector:kill(true)
     createScrollBar(false)
-    createObjTitle()
+    setDynamicStrings()
 end
 
 function Main.updateScroll(bool)
@@ -109,7 +112,7 @@ btnAssets:addMouseUpHandler(function()
     end
 end)
 
-createObjTitle()
+setDynamicStrings()
 createScrollBar(false);
 
 Main.window.killAction = MGE.quit
