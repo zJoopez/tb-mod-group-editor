@@ -11,7 +11,7 @@ ModEnvObjects = { objects = {} }
 ---@field a number
 
 ---@class EnvObject
----@field id number
+---@field id integer
 ---@field pos XYZ
 ---@field rot XYZ
 ---@field color RGBA
@@ -79,9 +79,11 @@ function ModEnvObjects:reloadObjects()
         if get_obj_pos(i) then
             local obj = {}
             local color = get_obj_color(i)
+            local x, y, z = get_obj_pos(i)
             obj.id = i + 1
-            obj.pos = { get_obj_pos(i) }
-            obj.sides = { get_obj_sides(i) }
+            obj.pos = { x = x, y = y, z = z }
+            x, y, z = get_obj_sides(i)
+            obj.sides = { x = x, y = y, z = z }
             obj.rot = { matrix_to_euler_xyz(get_obj_rot(i)) }
             obj.color = {
                 r = math.floor((color[1] or 0) * 255),
@@ -96,8 +98,8 @@ function ModEnvObjects:reloadObjects()
             obj.vis = get_obj_vis(i)
 
             --- imagine sir not providing all object data
-            if parsed and parsed.env_obj and parsed.env_obj[obj.id] then
-                local item = parsed.env_obj[obj.id]
+            if ModEnvObjects.parsed and ModEnvObjects.parsed.env_obj and ModEnvObjects.parsed.env_obj[obj.id] then
+                local item = ModEnvObjects.parsed.env_obj[obj.id]
                 if item.props.force then
                     local fx, fy, fz = item.props.force:match("(%S+)%s+(%S+)%s+(%S+)")
                     obj.force = { x = tonumber(fx), y = tonumber(fy), z = tonumber(fz) }
