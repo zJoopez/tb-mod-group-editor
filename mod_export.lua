@@ -26,8 +26,9 @@ ModEnvObjects = { objects = {} }
 ---@field use_model number
 ---@field model_name string
 
----@class ModEnvObjects
+---@class ModExport
 ---@field objects EnvObject[]
+---@field parsed FileParserResult
 
 ---@enum FLAGS
 FLAGS = {
@@ -71,7 +72,7 @@ end
 
 function ModEnvObjects:reloadObjects()
     ---@type FileParserResult
-    local parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
+    ModEnvObjects.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
 
     for i = 0, MAX_ENV_OBJECTS - 1, 1 do
         -- for i = 1, 10 - 1, 1 do

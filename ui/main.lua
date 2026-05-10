@@ -76,11 +76,11 @@ updateContentHeight(copyright.size.h)
 local scrollbar = dofile(MGE.scriptPath  .. "ui/scrollbar.lua")
 
 local function createObjTitle()
-    titleObjCount:addAdaptedText("Objects " .. #MGE.objects.objects .. "/" .. MAX_ENV_OBJECTS)
+    titleObjCount:addAdaptedText("Objects " .. #MGE.modData.objects .. "/" .. MAX_ENV_OBJECTS)
 end
 
 function Main.createScrollBar()
-    scrollbar.create(obj_selector, MGE.objects.objects)
+    scrollbar.create(obj_selector, MGE.modData.objects)
 end
 
 function Main.updateWindow()
