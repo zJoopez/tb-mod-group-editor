@@ -5,7 +5,7 @@ POS_SHIFT = POS_SHIFT or { 0 }
 
 ---@param view UIElement
 ---@param list EnvObject
-function scrollbar:create(view, list)
+function scrollbar.create(view, list)
     -- Creating a global posShift table - this will store the last scrollbar position between script runs within one game session
     POS_SHIFT = POS_SHIFT or { 0 }
 

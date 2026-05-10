@@ -12,7 +12,7 @@
 ---@field modFolder string
 ---@field objects ModEnvObjects
 ---@field hookname string
----@field window UIElement?
+---@field window Main
 ---@field assetWindow UIElement?
 MGE = {
     scriptPath = "mge/",
@@ -20,7 +20,6 @@ MGE = {
     modName = get_game_rules().mod,
     modPath = find_mod(get_game_rules().mod),
     modFolder = "../data/mod/",
-    objects = {},
     hookname = "mge",
 }
 FileHandler = dofile(MGE.scriptPath .. "file_handler.lua")
@@ -32,7 +31,7 @@ function MGE.updateSource()
         MGE.objects = dofile(MGE.scriptPath .. "env_obj_extractor.lua")
         print("Object list updated")
     else
-        MGE.objects = nil
+        MGE.objects = { objects = {} }
         print("Failed to update object list")
     end
 end
@@ -52,6 +51,19 @@ end
 
 add_hook("match_begin", MGE.hookname, function()
     MGE.updateSource()
+    if Main.window.displayed then
+        MGE.window.updateWindow()
+    end
+end)
+
+add_hook("key_up", MGE.hookname, function(key)
+    if key ~= 282 then return end --F1
+    if Main.window.displayed then
+        Main.window:hide(false)
+    else
+        Main.window:show(false)
+        MGE.window.updateWindow()
+    end
 end)
 
 ---start
