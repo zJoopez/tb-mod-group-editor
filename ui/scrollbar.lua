@@ -29,7 +29,6 @@ function scrollbar.create(view, list)
         bgColor = TB_MENU_DEFAULT_BG_COLOR,
         interactive = true
     })
-
     topBar:addAdaptedText("Toggle All", topBar.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
 
     local botBar = UIElement:new({
@@ -78,6 +77,13 @@ function scrollbar.create(view, list)
         scrollEnabled = true
     })
 
+    ---@param thing EnvObject
+    local function highlight(thing)
+        local pos = thing.pos
+        set_camera_mode(4)
+        set_camera_lookat(pos.x, pos.y, pos.z)
+    end
+
     -- Populating the scrollable list with objects
     -- First, creating a table to store all list elements, then spawning them one-by-one and adding to the table
     local toggles = {}
@@ -96,7 +102,8 @@ function scrollbar.create(view, list)
             listElement:uiText(v.id, nil, nil, nil, nil, 0.7, nil, nil, nil)
         end)
         table.insert(toggles, TBMenu:spawnToggle2(listElement, toggleRect, false, function(value)
-            MGE.modData.objects[i].selected = value
+            MGE.modData.objects[v.id].selected = value
+            highlight(v)
         end))
 
         -- Hiding every object, ones that need to be made visible will be activated upon running makeScrollBar(...)
@@ -106,8 +113,8 @@ function scrollbar.create(view, list)
 
     TBMenu:spawnToggle2(topBar, toggleRect, false, function(value)
         for i, toggle in pairs(toggles) do
-            toggle:setValue(value)
             MGE.modData.objects[i].selected = value
+            toggle.setValue(value)
         end
     end)
 
