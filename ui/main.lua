@@ -1,5 +1,9 @@
 require("toriui.uielement")
 
+---@class Main
+---@field window UIElement
+Main = {}
+
 local defaultPos = { 0, 0 }
 local margin = 10
 local function updateContentHeight(height)
@@ -7,7 +11,7 @@ local function updateContentHeight(height)
     defaultPos[2] = defaultPos[2] + h + 10 --10 margin
 end
 
-local window, windowContainer = TBMenu:spawnMoveableWindow({
+Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 500,
@@ -18,12 +22,11 @@ local content = windowContainer:addChild({
     size = { windowContainer.size.w - margin * 2, windowContainer.size.h - margin * 2 },
 }, true)
 
-local obj_label = content:addChild({
+local titleObjCount = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 30 },
 })
-obj_label:addAdaptedText("Objects " .. #MGE.objects.objects .. "/" .. MAX_ENV_OBJECTS)
-updateContentHeight(obj_label.size.h)
+updateContentHeight(titleObjCount.size.h)
 
 local obj_selector = content:addChild({
     pos = defaultPos,
@@ -31,9 +34,6 @@ local obj_selector = content:addChild({
     bgColor = TB_MENU_DEFAULT_DARKER_COLOR
 })
 updateContentHeight(obj_selector.size.h)
-
-local scrollbar = dofile(MGE.scriptPath .. "ui/scrollbar.lua")
-scrollbar:create(obj_selector, MGE.objects.objects)
 
 local btnAssets = content:addChild({
     pos = defaultPos,
@@ -54,6 +54,41 @@ local btnSave = content:addChild({
     hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
     pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
 })
+updateContentHeight(btnSave.size.h)
+
+local info = content:addChild({
+    pos = defaultPos,
+    size = { content.size.w, 15 },
+    bgColor = { 0, 0, 0, 0 }
+})
+info:addAdaptedText(true, "F1 shows/hides window", nil, nil, FONTS.SMALL, CENTER, 0.6)
+updateContentHeight(info.size.h - margin)
+
+-- copyright
+local copyright = content:addChild({
+    pos = defaultPos,
+    size = { content.size.w, 15 },
+    bgColor = { 0, 0, 0, 0 }
+})
+copyright:addAdaptedText(true, "script by joopez", nil, nil, FONTS.SMALL, CENTER, 0.6)
+updateContentHeight(copyright.size.h)
+
+local scrollbar = dofile(MGE.scriptPath  .. "ui/scrollbar.lua")
+
+local function createObjTitle()
+    titleObjCount:addAdaptedText("Objects " .. #MGE.objects.objects .. "/" .. MAX_ENV_OBJECTS)
+end
+
+function Main.createScrollBar()
+    scrollbar.create(obj_selector, MGE.objects.objects)
+end
+
+function Main.updateWindow()
+    obj_selector:kill(true)
+    Main.createScrollBar()
+    createObjTitle()
+end
+
 btnSave:addAdaptedText("Save")
 updateContentHeight(btnSave.size.h)
 
@@ -69,5 +104,8 @@ btnAssets:addMouseUpHandler(function()
     end
 end)
 
-window.killAction = MGE.quit
-return window
+createObjTitle()
+Main.createScrollBar();
+
+Main.window.killAction = MGE.quit
+return Main
