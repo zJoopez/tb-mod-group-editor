@@ -5,7 +5,7 @@ POS_SHIFT = POS_SHIFT or { 0 }
 
 ---@param view UIElement
 ---@param list EnvObject
-function scrollbar.create(view, list)
+function scrollbar.create(view, list, toggleAll)
     -- Creating a global posShift table - this will store the last scrollbar position between script runs within one game session
     POS_SHIFT = POS_SHIFT or { 0 }
 
@@ -101,7 +101,7 @@ function scrollbar.create(view, list)
         listElement:addCustomDisplay(false, function()
             listElement:uiText(v.id, nil, nil, nil, nil, 0.7, nil, nil, nil)
         end)
-        table.insert(toggles, TBMenu:spawnToggle2(listElement, toggleRect, false, function(value)
+        table.insert(toggles, TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
             MGE.modData.objects[v.id].selected = value
             highlight(v)
         end))
@@ -111,10 +111,10 @@ function scrollbar.create(view, list)
         table.insert(listElements, listElement)
     end
 
-    TBMenu:spawnToggle2(topBar, toggleRect, false, function(value)
+    TBMenu:spawnToggle2(topBar, toggleRect, toggleAll, function(value)
         for i, toggle in pairs(toggles) do
             MGE.modData.objects[i].selected = value
-            toggle.setValue(value)
+            Main.updateScroll(not toggleAll)
         end
     end)
 

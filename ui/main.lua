@@ -79,14 +79,19 @@ local function createObjTitle()
     titleObjCount:addAdaptedText("Objects " .. #MGE.modData.objects .. "/" .. MAX_ENV_OBJECTS)
 end
 
-function Main.createScrollBar()
-    scrollbar.create(obj_selector, MGE.modData.objects)
+local function createScrollBar(bool)
+    scrollbar.create(obj_selector, MGE.modData.objects, bool)
 end
 
 function Main.updateWindow()
     obj_selector:kill(true)
-    Main.createScrollBar()
+    createScrollBar(false)
     createObjTitle()
+end
+
+function Main.updateScroll(bool)
+    obj_selector:kill(true)
+    createScrollBar(bool)
 end
 
 btnSave:addAdaptedText("Save")
@@ -105,7 +110,7 @@ btnAssets:addMouseUpHandler(function()
 end)
 
 createObjTitle()
-Main.createScrollBar();
+createScrollBar(false);
 
 Main.window.killAction = MGE.quit
 return Main
