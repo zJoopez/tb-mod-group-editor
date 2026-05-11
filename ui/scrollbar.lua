@@ -129,10 +129,10 @@ function scrollbar.create(view, fullList, toggleAll)
 
     topBar_l:addAdaptedText("Toggle All", topBar_l.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
     TBMenu:spawnToggle2(topBar_l, toggleRect, toggleAll, function(value)
-        for i, item in pairs(fullList) do
+        for i = 1, #fullList do
             MGE.modData.objects[i].selected = value
-            Main.updateWindow(not toggleAll)
         end
+        Main.updateWindow(not toggleAll)
     end)
     local pageBtnNext = topBar_r:addChild({
         interactive = true,
