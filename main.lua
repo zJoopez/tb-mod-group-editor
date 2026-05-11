@@ -43,6 +43,7 @@ end
 function MGE.save()
     FileHandler.WriteMod(MGE.modData.parsed, MGE.modFolder .. MGE.outputName)
     print("saved")
+    MGE.loadMod()
 end
 
 function MGE.quit()
@@ -50,8 +51,10 @@ function MGE.quit()
 end
 
 add_hook("match_begin", MGE.hookname, function()
+    set_camera_mode(0)
     MGE.updateSource()
     if Main.window.displayed then
+        Main.page = 1
         MGE.window.updateWindow(false)
     end
 end)

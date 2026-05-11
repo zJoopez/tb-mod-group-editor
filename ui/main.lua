@@ -18,7 +18,7 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 500,
-    h = 500
+    h = 700
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
@@ -31,12 +31,20 @@ local titleObjCount = content:addChild({
 })
 updateContentHeight(titleObjCount.size.h)
 
-local obj_selector = content:addChild({
+local obj_selector_container = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 200 },
     bgColor = TB_MENU_DEFAULT_DARKER_COLOR
 })
-updateContentHeight(obj_selector.size.h)
+updateContentHeight(obj_selector_container.size.h)
+
+
+local editorContainer = content:addChild({
+    pos = defaultPos,
+    size = { content.size.w, 250 },
+})
+editorContainer:addChild(dofile(MGE.scriptPath .. "ui/editor.lua"))
+updateContentHeight(editorContainer.size.h)
 
 local btnAssets = content:addChild({
     pos = defaultPos,
@@ -76,21 +84,22 @@ local copyright = content:addChild({
 copyright:addAdaptedText(true, "Project Mod Group Editor by joopez", nil, nil, FONTS.SMALL, CENTER, 0.6)
 updateContentHeight(copyright.size.h)
 
-local scrollbar = dofile(MGE.scriptPath .. "ui/scrollbar.lua")
+
+local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
 
 local function setDynamicStrings()
     titleObjCount:addAdaptedText("Objects " .. #MGE.modData.objects .. "/" .. MAX_ENV_OBJECTS)
     Main.pageStr = "Page " .. Main.page .. "/" .. math.ceil(#MGE.modData.objects / Main.pageSize)
 end
 
-local function createScrollBar(bool)
-    scrollbar.create(obj_selector, MGE.modData.objects, bool)
+local function createObjSelector(bool)
+    obj_selector.create(obj_selector_container, MGE.modData.objects, bool)
 end
 
 function Main.updateWindow(bool)
-    obj_selector:kill(true)
+    obj_selector_container:kill(true)
     setDynamicStrings()
-    createScrollBar(bool)
+    createObjSelector(bool)
 end
 
 btnSave:addAdaptedText("Save")
@@ -109,7 +118,7 @@ btnAssets:addMouseUpHandler(function()
 end)
 
 setDynamicStrings()
-createScrollBar(false);
+createObjSelector(false);
 
 Main.window.killAction = MGE.quit
 return Main

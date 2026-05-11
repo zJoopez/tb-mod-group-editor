@@ -1,4 +1,4 @@
-local scrollbar = {}
+local obj_selector = {}
 require("toriui.uielement")
 
 POS_SHIFT = POS_SHIFT or { 0 }
@@ -14,7 +14,7 @@ end
 ---@param view UIElement
 ---@param fullList EnvObject[]
 ---@param toggleAll boolean
-function scrollbar.create(view, fullList, toggleAll)
+function obj_selector.create(view, fullList, toggleAll)
     -- Creating a global posShift table - this will store the last scrollbar position between script runs within one game session
     POS_SHIFT = POS_SHIFT or { 0 }
     ---@type EnvObject[]
@@ -117,7 +117,6 @@ function scrollbar.create(view, fullList, toggleAll)
         })
         listElement:addCustomDisplay(false, function()
             listElement:uiText(v.id, nil, nil, nil, nil, 0.7, nil, nil, nil)
-            listElement:uiText(v.shape, nil, nil, nil, RIGHTMID, 0.7, nil, nil, nil)
         end)
         TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
             MGE.modData.objects[(Main.page - 1) * Main.pageSize + i].selected = value
@@ -176,4 +175,4 @@ function scrollbar.create(view, fullList, toggleAll)
     listScrollBar:makeScrollBar(scrollableListHolder, listElements, toReload, POS_SHIFT, 0.4)
 end
 
-return scrollbar
+return obj_selector
