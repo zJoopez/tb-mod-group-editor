@@ -78,3 +78,20 @@ function SetRotOffset(rot, offset)
     -- Convert the result quaternion back to Euler angles
     rot[1], rot[2], rot[3] = quaternionToEuler(resultQuat)
 end
+
+function CenterOfPoints()
+    local sumX, sumY, sumZ = 0, 0, 0
+    local n = #MGE.modData.objects
+
+    for _, p in ipairs(MGE.modData.objects) do
+        sumX = sumX + p.pos[1]
+        sumY = sumY + p.pos[2]
+        sumZ = sumZ + p.pos[3]
+    end
+
+    return {
+        x = sumX / n,
+        y = sumY / n,
+        z = sumZ / n
+    }
+end
