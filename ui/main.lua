@@ -17,7 +17,7 @@ end
 Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
-    w = 500,
+    w = 400,
     h = 700
 })
 local content = windowContainer:addChild({
@@ -43,7 +43,6 @@ local editorContainer = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 250 },
 })
-editorContainer:addChild(dofile(MGE.scriptPath .. "ui/editor.lua"))
 updateContentHeight(editorContainer.size.h)
 
 local btnAssets = content:addChild({
@@ -86,6 +85,7 @@ updateContentHeight(copyright.size.h)
 
 
 local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
+local editor = dofile(MGE.scriptPath .. "ui/editor.lua")
 
 local function setDynamicStrings()
     titleObjCount:addAdaptedText("Objects " .. #MGE.modData.objects .. "/" .. MAX_ENV_OBJECTS)
@@ -94,6 +94,10 @@ end
 
 local function createObjSelector(bool)
     obj_selector.create(obj_selector_container, MGE.modData.objects, bool)
+end
+
+local function createEditor()
+    editor.create(editorContainer)
 end
 
 function Main.updateWindow(bool)
@@ -119,6 +123,7 @@ end)
 
 setDynamicStrings()
 createObjSelector(false);
+createEditor()
 
 Main.window.killAction = MGE.quit
 return Main

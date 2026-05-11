@@ -12,7 +12,7 @@ ModEnvObjects = { objects = {} }
 
 ---@class EnvObject
 ---@field id integer
----@field pos XYZ
+---@field pos number[]
 ---@field rot XYZ
 ---@field color RGBA
 ---@field sides XYZ
@@ -79,10 +79,9 @@ function ModEnvObjects:reloadObjects()
         if get_obj_pos(i) then
             local obj = {}
             local color = get_obj_color(i)
-            local x, y, z = get_obj_pos(i)
             obj.id = i + 1
-            obj.pos = { x = x, y = y, z = z }
-            x, y, z = get_obj_sides(i)
+            obj.pos = { get_obj_pos(i) }
+            local x, y, z = get_obj_sides(i)
             obj.sides = { x = x, y = y, z = z }
             obj.rot = { matrix_to_euler_xyz(get_obj_rot(i)) }
             obj.color = {
