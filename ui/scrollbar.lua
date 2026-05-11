@@ -12,10 +12,12 @@ local function slice(arr, start, stop)
 end
 
 ---@param view UIElement
----@param list EnvObject[]
+---@param fullList EnvObject[]
+---@param toggleAll boolean
 function scrollbar.create(view, fullList, toggleAll)
     -- Creating a global posShift table - this will store the last scrollbar position between script runs within one game session
     POS_SHIFT = POS_SHIFT or { 0 }
+    ---@type EnvObject[]
     local list = slice(fullList, Main.page * Main.pageSize - Main.pageSize - 1, Main.page * Main.pageSize)
 
     -- Spawning a parent element for any object that needs to be reloaded every frame
