@@ -5,7 +5,7 @@ require("toriui.uielement")
 ---@field pageStr string
 ---@field page integer
 ---@field pageSize integer
-Main = { page = 1, pageSize = 69 }
+Main = { page = 1, pageSize = 64 }
 
 local defaultPos = { 0, 0 }
 local margin = 10

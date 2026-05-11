@@ -4,15 +4,12 @@ require("toriui.uielement")
 POS_SHIFT = POS_SHIFT or { 0 }
 
 local function slice(arr, start, stop)
-    start = start or 1
-    stop = stop or #arr
     local result = {}
     for i = start, stop do
         result[#result + 1] = arr[i]
     end
     return result
 end
-
 
 ---@param view UIElement
 ---@param list EnvObject[]
@@ -105,7 +102,6 @@ function scrollbar.create(view, fullList, toggleAll)
 
     -- Populating the scrollable list with objects
     -- First, creating a table to store all list elements, then spawning them one-by-one and adding to the table
-    local toggles = {}
     local listElements = {}
     for i, v in pairs(list) do
         local listElement = UIElement:new({
@@ -119,11 +115,12 @@ function scrollbar.create(view, fullList, toggleAll)
         })
         listElement:addCustomDisplay(false, function()
             listElement:uiText(v.id, nil, nil, nil, nil, 0.7, nil, nil, nil)
+            listElement:uiText(v.shape, nil, nil, nil, RIGHTMID, 0.7, nil, nil, nil)
         end)
-        table.insert(toggles, TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
-            MGE.modData.objects[v.id].selected = value
+        TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
+            MGE.modData.objects[(Main.page - 1) * Main.pageSize + i].selected = value
             if value then highlight(v) end
-        end))
+        end)
 
         -- Hiding every object, ones that need to be made visible will be activated upon running makeScrollBar(...)
         listElement:hide()
@@ -133,7 +130,7 @@ function scrollbar.create(view, fullList, toggleAll)
     topBar_l:addAdaptedText("Toggle All", topBar_l.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
     TBMenu:spawnToggle2(topBar_l, toggleRect, toggleAll, function(value)
         for i, item in pairs(fullList) do
-            MGE.modData.objects[item.id].selected = value
+            MGE.modData.objects[i].selected = value
             Main.updateWindow(not toggleAll)
         end
     end)
@@ -172,8 +169,6 @@ function scrollbar.create(view, fullList, toggleAll)
             Main.updateWindow(toggleAll)
         end
     end)
-
-
 
     -- Calling makeScrollBar() method to make scrollable list
     listScrollBar:makeScrollBar(scrollableListHolder, listElements, toReload, POS_SHIFT, 0.4)
