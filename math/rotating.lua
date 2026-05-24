@@ -1,3 +1,4 @@
+RotatingOld = {}
 -- Function to rotate a point around the X axis
 local function rotateX(x, y, z, angle)
     local cosA, sinA = math.cos(angle), math.sin(angle)
@@ -16,18 +17,7 @@ local function rotateZ(x, y, z, angle)
     return cosA * x - sinA * y, sinA * x + cosA * y, z
 end
 
-function SetRotPos(obj, center, offset)
-    -- Translate object to origin (relative to the center of rotation)
-    local x, y, z = obj.x - center.x, obj.y - center.y, obj.z - center.z
 
-    -- Apply rotations in 3D space
-    x, y, z = rotateX(x, y, z, offset.x) -- Rotate around X axis
-    x, y, z = rotateY(x, y, z, offset.y) -- Rotate around Y axis
-    x, y, z = rotateZ(x, y, z, offset.z) -- Rotate around Z axis
-
-    -- Translate object back to its new position
-    obj.x, obj.y, obj.z = x + center.x, y + center.y, z + center.z
-end
 
 local function eulerToQuaternion(x, y, z)
     local cx, cy, cz = math.cos(x / 2), math.cos(y / 2), math.cos(z / 2)
@@ -70,23 +60,72 @@ local function quaternionMultiply(q1, q2)
     }
 end
 
-function SetRotOffset(rot, offset)
-    local currentQuat = eulerToQuaternion(rot[1], rot[2], rot[3])
-    local offsetQuat = eulerToQuaternion(-offset.x, -offset.y, -offset.z)
+function RotatingOld.SetRotOffset(x, y, z, ox, oy, oz)
+ print("SetRotOffset input: " .. x .. ", " .. y .. ", " .. z .. ", " .. ox .. ", " ..oy .. ", " .. oz)
+    local currentQuat = eulerToQuaternion(x, y, z)
+    local offsetQuat = eulerToQuaternion(-ox, -oy, -oz)
     local resultQuat = quaternionMultiply(currentQuat, offsetQuat)
 
     -- Convert the result quaternion back to Euler angles
-    rot[1], rot[2], rot[3] = quaternionToEuler(resultQuat)
+    return quaternionToEuler(resultQuat)
 end
 
-function CenterOfPoints()
+function RotatingOld.SetRotPos(x, y, z, px, py, pz, ox, oy, oz)
+    -- Translate object to origin (relative to the center of rotation)
+    local x, y, z = x - px, y - py, z - pz
+
+    -- Apply rotations in 3D space
+    x, y, z = rotateX(x, y, z, ox) -- Rotate around X axis
+    x, y, z = rotateY(x, y, z, oy) -- Rotate around Y axis
+    x, y, z = rotateZ(x, y, z, oz) -- Rotate around Z axis
+
+    -- Translate object back to its new position
+    return x + px, y + py, z + pz
+end
+
+function RotateObjectAroundPivot(obj, pivot, rx, ry, rz)
+    -- 1. offset vector
+    local ox = obj.pos.x - pivot.x
+    local oy = obj.pos.y - pivot.y
+    local oz = obj.pos.z - pivot.z
+
+    -- 2. rotation matrix from Euler offset
+    local R = Utils3D.GetMatrixFromEuler(
+        math.rad(rx), math.rad(ry), math.rad(rz),
+        EULER_XYZ
+    )
+
+    -- 3. rotate offset vector
+    local rotated = Utils3D.MatrixMultiply({ { ox, oy, oz } }, R)[1]
+
+    -- 4. new world position
+    obj.pos.x = pivot.x + rotated[1]
+    obj.pos.y = pivot.y + rotated[2]
+    obj.pos.z = pivot.z + rotated[3]
+
+    -- 5. rotate object’s rotation matrix
+    local Rdelta = R
+    local newRotMatrix = Utils3D.MatrixMultiply(Rdelta, obj.rotMatrix)
+
+    -- 6. apply rotation
+    obj.rotMatrix = newRotMatrix
+    obj.rotMatrixTB = Utils3D.MatrixToMatrixTB(newRotMatrix)
+end
+function RotatingOld.GetSelectionPivot()
     local sumX, sumY, sumZ = 0, 0, 0
-    local n = #MGE.modData.objects
+    local n = 0
 
     for _, p in ipairs(MGE.modData.objects) do
-        sumX = sumX + p.pos[1]
-        sumY = sumY + p.pos[2]
-        sumZ = sumZ + p.pos[3]
+        if p.selected then
+            sumX = sumX + p.pos[1]
+            sumY = sumY + p.pos[2]
+            sumZ = sumZ + p.pos[3]
+            n = n + 1
+        end
+    end
+
+    if n == 0 then
+        return { x = 0, y = 0, z = 0 }
     end
 
     return {
@@ -95,3 +134,5 @@ function CenterOfPoints()
         z = sumZ / n
     }
 end
+
+return RotatingOld

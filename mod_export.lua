@@ -13,9 +13,9 @@ ModEnvObjects = { objects = {} }
 ---@class EnvObject
 ---@field id integer
 ---@field pos number[]
----@field rot XYZ
+---@field rot number[]
 ---@field color RGBA
----@field sides XYZ
+---@field sides number[]
 ---@field flag FLAGS
 ---@field bounce number
 ---@field mass number
@@ -55,21 +55,19 @@ MAX_DYNAMIC_ENV_OBJECTS = 48
 EnvObject = {}
 EnvObject.__index = EnvObject
 
-
 -- Function to convert 4x4 rotation matrix to Euler XYZ angles (in degrees) using UIElement3D library
 local function matrix_to_euler_xyz(matrix)
+    print_r(matrix)
     local m = matrix
-    -- Extract 3x3 rotation matrix from column-major 4x4
     local R = {
         { m[1], m[5], m[9] },
         { m[2], m[6], m[10] },
         { m[3], m[7], m[11] }
     }
-    -- Use UIElement3D's GetEulerFromMatrix with EULER_XYZ (returns degrees)
-    local euler = Utils3D.GetEulerFromMatrix(R, EULER_XYZ)
-    return { x = euler.x, y = euler.y, z = euler.z }
+    local e = Utils3D.GetEulerFromMatrix(R, EULER_XYZ)
+    local function c(v) return math.abs(v) < 1e-9 and 0 or v end
+    return { x = c(e.x), y = c(e.y), z = c(e.z) }
 end
-
 function ModEnvObjects:reloadObjects()
     ---@type FileParserResult
     ModEnvObjects.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
@@ -81,9 +79,8 @@ function ModEnvObjects:reloadObjects()
             local color = get_obj_color(i)
             obj.id = i + 1
             obj.pos = { get_obj_pos(i) }
-            local x, y, z = get_obj_sides(i)
-            obj.sides = { x = x, y = y, z = z }
-            obj.rot = { matrix_to_euler_xyz(get_obj_rot(i)) }
+            obj.sides = { get_obj_sides(i) }
+            obj.rot = get_obj_rot(i)
             obj.color = {
                 r = math.floor((color[1] or 0) * 255),
                 g = math.floor((color[2] or 0) * 255),

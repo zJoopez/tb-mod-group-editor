@@ -544,7 +544,7 @@ function process_request()
 				pos.y = pos.y + pos_offset_y
 				pos.z = pos.z + pos_offset_z
 
-				SetRotPos(pos, axisPoint, rot_offsets)
+				RotatingOld.SetRotPos(pos, axisPoint, rot_offsets)
 				environment_objects[reader_env_obj_id].pos = pos
 
 				if reader_env_obj_tracked == true then
@@ -560,7 +560,7 @@ function process_request()
 					table.insert(obj_rot, num)
 				end
 
-				SetRotOffset(obj_rot, rot_offsets)
+				RotatingOld.SetRotOffset(obj_rot, rot_offsets)
 				environment_objects[reader_env_obj_id].rot = obj_rot
 
 				if reader_env_obj_tracked == true then

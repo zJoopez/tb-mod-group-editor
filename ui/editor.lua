@@ -1,24 +1,68 @@
-container = {}
+local container = {}
+dofile(MGE.scriptPath .. "math/rotating.lua")
+dofile("chatlog/chatlog.lua")
+runCmd("lm sumotoridreams_arena.tbm")
 
 local totalHeight = 0
 local margin = 10
-
+local color = {0,0,0,0}
 local function updateContentHeight(height)
-    totalHeight = totalHeight + height + margin
+    totalHeight = totalHeight + height
 end
 
 local function moveSelected(target, input)
     for _, v in pairs(MGE.modData.objects) do
         if v.selected then
-            local lpos = { v.pos[1], v.pos[2], v.pos[3] }
-            lpos[target] = v.pos[target] + input
-            set_obj_pos(v.id - 1, lpos[1], lpos[2], lpos[3])
+            local pos = { v.pos[1], v.pos[2], v.pos[3] }
+            pos[target] = v.pos[target] + input
+            set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
         end
     end
 end
 
-local function createInput(container, onInputFunc, target)
-    local input = TBMenu:spawnTextField2(container, nil, "0",
+local function rotSelected(target, input)
+    local pivot = RotatingOld.GetSelectionPivot()
+    local delta = { 0, 0, 0 }
+    delta[target] = math.rad(tonumber(input) or 0)
+
+    for _, v in pairs(MGE.modData.objects) do
+        if v.selected then
+            local m = get_obj_rot(v.id - 1)
+            local mtb = Utils3D.MatrixToMatrixTB(m)
+            set_obj_rot_m(v.id - 1, mtb)
+            print("done")
+            print("In: " .. v.id .. " rot: " .. v.rot.x .. ", " .. v.rot.y .. ", " .. v.rot.z)
+            -- pre-convert rot to radians once per object, outside any further calls
+            local rx, ry, rz = math.rad(v.rot.x), math.rad(v.rot.y), math.rad(v.rot.z)
+            -- local rx, ry, rz = v.rot.x, v.rot.y, v.rot.z
+
+            local px, py, pz = RotatingOld.SetRotPos(
+                v.pos[1], v.pos[2], v.pos[3],
+                pivot.x, pivot.y, pivot.z,
+                delta[1], delta[2], delta[3]
+            )
+            local outx, outy, outz = RotatingOld.SetRotOffset(
+                rx, ry, rz,
+                delta[1], delta[2], delta[3]
+            )
+            print("Out: " .. v.id .. " rot: " .. outx .. ", " .. outy .. ", " .. outz)
+            set_obj_rot(v.id - 1, math.rad(outx), math.rad(outy), math.rad(outz))
+            set_obj_pos(v.id - 1, px, py, pz)
+        end
+    end
+end
+
+local function adjustColor(target, input)
+    for _, v in pairs(MGE.modData.objects) do
+        if v.selected then
+            color[target] = input / 255
+            set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
+        end
+    end
+end
+
+local function createInput(container, target, onInputFunc)
+    local input = TBMenu:spawnTextField2(container, nil, "",
         "0.00",
         {
             inputType = 2,
@@ -29,10 +73,8 @@ local function createInput(container, onInputFunc, target)
             allowNegative = true,
             textAlign = CENTER,
         })
-    input:addMouseUpHandler(function()
-        input.textfieldstr = { "" }
-    end)
-    input:addKeyboardHandlers(nil, function()
+    input:addKeyboardHandlers(nil, function(key)
+        if key ~= 13 then return end --enter
         local input = tonumber(input.textfieldstr[1]) or 0
         onInputFunc(target, input)
     end)
@@ -41,7 +83,7 @@ end
 
 ---@param container UIElement
 ---@param inputCount integer
-local function createRow(container, inputCount)
+local function createRow(label, container, inputCount, func)
     local width = 0
     local row = container:addChild({
         pos = { 0, totalHeight },
@@ -49,23 +91,27 @@ local function createRow(container, inputCount)
         interactive = true,
     }, true)
 
-    local columnSize = row.size.w / (inputCount + 1)
+    local columnCount = inputCount
+    if label then columnCount = columnCount + 1 end
+    local columnSize = row.size.w / columnCount
     local inputs = {}
 
-    local label = row:addChild({
-        pos = { width, 0 },
-        size = { columnSize, row.size.h },
-    }, true)
-    label:addAdaptedText("Pos", nil, nil, nil, CENTERMID, 0.8, nil, nil)
-    width = width + columnSize
+    if label then
+        local labelContainer = row:addChild({
+            pos = { width, 0 },
+            size = { columnSize, row.size.h },
+        }, true)
+        labelContainer:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.8, nil, nil)
+        width = width + columnSize
+    end
 
     for i = 1, inputCount, 1 do
         local inputContainer = row:addChild({
-            pos = { width, totalHeight },
-            size = { columnSize, 30 },
+            pos = { width, 0 },
+            size = { columnSize, row.size.h },
             interactive = true,
         }, true)
-        inputs[i] = createInput(inputContainer, moveSelected, i)
+        inputs[i] = createInput(inputContainer, i, func)
         width = width + columnSize
     end
     updateContentHeight(row.size.h)
@@ -73,7 +119,10 @@ local function createRow(container, inputCount)
 end
 
 function container.create(container)
-    local posInputs = createRow(container, 3)
+    local posInputs = createRow("Pos", container, 3, moveSelected)
+    local rotInputs = createRow("Rot", container, 3, rotSelected)
+    local rotInputs = createRow("Color", container, 0, nil)
+    local rotInputs = createRow(nil, container, 4, adjustColor)
 end
 
 return container
