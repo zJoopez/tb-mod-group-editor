@@ -18,6 +18,7 @@ local function moveSelected(target, input)
             local pos = { v.pos[1], v.pos[2], v.pos[3] }
             pos[target] = v.pos[target] + input
             set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
+            MGE.modData.parsed.env_obj[v.id].props.pos = table.concat(pos, " ")
         end
     end
 end
@@ -124,8 +125,8 @@ end
 function container.create(container)
     local posInputs = createRow("Pos", container, 3, moveSelected)
     local rotInputs = createRow("Rot", container, 3, rotSelected)
-    local rotInputs = createRow("Color", container, 0, nil)
-    local rotInputs = createRow(nil, container, 4, adjustColor)
+    createRow("Color", container, 0, nil)
+    local colorInputs = createRow(nil, container, 4, adjustColor)
 end
 
 return container
