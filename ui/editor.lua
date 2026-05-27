@@ -15,7 +15,7 @@ end
 local function moveSelected(target, input)
     for _, v in pairs(MGE.modData.objects) do
         if v.selected then
-            local pos = { v.pos[1], v.pos[2], v.pos[3] }
+            local pos = { get_obj_pos(v.id - 1) }
             pos[target] = v.pos[target] + input
             set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
             MGE.modData.parsed.env_obj[v.id].props.pos = table.concat(pos, " ")

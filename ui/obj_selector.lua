@@ -95,11 +95,11 @@ function obj_selector.create(view, fullList, toggleAll)
         scrollEnabled = true
     })
 
-    ---@param thing EnvObject
-    local function highlight(thing)
-        print_r(thing.pos)
+    ---@param obj EnvObject
+    local function highlight(obj)
         set_camera_mode(4)
-        set_camera_lookat(thing.pos[1], thing.pos[2], thing.pos[3])
+        local pos = { get_obj_pos(obj.id - 1) }
+        set_camera_lookat(pos[1], pos[2], pos[3])
     end
 
     -- Populating the scrollable list with objects
