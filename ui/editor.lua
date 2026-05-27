@@ -7,16 +7,24 @@ dofile(MGE.scriptPath .. "math/rotating.lua")
 
 local totalHeight = 0
 local margin = 10
-local color = {0,0,0,0}
+
+---@type table<string, UIElement[]>
+local inwuts = {}
 local function updateContentHeight(height)
     totalHeight = totalHeight + height
 end
 
 local function moveSelected(target, input)
+    local offsets = {}
+    for i, value in ipairs(inwuts.pos) do
+        offsets[i] = tonumber(value.textfieldstr[1]) or 0
+    end
     for _, v in pairs(MGE.modData.objects) do
         if v.selected then
             local pos = { get_obj_pos(v.id - 1) }
-            pos[target] = v.pos[target] + input
+            for i, value in ipairs(pos) do
+                pos[i] = pos[i] + offsets[i]
+            end
             set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
             MGE.modData.parsed.env_obj[v.id].props.pos = table.concat(pos, " ")
         end
@@ -56,9 +64,14 @@ local function rotSelected(target, input)
 end
 
 local function adjustColor(target, input)
+    local color = {}
+    for i, value in ipairs(inwuts.color) do
+        local n = tonumber(value.textfieldstr[1]) or 0
+        n = math.max(0, math.min(500, n))
+        color[i] = n / 255
+    end
     for _, v in pairs(MGE.modData.objects) do
         if v.selected then
-            color[target] = input / 255
             set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
             MGE.modData.parsed.env_obj[v.id].props.color = table.concat(color, " ")
         end
@@ -87,7 +100,8 @@ end
 
 ---@param container UIElement
 ---@param inputCount integer
-local function createRow(label, container, inputCount, func)
+---@param defaultValue string[]?
+local function createRow(label, container, inputCount, func, defaultValue)
     local width = 0
     local row = container:addChild({
         pos = { 0, totalHeight },
@@ -116,6 +130,7 @@ local function createRow(label, container, inputCount, func)
             interactive = true,
         }, true)
         inputs[i] = createInput(inputContainer, i, func)
+        if defaultValue then inputs[i].textfieldstr[1] = defaultValue[i] end
         width = width + columnSize
     end
     updateContentHeight(row.size.h)
@@ -123,10 +138,10 @@ local function createRow(label, container, inputCount, func)
 end
 
 function container.create(container)
-    local posInputs = createRow("Pos", container, 3, moveSelected)
+    inwuts.pos = createRow("Pos", container, 3, moveSelected)
     local rotInputs = createRow("Rot", container, 3, rotSelected)
     createRow("Color", container, 0, nil)
-    local colorInputs = createRow(nil, container, 4, adjustColor)
+    inwuts.color = createRow(nil, container, 4, adjustColor, {"", "", "", "255"})
 end
 
 return container
