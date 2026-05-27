@@ -23,6 +23,8 @@ local FileHandler = {}
 ---@field blocks FileParserBlock[]
 ---@field ignores string[]
 
+local indent = "   "
+
 function FileHandler.ParseMod(path)
     local file = Files.Open(path, FILES_MODE_READONLY)
     if not file then
@@ -110,6 +112,31 @@ function FileHandler.parseBlock(block)
     return obj
 end
 
+---@param file File
+---@param objects table<number, FileParserEnvObj>
+local function writeParsedEnvObj(file, objects)
+    for _, obj in pairs(objects) do
+        file:writeLine(obj.header .. " " .. obj.id)
+        for key, value in pairs(obj.props) do
+            file:writeLine(indent .. key .. " " .. value)
+        end
+    end
+end
+
+---@param file File
+---@param objects table<number, FileParserEnvObjJoint>
+local function writeParsedEnvObjJoints(file, objects)
+    for _, obj in pairs(objects) do
+        file:writeLine(table.concat({ obj.header, obj.id, obj.obj1, obj.obj2 }, " "))
+        for key, value in pairs(obj.props) do
+            file:writeLine(indent .. key .. " " .. value)
+        end
+    end
+end
+
+---@param parser FileParserResult
+---@param path string
+---@return boolean
 function FileHandler.WriteMod(parser, path)
     local file = Files.Open(path, FILES_MODE_WRITE)
     if not file then
@@ -122,11 +149,8 @@ function FileHandler.WriteMod(parser, path)
     end
 
     -- Write env_obj and env_obj_joint blocks in order
-    for _, block in ipairs(parser.blocks) do
-        for _, line in ipairs(block.lines) do
-            file:writeLine(line)
-        end
-    end
+    writeParsedEnvObj(file, parser.env_obj or {})
+    writeParsedEnvObjJoints(file, parser.env_obj_joint or {})
 
     file:close()
     return true

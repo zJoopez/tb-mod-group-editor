@@ -1,7 +1,9 @@
 local container = {}
 dofile(MGE.scriptPath .. "math/rotating.lua")
-dofile("chatlog/chatlog.lua")
-runCmd("lm sumotoridreams_arena.tbm")
+
+-- debug junk
+-- dofile("chatlog/chatlog.lua")
+-- runCmd("lm scooter_jump_x_grind_mp.tbm")
 
 local totalHeight = 0
 local margin = 10
@@ -57,6 +59,7 @@ local function adjustColor(target, input)
         if v.selected then
             color[target] = input / 255
             set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
+            MGE.modData.parsed.env_obj[v.id].props.color = table.concat(color, " ")
         end
     end
 end
