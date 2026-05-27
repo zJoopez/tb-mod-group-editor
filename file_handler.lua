@@ -113,21 +113,10 @@ function FileHandler.parseBlock(block)
 end
 
 ---@param file File
----@param objects table<number, FileParserEnvObj>
+---@param objects table<number, FileParserEnvObj | FileParserEnvObjJoint>
 local function writeParsedEnvObj(file, objects)
     for _, obj in pairs(objects) do
-        file:writeLine(obj.header .. " " .. obj.id)
-        for key, value in pairs(obj.props) do
-            file:writeLine(indent .. key .. " " .. value)
-        end
-    end
-end
-
----@param file File
----@param objects table<number, FileParserEnvObjJoint>
-local function writeParsedEnvObjJoints(file, objects)
-    for _, obj in pairs(objects) do
-        file:writeLine(table.concat({ obj.header, obj.id, obj.obj1, obj.obj2 }, " "))
+        file:writeLine(obj.header)
         for key, value in pairs(obj.props) do
             file:writeLine(indent .. key .. " " .. value)
         end
@@ -150,7 +139,7 @@ function FileHandler.WriteMod(parser, path)
 
     -- Write env_obj and env_obj_joint blocks in order
     writeParsedEnvObj(file, parser.env_obj or {})
-    writeParsedEnvObjJoints(file, parser.env_obj_joint or {})
+    writeParsedEnvObj(file, parser.env_obj_joint or {})
 
     file:close()
     return true

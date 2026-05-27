@@ -14,6 +14,12 @@ local function updateContentHeight(height)
     totalHeight = totalHeight + height
 end
 
+local function formatStrArr(arr)
+    for index, value in ipairs(arr) do
+        arr[index] = string.format("%.2f", value)
+    end
+end
+
 local function moveSelected(target, input)
     local offsets = {}
     for i, value in ipairs(inwuts.pos) do
@@ -26,6 +32,7 @@ local function moveSelected(target, input)
                 pos[i] = pos[i] + offsets[i]
             end
             set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
+            formatStrArr(pos)
             MGE.modData.parsed.env_obj[v.id].props.pos = table.concat(pos, " ")
         end
     end
@@ -73,6 +80,7 @@ local function adjustColor(target, input)
     for _, v in pairs(MGE.modData.objects) do
         if v.selected then
             set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
+            formatStrArr(color)
             MGE.modData.parsed.env_obj[v.id].props.color = table.concat(color, " ")
         end
     end
