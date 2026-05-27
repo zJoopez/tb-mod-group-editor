@@ -53,8 +53,9 @@ function MGE.quit()
 end
 
 add_hook("match_begin", MGE.hookname, function()
-    set_camera_mode(0)
+    local path = MGE.modPath
     MGE.updateSource()
+    if path ~= MGE.modPath then set_camera_mode(0) end
     if Main.window.displayed then
         Main.page = 1
         MGE.window.updateWindow(false)
