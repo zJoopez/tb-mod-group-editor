@@ -40,32 +40,36 @@ end
 
 local function rotSelected(target, input)
     local pivot = RotatingOld.GetSelectionPivot()
-    local delta = { 0, 0, 0 }
-    delta[target] = math.rad(tonumber(input) or 0)
+    local offsets = {}
+    for i, value in ipairs(inwuts.rot) do
+        offsets[i] = math.rad(tonumber(value.textfieldstr[1]) or 0)
+    end
 
     for _, v in pairs(MGE.modData.objects) do
         if v.selected then
-            local m = get_obj_rot(v.id - 1)
-            local mtb = Utils3D.MatrixToMatrixTB(m)
-            set_obj_rot_m(v.id - 1, mtb)
-            print("done")
-            print("In: " .. v.id .. " rot: " .. v.rot.x .. ", " .. v.rot.y .. ", " .. v.rot.z)
-            -- pre-convert rot to radians once per object, outside any further calls
-            local rx, ry, rz = math.rad(v.rot.x), math.rad(v.rot.y), math.rad(v.rot.z)
-            -- local rx, ry, rz = v.rot.x, v.rot.y, v.rot.z
+            -- local rot = Utils3D.GetEulerFromMatrixTB(get_obj_rot(v.id -1))
+            local rot = { MGE.modData.parsed.env_obj[v.id].props.rot:match("(%S+)%s+(%S+)%s+(%S+)") }
+            local pos = { get_obj_pos(v.id - 1) }
+            -- print("real")
+            -- print_r(rot)
 
-            local px, py, pz = RotatingOld.SetRotPos(
-                v.pos[1], v.pos[2], v.pos[3],
+            local outPos = RotatingOld.SetRotPos(
+                pos[1], pos[2], pos[3],
                 pivot.x, pivot.y, pivot.z,
-                delta[1], delta[2], delta[3]
+                offsets[1], offsets[2], offsets[3]
             )
-            local outx, outy, outz = RotatingOld.SetRotOffset(
-                rx, ry, rz,
-                delta[1], delta[2], delta[3]
+            local outRot = RotatingOld.SetRotOffset(
+            -- math.rad(rot.x), math.rad(rot.y), math.rad(rot.z),
+                math.rad(tonumber(rot[1])), math.rad(tonumber(rot[2])), math.rad(tonumber(rot[3])),
+                offsets[1], offsets[2], offsets[3]
             )
-            print("Out: " .. v.id .. " rot: " .. outx .. ", " .. outy .. ", " .. outz)
-            set_obj_rot(v.id - 1, math.rad(outx), math.rad(outy), math.rad(outz))
-            set_obj_pos(v.id - 1, px, py, pz)
+            set_obj_rot(v.id - 1, math.rad(outRot[1]), math.rad(outRot[2]), math.rad(outRot[3]))
+            set_obj_pos(v.id - 1, outPos[1], outPos[2], outPos[3])
+
+            formatStrArr(outRot)
+            formatStrArr(outPos)
+            MGE.modData.parsed.env_obj[v.id].props.rot = table.concat(outRot, " ")
+            MGE.modData.parsed.env_obj[v.id].props.pos = table.concat(outPos, " ")
         end
     end
 end
@@ -147,9 +151,9 @@ end
 
 function container.create(container)
     inwuts.pos = createRow("Pos", container, 3, moveSelected)
-    local rotInputs = createRow("Rot", container, 3, rotSelected)
+    inwuts.rot = createRow("Rot", container, 3, rotSelected)
     createRow("Color", container, 0, nil)
-    inwuts.color = createRow(nil, container, 4, adjustColor, {"", "", "", "255"})
+    inwuts.color = createRow(nil, container, 4, adjustColor, { "", "", "", "255" })
 end
 
 return container

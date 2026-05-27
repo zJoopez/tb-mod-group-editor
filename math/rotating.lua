@@ -48,7 +48,7 @@ local function quaternionToEuler(q)
     local cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
     local yaw = math.atan2(siny_cosp, cosy_cosp)
 
-    return math.deg(roll), math.deg(pitch), math.deg(yaw)
+    return { math.deg(roll), math.deg(pitch), math.deg(yaw) }
 end
 
 local function quaternionMultiply(q1, q2)
@@ -61,7 +61,7 @@ local function quaternionMultiply(q1, q2)
 end
 
 function RotatingOld.SetRotOffset(x, y, z, ox, oy, oz)
- print("SetRotOffset input: " .. x .. ", " .. y .. ", " .. z .. ", " .. ox .. ", " ..oy .. ", " .. oz)
+    -- print("SetRotOffset input: " .. x .. ", " .. y .. ", " .. z .. ", " .. ox .. ", " .. oy .. ", " .. oz)
     local currentQuat = eulerToQuaternion(x, y, z)
     local offsetQuat = eulerToQuaternion(-ox, -oy, -oz)
     local resultQuat = quaternionMultiply(currentQuat, offsetQuat)
@@ -80,7 +80,7 @@ function RotatingOld.SetRotPos(x, y, z, px, py, pz, ox, oy, oz)
     x, y, z = rotateZ(x, y, z, oz) -- Rotate around Z axis
 
     -- Translate object back to its new position
-    return x + px, y + py, z + pz
+    return { x + px, y + py, z + pz }
 end
 
 function RotateObjectAroundPivot(obj, pivot, rx, ry, rz)
@@ -111,6 +111,7 @@ function RotateObjectAroundPivot(obj, pivot, rx, ry, rz)
     obj.rotMatrix = newRotMatrix
     obj.rotMatrixTB = Utils3D.MatrixToMatrixTB(newRotMatrix)
 end
+
 function RotatingOld.GetSelectionPivot()
     local sumX, sumY, sumZ = 0, 0, 0
     local n = 0
