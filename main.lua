@@ -27,6 +27,7 @@ FileHandler = dofile(MGE.scriptPath .. "file_handler.lua")
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod
     MGE.modPath = find_mod(MGE.modName)
+    if(MGE.modPath == "modmaker/modmaker.tbm") then MGE.modPath = "modmaker.tbm" end --fixes modmaker setting a wrong source
     if MGE.modPath then
         MGE.modData = dofile(MGE.scriptPath .. "mod_export.lua")
         print("Object list updated")
@@ -37,6 +38,7 @@ function MGE.updateSource()
 end
 
 function MGE.loadMod()
+    runCmd("lm " .. "classic") --lm requires actually swapping mod, maybe bypass by swapping between 2 names later
     runCmd("lm " .. MGE.outputName)
 end
 
