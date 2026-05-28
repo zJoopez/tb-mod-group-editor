@@ -149,11 +149,53 @@ local function createRow(label, container, inputCount, func, defaultValue)
     return inputs
 end
 
+---comment
+---@param container UIElement
+---@param funcs function[]
+---@param names string[]
+---@return table
+local function createButtonRow(container, funcs,  names)
+    local row = container:addChild({
+        pos = { 0, totalHeight },
+        size = { container.size.w, 30 },
+        interactive = true,
+    }, true)
+
+    local columnSize = row.size.w / #funcs
+    local width = 0
+    local btns = {}
+
+    for i, value in ipairs(funcs) do
+        local btn = row:addChild({
+            pos = { width, 0 },
+            size = { columnSize, row.size.h },
+            interactive = true,
+            bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+            hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
+            pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
+        }, true)
+        btn:addMouseUpHandler(value)
+        btn:addAdaptedText(names[i])
+        btns[i] = btn
+        width = width + columnSize
+    end
+
+    updateContentHeight(row.size.h)
+    return btns
+end
+
 function container.create(container)
     inwuts.pos = createRow("Pos", container, 3, moveSelected)
     inwuts.rot = createRow("Rot", container, 3, rotSelected)
     createRow("Color", container, 0, nil)
     inwuts.color = createRow(nil, container, 4, adjustColor, { "", "", "", "255" })
+    
+    updateContentHeight(margin)
+    local duplicate = function()
+        print("uwu")
+    end
+    local funcs = {duplicate}
+    createButtonRow(container, funcs, {"duplicate"})
 end
 
 return container
