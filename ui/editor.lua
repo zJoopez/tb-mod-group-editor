@@ -1,10 +1,6 @@
 local container = {}
 dofile(MGE.scriptPath .. "math/rotating.lua")
 
--- debug junk
--- dofile("chatlog/chatlog.lua")
--- runCmd("lm scooter_jump_x_grind_mp.tbm")
-
 local totalHeight = 0
 local margin = 10
 
@@ -60,7 +56,7 @@ local function rotSelected(target, input)
             )
             local outRot = RotatingOld.SetRotOffset(
             -- math.rad(rot.x), math.rad(rot.y), math.rad(rot.z),
-                math.rad(tonumber(rot[1])), math.rad(tonumber(rot[2])), math.rad(tonumber(rot[3])),
+                math.rad(tonumber(rot[1]) or 0), math.rad(tonumber(rot[2]) or 0), math.rad(tonumber(rot[3]) or 0),
                 offsets[1], offsets[2], offsets[3]
             )
             set_obj_rot(v.id - 1, math.rad(outRot[1]), math.rad(outRot[2]), math.rad(outRot[3]))
@@ -154,7 +150,7 @@ end
 ---@param funcs function[]
 ---@param names string[]
 ---@return table
-local function createButtonRow(container, funcs,  names)
+local function createButtonRow(container, funcs, names)
     local row = container:addChild({
         pos = { 0, totalHeight },
         size = { container.size.w, 30 },
@@ -189,13 +185,13 @@ function container.create(container)
     inwuts.rot = createRow("Rot", container, 3, rotSelected)
     createRow("Color", container, 0, nil)
     inwuts.color = createRow(nil, container, 4, adjustColor, { "", "", "", "255" })
-    
+
     updateContentHeight(margin)
     local duplicate = function()
         print("uwu")
     end
-    local funcs = {duplicate}
-    createButtonRow(container, funcs, {"duplicate"})
+    local funcs = { duplicate }
+    createButtonRow(container, funcs, { "duplicate" })
 end
 
 return container

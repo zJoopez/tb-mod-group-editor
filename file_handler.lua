@@ -1,72 +1,55 @@
 local FileHandler = {}
 
----@class FileParserBlock
----@field kind "env_obj"|"env_obj_joint"
----@field header string
----@field lines string[]
-
 ---@class FileParserEnvObj
 ---@field id number
----@field header string
 ---@field props table<string, string>
+---@field selected boolean?
+---@field kind string
 
 ---@class FileParserEnvObjJoint
 ---@field id number
 ---@field obj1 number
 ---@field obj2 number
----@field header string
 ---@field props table<string, string>
+---@field selected boolean?
+---@field kind string
 
 ---@class FileParserResult
----@field env_obj table<number, FileParserEnvObj>?
+---@field env_obj table<number, FileParserEnvObj>
 ---@field env_obj_joint table<number, FileParserEnvObjJoint>
----@field blocks FileParserBlock[]
 ---@field ignores string[]
 
 local indent = "   "
 
 function FileHandler.ParseMod(path)
     local file = Files.Open(path, FILES_MODE_READONLY)
-    if not file then
-        return nil
-    end
-
-    local data = file:readAll()
-    file:close()
-
-    local lines = {}
-    if type(data) == "string" then
-        for line in (data .. "\n"):gmatch("(.-)\n") do
-            lines[#lines + 1] = line
-        end
-    else
-        lines = data
-    end
+    if not file then return nil end
 
     ---@type FileParserResult
     local parser = {
         env_obj = {},
         env_obj_joint = {},
-        blocks = {},
         ignores = {}
     }
 
+    local lines = file:readAll()
+    file:close()
+
     local i = 1
     while i <= #lines do
-        local line = lines[i]
-        local kind, header
+        local kind, line
+        line = lines[i]
 
         if line:match("^env_obj%s+%d+") then
             kind = "env_obj"
-            header = line
         elseif line:match("^env_obj_joint%s+") then
             kind = "env_obj_joint"
-            header = line
         end
 
         if kind then
-            local block = { kind = kind, header = header, lines = { header } }
+            local block = { kind = kind, header = line, lines = {} }
             i = i + 1
+
             while i <= #lines and lines[i]:match("^%s+") do
                 block.lines[#block.lines + 1] = lines[i]
                 i = i + 1
@@ -78,20 +61,17 @@ function FileHandler.ParseMod(path)
             else
                 parser.env_obj_joint[obj.id] = obj
             end
-
-            parser.blocks[#parser.blocks + 1] = block
         else
             parser.ignores[#parser.ignores + 1] = line
             i = i + 1
         end
     end
-
     return parser
 end
 
 function FileHandler.parseBlock(block)
     ---@type FileParserEnvObj|FileParserEnvObjJoint
-    local obj = { header = block.header, props = {} }
+    local obj = { kind = block.kind, props = {} }
 
     if block.kind == "env_obj" then
         obj.id = tonumber(block.header:match("env_obj%s+(%d+)"))
@@ -102,8 +82,8 @@ function FileHandler.parseBlock(block)
         obj.obj2 = tonumber(c)
     end
 
-    for j = 2, #block.lines do -- first line handled above
-        local key, value = block.lines[j]:match("^%s*(%S+)%s*(.-)%s*$")
+    for _, line in ipairs(block.lines) do
+        local key, value = line:match("^%s*(%S+)%s*(.-)%s*$")
         if key then
             obj.props[key] = value
         end
@@ -116,7 +96,8 @@ end
 ---@param objects table<number, FileParserEnvObj | FileParserEnvObjJoint>
 local function writeParsedEnvObj(file, objects)
     for _, obj in pairs(objects) do
-        file:writeLine(obj.header)
+        local header = table.concat({ obj.kind, obj.id, obj.obj1, obj.obj2 }, " ")
+        file:writeLine(header)
         for key, value in pairs(obj.props) do
             file:writeLine(indent .. key .. " " .. value)
         end
@@ -128,9 +109,7 @@ end
 ---@return boolean
 function FileHandler.WriteMod(parser, path)
     local file = Files.Open(path, FILES_MODE_WRITE)
-    if not file then
-        return false
-    end
+    if not file then return false end
 
     -- Write ignored lines first (headers, gamerules, etc.)
     for _, line in ipairs(parser.ignores) do

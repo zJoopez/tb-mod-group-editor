@@ -55,26 +55,13 @@ MAX_DYNAMIC_ENV_OBJECTS = 48
 EnvObject = {}
 EnvObject.__index = EnvObject
 
--- Function to convert 4x4 rotation matrix to Euler XYZ angles (in degrees) using UIElement3D library
-local function matrix_to_euler_xyz(matrix)
-    print_r(matrix)
-    local m = matrix
-    local R = {
-        { m[1], m[5], m[9] },
-        { m[2], m[6], m[10] },
-        { m[3], m[7], m[11] }
-    }
-    local e = Utils3D.GetEulerFromMatrix(R, EULER_XYZ)
-    local function c(v) return math.abs(v) < 1e-9 and 0 or v end
-    return { x = c(e.x), y = c(e.y), z = c(e.z) }
-end
 function ModEnvObjects:reloadObjects()
     ---@type FileParserResult
     ModEnvObjects.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
 
     for i = 0, MAX_ENV_OBJECTS - 1, 1 do
         -- for i = 1, 10 - 1, 1 do
-        if get_obj_pos(i) then
+        if get_obj_pos(i) ~= nil then
             local obj = {}
             local color = get_obj_color(i)
             obj.id = i + 1
@@ -94,9 +81,9 @@ function ModEnvObjects:reloadObjects()
             obj.vis = get_obj_vis(i)
 
             --- imagine sir not providing all object data
-            if ModEnvObjects.parsed and ModEnvObjects.parsed.env_obj and ModEnvObjects.parsed.env_obj[obj.id] then
+            if  ModEnvObjects.parsed.env_obj[obj.id] then
                 local item = ModEnvObjects.parsed.env_obj[obj.id]
-                if item.props.force then
+                if item.props.force ~= nil then
                     local fx, fy, fz = item.props.force:match("(%S+)%s+(%S+)%s+(%S+)")
                     obj.force = { x = tonumber(fx), y = tonumber(fy), z = tonumber(fz) }
                 end

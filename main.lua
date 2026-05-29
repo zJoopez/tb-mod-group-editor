@@ -77,3 +77,8 @@ MGE.updateSource()
 
 -- Load UI
 MGE.window = dofile(MGE.scriptPath .. "ui/main.lua")
+
+
+-- debug junk
+-- dofile("chatlog/chatlog.lua")
+-- runCmd("lm scooter_jump_x_grind_mp.tbm")
