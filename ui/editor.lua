@@ -43,11 +43,8 @@ local function rotSelected(target, input)
 
     for _, v in pairs(MGE.modData.objects) do
         if v.selected then
-            -- local rot = Utils3D.GetEulerFromMatrixTB(get_obj_rot(v.id -1))
             local rot = { MGE.modData.parsed.env_obj[v.id].props.rot:match("(%S+)%s+(%S+)%s+(%S+)") }
             local pos = { get_obj_pos(v.id - 1) }
-            -- print("real")
-            -- print_r(rot)
 
             local outPos = RotatingOld.SetRotPos(
                 pos[1], pos[2], pos[3],
@@ -55,7 +52,6 @@ local function rotSelected(target, input)
                 offsets[1], offsets[2], offsets[3]
             )
             local outRot = RotatingOld.SetRotOffset(
-            -- math.rad(rot.x), math.rad(rot.y), math.rad(rot.z),
                 math.rad(tonumber(rot[1]) or 0), math.rad(tonumber(rot[2]) or 0), math.rad(tonumber(rot[3]) or 0),
                 offsets[1], offsets[2], offsets[3]
             )
@@ -171,7 +167,7 @@ local function createButtonRow(container, funcs, names)
             pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
         }, true)
         btn:addMouseUpHandler(value)
-        btn:addAdaptedText(names[i])
+        btn:addAdaptedText(names[i] or "")
         btns[i] = btn
         width = width + columnSize
     end
@@ -186,6 +182,36 @@ local function shallowCopy(t)
     return copy
 end
 
+local function duplicate()
+    local selectedObjs = {}
+    for _, obj in ipairs(MGE.modData.parsed.env_obj) do
+        if obj.selected then
+            table.insert(selectedObjs, obj)
+        end
+    end
+
+    for _, obj in ipairs(selectedObjs) do
+        local taberu
+        if obj.props.flag ~= "0" then
+            taberu = MGE.modData.freeIds.static
+        else
+            taberu = MGE.modData.freeIds.dynamic
+        end
+
+        local newId = taberu[1]
+        if not newId then
+            print("Not enough objects available")
+            return
+        end
+
+        MGE.modData.parsed.env_obj[newId] = shallowCopy(obj)
+
+        obj.id = newId
+        table.remove(taberu, 1)
+    end
+    MGE.save()
+end
+
 function container.create(container)
     inwuts.pos = createRow("Pos", container, 3, moveSelected)
     inwuts.rot = createRow("Rot", container, 3, rotSelected)
@@ -193,37 +219,7 @@ function container.create(container)
     inwuts.color = createRow(nil, container, 4, adjustColor, { "", "", "", "255" })
 
     updateContentHeight(margin)
-    local duplicate = function()
-        local selectedObjs = {}
-        for _, obj in ipairs(MGE.modData.parsed.env_obj) do
-            if obj.selected then
-                table.insert(selectedObjs, obj)
-            end
-        end
-
-        for _, obj in ipairs(selectedObjs) do
-            local taberu
-            if obj.props.flag ~= "0" then
-                taberu = MGE.modData.freeIds.static
-            else
-                taberu = MGE.modData.freeIds.dynamic
-            end
-
-            local newId = taberu[1]
-            if not newId then
-                print("Not enough objects available")
-                return
-            end
-
-            MGE.modData.parsed.env_obj[newId] = shallowCopy(obj)
-
-            obj.id = newId
-            table.remove(taberu, 1)
-        end
-        MGE.save()
-    end
-    local funcs = { duplicate }
-    createButtonRow(container, funcs, { "duplicate" })
+    createButtonRow(container, { duplicate }, { "duplicate" })
 end
 
 return container

@@ -74,12 +74,12 @@ function FileHandler.parseBlock(block)
     local obj = { kind = block.kind, props = {} }
 
     if block.kind == "env_obj" then
-        obj.id = tonumber(block.header:match("env_obj%s+(%d+)"))
+        obj.id = tonumber(block.header:match("env_obj%s+(%d+)")) or 0
     elseif block.kind == "env_obj_joint" then
         local a, b, c = block.header:match("env_obj_joint%s+(%d+)%s+(%d+)%s+(%d+)")
-        obj.id = tonumber(a)
-        obj.obj1 = tonumber(b)
-        obj.obj2 = tonumber(c)
+        obj.id = tonumber(a) or 0
+        obj.obj1 = tonumber(b) or 0
+        obj.obj2 = tonumber(c) or 0
     end
 
     for _, line in ipairs(block.lines) do

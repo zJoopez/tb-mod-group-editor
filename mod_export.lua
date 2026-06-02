@@ -1,4 +1,4 @@
-ModEnvObjects = { objects = {} }
+ModEnvObjects = {}
 ---@class XYZ
 ---@field x number
 ---@field y number
@@ -63,12 +63,13 @@ EnvObject.__index = EnvObject
 function ModEnvObjects:reloadObjects()
     ---@type FileParserResult
     ModEnvObjects.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
+    ModEnvObjects.objects = {}
     ModEnvObjects.freeIds = { nonStatic = {}, static = {} }
 
     for i = 0, MAX_ENV_OBJECTS - 1, 1 do
+        local obj = {}
+        obj.id = i + 1
         if get_obj_pos(i) ~= nil then
-            local obj = {}
-            obj.id = i + 1
             obj.pos = { get_obj_pos(i) }
             obj.sides = { get_obj_sides(i) }
             obj.rot = get_obj_rot(i)
@@ -92,12 +93,12 @@ function ModEnvObjects:reloadObjects()
             end
 
             setmetatable(obj, EnvObject)
-            ModEnvObjects.objects[#ModEnvObjects.objects + 1] = obj
+            ModEnvObjects.objects[obj.id] = obj
         else
             if (i > MAX_NONSTATIC_OBJECTS) then
-                ModEnvObjects.freeIds.static[#ModEnvObjects.freeIds.static + 1] = i
+                ModEnvObjects.freeIds.static[#ModEnvObjects.freeIds.static + 1] = obj.id
             else
-                ModEnvObjects.freeIds.nonStatic[#ModEnvObjects.freeIds.nonStatic + 1] = i
+                ModEnvObjects.freeIds.nonStatic[#ModEnvObjects.freeIds.nonStatic + 1] = obj.id
             end
         end
     end

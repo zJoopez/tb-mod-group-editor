@@ -119,9 +119,8 @@ function obj_selector.create(view, fullList, toggleAll)
             listElement:uiText(v.id, nil, nil, nil, nil, 0.7, nil, nil, nil)
         end)
         TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
-            local id = (Main.page - 1) * Main.pageSize + i
-            MGE.modData.objects[id].selected = value
-            MGE.modData.parsed.env_obj[id].selected = value
+            v.selected = value
+            MGE.modData.parsed.env_obj[v.id].selected = value
             if value then highlight(v) end
         end)
 
@@ -132,11 +131,11 @@ function obj_selector.create(view, fullList, toggleAll)
 
     topBar_l:addAdaptedText("Toggle All", topBar_l.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
     TBMenu:spawnToggle2(topBar_l, toggleRect, toggleAll, function(value)
-        for i = 1, #fullList do
-            MGE.modData.objects[i].selected = value
-            MGE.modData.parsed.env_obj[i].selected = value
+        for _, obj in pairs(fullList) do
+            obj.selected = value
+            MGE.modData.parsed.env_obj[obj.id].selected = value
         end
-        Main.updateWindow(not toggleAll)
+        Main.updateWindow(value)
     end)
     local pageBtnNext = topBar_r:addChild({
         interactive = true,
