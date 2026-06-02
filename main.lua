@@ -4,6 +4,7 @@
 
 --- /ls mge/main.lua
 --- /lm mge-modmaker.tbm
+
 ---@class MGE
 ---@field scriptPath string
 ---@field outputName string
@@ -75,10 +76,9 @@ end)
 ---start
 MGE.updateSource()
 
--- Load UI
 MGE.window = dofile(MGE.scriptPath .. "ui/main.lua")
 
 
 -- debug junk
--- dofile("chatlog/chatlog.lua")
--- runCmd("lm scooter_jump_x_grind_mp.tbm")
+dofile("chatlog/chatlog.lua")
+runCmd("lm torii.tbm")

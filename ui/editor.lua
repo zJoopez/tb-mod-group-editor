@@ -180,6 +180,12 @@ local function createButtonRow(container, funcs, names)
     return btns
 end
 
+local function shallowCopy(t)
+    local copy = {}
+    for k, v in pairs(t) do copy[k] = v end
+    return copy
+end
+
 function container.create(container)
     inwuts.pos = createRow("Pos", container, 3, moveSelected)
     inwuts.rot = createRow("Rot", container, 3, rotSelected)
@@ -188,7 +194,33 @@ function container.create(container)
 
     updateContentHeight(margin)
     local duplicate = function()
-        print("uwu")
+        local selectedObjs = {}
+        for _, obj in ipairs(MGE.modData.parsed.env_obj) do
+            if obj.selected then
+                table.insert(selectedObjs, obj)
+            end
+        end
+
+        for _, obj in ipairs(selectedObjs) do
+            local taberu
+            if obj.props.flag ~= "0" then
+                taberu = MGE.modData.freeIds.static
+            else
+                taberu = MGE.modData.freeIds.dynamic
+            end
+
+            local newId = taberu[1]
+            if not newId then
+                print("Not enough objects available")
+                return
+            end
+
+            MGE.modData.parsed.env_obj[newId] = shallowCopy(obj)
+
+            obj.id = newId
+            table.remove(taberu, 1)
+        end
+        MGE.save()
     end
     local funcs = { duplicate }
     createButtonRow(container, funcs, { "duplicate" })

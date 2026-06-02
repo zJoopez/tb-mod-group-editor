@@ -15,8 +15,8 @@ local FileHandler = {}
 ---@field kind string
 
 ---@class FileParserResult
----@field env_obj table<number, FileParserEnvObj>
----@field env_obj_joint table<number, FileParserEnvObjJoint>
+---@field env_obj table<integer, FileParserEnvObj>
+---@field env_obj_joint table<integer, FileParserEnvObjJoint>
 ---@field ignores string[]
 
 local indent = "   "

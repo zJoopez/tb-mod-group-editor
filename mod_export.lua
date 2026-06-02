@@ -14,7 +14,7 @@ ModEnvObjects = { objects = {} }
 ---@field id integer
 ---@field pos number[]
 ---@field rot number[]
----@field color RGBA
+---@field color number[]
 ---@field sides number[]
 ---@field flag FLAGS
 ---@field bounce number
@@ -30,6 +30,11 @@ ModEnvObjects = { objects = {} }
 ---@class ModExport
 ---@field objects EnvObject[]
 ---@field parsed FileParserResult
+---@field freeIds FreeIdHolder
+
+---@class FreeIdHolder
+---@field dynamic integer[]
+---@field static integer[]
 
 ---@enum FLAGS
 FLAGS = {
@@ -51,29 +56,23 @@ SHAPE = {
 
 require('toriui.uielement3d')
 MAX_ENV_OBJECTS = 256
-MAX_DYNAMIC_ENV_OBJECTS = 48
+MAX_NONSTATIC_OBJECTS = 48
 EnvObject = {}
 EnvObject.__index = EnvObject
 
 function ModEnvObjects:reloadObjects()
     ---@type FileParserResult
     ModEnvObjects.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
+    ModEnvObjects.freeIds = { nonStatic = {}, static = {} }
 
     for i = 0, MAX_ENV_OBJECTS - 1, 1 do
-        -- for i = 1, 10 - 1, 1 do
         if get_obj_pos(i) ~= nil then
             local obj = {}
-            local color = get_obj_color(i)
             obj.id = i + 1
             obj.pos = { get_obj_pos(i) }
             obj.sides = { get_obj_sides(i) }
             obj.rot = get_obj_rot(i)
-            obj.color = {
-                r = math.floor((color[1] or 0) * 255),
-                g = math.floor((color[2] or 0) * 255),
-                b = math.floor((color[3] or 0) * 255),
-                a = math.floor((color[4] or 0) * 255),
-            }
+            obj.color = get_obj_color(i)
             obj.flag = get_obj_flag(i)
             obj.bounce = get_obj_bounce(i)
             obj.mass = get_obj_mass(i)
@@ -81,7 +80,7 @@ function ModEnvObjects:reloadObjects()
             obj.vis = get_obj_vis(i)
 
             --- imagine sir not providing all object data
-            if  ModEnvObjects.parsed.env_obj[obj.id] then
+            if ModEnvObjects.parsed.env_obj[obj.id] then
                 local item = ModEnvObjects.parsed.env_obj[obj.id]
                 if item.props.force ~= nil then
                     local fx, fy, fz = item.props.force:match("(%S+)%s+(%S+)%s+(%S+)")
@@ -94,6 +93,12 @@ function ModEnvObjects:reloadObjects()
 
             setmetatable(obj, EnvObject)
             ModEnvObjects.objects[#ModEnvObjects.objects + 1] = obj
+        else
+            if (i > MAX_NONSTATIC_OBJECTS) then
+                ModEnvObjects.freeIds.static[#ModEnvObjects.freeIds.static + 1] = i
+            else
+                ModEnvObjects.freeIds.nonStatic[#ModEnvObjects.freeIds.nonStatic + 1] = i
+            end
         end
     end
 end
