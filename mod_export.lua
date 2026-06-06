@@ -95,7 +95,7 @@ function ModEnvObjects:reloadObjects()
             setmetatable(obj, EnvObject)
             ModEnvObjects.objects[obj.id] = obj
         else
-            if (i > MAX_NONSTATIC_OBJECTS) then
+            if (i >= MAX_NONSTATIC_OBJECTS) then
                 ModEnvObjects.freeIds.static[#ModEnvObjects.freeIds.static + 1] = obj.id
             else
                 ModEnvObjects.freeIds.nonStatic[#ModEnvObjects.freeIds.nonStatic + 1] = obj.id
