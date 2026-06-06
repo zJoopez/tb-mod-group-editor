@@ -182,14 +182,7 @@ local function shallowCopy(t)
 end
 
 local function duplicate()
-    local selectedObjs = {}
     for _, obj in ipairs(MGE.modData.parsed.env_obj) do
-        if obj.selected then
-            table.insert(selectedObjs, obj)
-        end
-    end
-
-    for _, obj in ipairs(selectedObjs) do
         local taberu
         if obj.props.flag ~= "0" then
             taberu = MGE.modData.freeIds.static
@@ -211,6 +204,22 @@ local function duplicate()
     MGE.save()
 end
 
+local function delete()
+    print("ehe")
+    for i = #MGE.modData.parsed.env_obj, 1, -1 do -- iterating backwards to prevent index issues when removing
+        local obj = MGE.modData.parsed.env_obj[i]
+        if obj.selected then
+            table.remove(MGE.modData.parsed.env_obj, i)
+            if obj.props.flag ~= "0" then
+                table.insert(MGE.modData.freeIds.static, obj.id)
+            else
+                table.insert(MGE.modData.freeIds.dynamic, obj.id)
+            end
+        end
+    end
+    MGE.save()
+end
+
 function container.create(container)
     inwuts.pos = createRow("Pos", container, 3, moveSelected)
     inwuts.rot = createRow("Rot", container, 3, rotSelected)
@@ -218,7 +227,7 @@ function container.create(container)
     inwuts.color = createRow(nil, container, 4, adjustColor, { "", "", "", "255" })
 
     updateContentHeight(margin)
-    createButtonRow(container, { duplicate }, { "duplicate" })
+    createButtonRow(container, { duplicate, delete }, { "duplicate", "delete" })
 end
 
 return container

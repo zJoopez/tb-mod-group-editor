@@ -1,15 +1,15 @@
 local FileHandler = {}
 
 ---@class FileParserEnvObj
----@field id number
+---@field id integer
 ---@field props table<string, string>
 ---@field selected boolean?
 ---@field kind string
 
 ---@class FileParserEnvObjJoint
----@field id number
----@field obj1 number
----@field obj2 number
+---@field id integer
+---@field obj1 integer
+---@field obj2 integer
 ---@field props table<string, string>
 ---@field selected boolean?
 ---@field kind string
