@@ -26,6 +26,7 @@ ModEnvObjects = {}
 ---@field use_model number
 ---@field model_name string
 ---@field selected boolean? --custom
+---@field is_static fun(self: EnvObject): boolean
 
 ---@class ModExport
 ---@field objects EnvObject[]
@@ -57,8 +58,15 @@ SHAPE = {
 require('toriui.uielement3d')
 MAX_ENV_OBJECTS = 256
 MAX_NONSTATIC_OBJECTS = 48
-EnvObject = {}
-EnvObject.__index = EnvObject
+
+SHAPE_NAMES = {}
+for name, value in pairs(SHAPE) do
+    SHAPE_NAMES[value] = name
+end
+
+local function is_static(self)
+    return bit.band(self.flag, FLAGS.STATIC) ~= 0
+end
 
 function ModEnvObjects:reloadObjects()
     ---@type FileParserResult
@@ -67,6 +75,7 @@ function ModEnvObjects:reloadObjects()
     ModEnvObjects.freeIds = { nonStatic = {}, static = {} }
 
     for i = 0, MAX_ENV_OBJECTS - 1, 1 do
+        ---@type EnvObject
         local obj = {}
         obj.id = i + 1
         if get_obj_pos(i) ~= nil then
@@ -81,18 +90,16 @@ function ModEnvObjects:reloadObjects()
             obj.vis = get_obj_vis(i)
 
             --- imagine sir not providing all object data
-            if ModEnvObjects.parsed.env_obj[obj.id] then
-                local item = ModEnvObjects.parsed.env_obj[obj.id]
-                if item.props.force ~= nil then
-                    local fx, fy, fz = item.props.force:match("(%S+)%s+(%S+)%s+(%S+)")
-                    obj.force = { x = tonumber(fx), y = tonumber(fy), z = tonumber(fz) }
-                end
-                obj.friction = tonumber(item.props.friction)
-                obj.model_name = item.props.model_name
-                obj.use_model = tonumber(item.props.use_model)
-            end
+            local item = ModEnvObjects.parsed.env_obj[obj.id]
+            local fx, fy, fz
+            if item.props.force ~= nil then fx, fy, fz = item.props.force:match("(%S+)%s+(%S+)%s+(%S+)") end
+            obj.force = { x = tonumber(fx) or 0, y = tonumber(fy) or 0, z = tonumber(fz) or 0 }
+            obj.friction = tonumber(item.props.friction) or 10000
+            obj.model_name = item.props.model_name
+            obj.use_model = tonumber(item.props.use_model) or 0
 
-            setmetatable(obj, EnvObject)
+            obj.is_static = is_static
+
             ModEnvObjects.objects[obj.id] = obj
         else
             if (i >= MAX_NONSTATIC_OBJECTS) then
@@ -102,15 +109,6 @@ function ModEnvObjects:reloadObjects()
             end
         end
     end
-end
-
-function EnvObject:is_static()
-    return bit.band(self.flag, FLAGS.STATIC) ~= 0
-end
-
-SHAPE_NAMES = {}
-for name, value in pairs(SHAPE) do
-    SHAPE_NAMES[value] = name
 end
 
 ModEnvObjects:reloadObjects()

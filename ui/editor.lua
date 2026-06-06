@@ -205,7 +205,6 @@ local function duplicate()
 end
 
 local function delete()
-    print("ehe")
     for i = #MGE.modData.parsed.env_obj, 1, -1 do -- iterating backwards to prevent index issues when removing
         local obj = MGE.modData.parsed.env_obj[i]
         if obj.selected then
