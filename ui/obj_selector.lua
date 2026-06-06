@@ -70,29 +70,7 @@ function obj_selector.create(view, fullList, toggleAll)
     local scrollableListHolder = UIElement:new({
         parent = listMainView,
         pos = { 0, 0 },
-        size = { listMainView.size.w - 25, listMainView.size.h }
-    })
-
-    -- Calculating scrollbar scale
-    -- When dealing with dynamically generated tables, you may need to run additional checks.
-    local scrollScale = (listMainView.size.h) / (#list * listElementHeight)
-
-    -- Creating the scroll bar
-    -- First creating a holder object, then attaching a scrollbar object to it.
-    local listScrollView = UIElement:new({
-        parent = listMainView,
-        pos = { -25, 0 },
-        size = { 25, listMainView.size.h }
-    })
-    local listScrollBar = UIElement:new({
-        parent = listScrollView,
-        pos = { 0, 0 },
-        size = { listScrollView.size.w, listScrollView.size.h * scrollScale },
-        interactive = true,
-        bgColor = { 0, 0, 0, 0.3 },
-        hoverColor = { 0, 0, 0, 0.5 },
-        pressedColor = { 0, 0, 0, 0.2 },
-        scrollEnabled = true
+        size = { listMainView.size.w - listElementHeight, listMainView.size.h }
     })
 
     ---@param obj EnvObject
@@ -119,13 +97,10 @@ function obj_selector.create(view, fullList, toggleAll)
             listElement:uiText(v.id, nil, nil, nil, nil, 0.7, nil, nil, nil)
         end)
         TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
-            v.selected = value
+            MGE.modData.objects[v.id].selected = value
             MGE.modData.parsed.env_obj[v.id].selected = value
             if value then highlight(v) end
         end)
-
-        -- Hiding every object, ones that need to be made visible will be activated upon running makeScrollBar(...)
-        listElement:hide()
         table.insert(listElements, listElement)
     end
 
@@ -173,8 +148,15 @@ function obj_selector.create(view, fullList, toggleAll)
         end
     end)
 
-    -- Calling makeScrollBar() method to make scrollable list
-    listScrollBar:makeScrollBar(scrollableListHolder, listElements, toReload, POS_SHIFT, 0.4)
+    --Creatig scrollbar
+    local scrollBar = TBMenu:spawnScrollBar(scrollableListHolder, #listElements, listElementHeight)
+    if (#listElements * listElementHeight > scrollableListHolder.size.h) then
+        for _, v in pairs(listElements) do
+            v:hide()
+        end
+        scrollableListHolder.scrollBar = scrollBar
+        scrollBar:makeScrollBar(scrollableListHolder, listElements, toReload)
+    end
 end
 
 return obj_selector
