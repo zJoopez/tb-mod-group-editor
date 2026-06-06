@@ -16,15 +16,15 @@ local function formatStrArr(arr)
     end
 end
 
-local function moveSelected(target, input)
+local function moveSelected()
     local offsets = {}
-    for i, value in ipairs(inwuts.pos) do
-        offsets[i] = tonumber(value.textfieldstr[1]) or 0
+    for i, input in ipairs(inwuts.pos) do
+        offsets[i] = tonumber(input.textfieldstr[1]) or 0
     end
     for _, v in pairs(MGE.modData.objects) do
         if v.selected then
             local pos = { get_obj_pos(v.id - 1) }
-            for i, value in ipairs(pos) do
+            for i, input in ipairs(pos) do
                 pos[i] = pos[i] + offsets[i]
             end
             set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
@@ -34,11 +34,11 @@ local function moveSelected(target, input)
     end
 end
 
-local function rotSelected(target, input)
+local function rotSelected()
     local pivot = RotatingOld.GetSelectionPivot()
     local offsets = {}
-    for i, value in ipairs(inwuts.rot) do
-        offsets[i] = math.rad(tonumber(value.textfieldstr[1]) or 0)
+    for i, input in ipairs(inwuts.rot) do
+        offsets[i] = math.rad(tonumber(input.textfieldstr[1]) or 0)
     end
 
     for _, v in pairs(MGE.modData.objects) do
@@ -66,10 +66,10 @@ local function rotSelected(target, input)
     end
 end
 
-local function adjustColor(target, input)
+local function adjustColor()
     local color = {}
-    for i, value in ipairs(inwuts.color) do
-        local n = tonumber(value.textfieldstr[1]) or 0
+    for i, input in ipairs(inwuts.color) do
+        local n = tonumber(input.textfieldstr[1]) or 0
         n = math.max(0, math.min(500, n))
         color[i] = n / 255
     end
@@ -82,7 +82,7 @@ local function adjustColor(target, input)
     end
 end
 
-local function createInput(container, target, onInputFunc)
+local function createInput(container, onInputFunc)
     local input = TBMenu:spawnTextField2(container, nil, "",
         "0.00",
         {
@@ -96,8 +96,7 @@ local function createInput(container, target, onInputFunc)
         })
     input:addKeyboardHandlers(nil, function(key)
         if key ~= 13 then return end --enter
-        local input = tonumber(input.textfieldstr[1]) or 0
-        onInputFunc(target, input)
+        onInputFunc()
     end)
     return input
 end
@@ -133,7 +132,7 @@ local function createRow(label, container, inputCount, func, defaultValue)
             size = { columnSize, row.size.h },
             interactive = true,
         }, true)
-        inputs[i] = createInput(inputContainer, i, func)
+        inputs[i] = createInput(inputContainer, func)
         if defaultValue then inputs[i].textfieldstr[1] = defaultValue[i] end
         width = width + columnSize
     end
