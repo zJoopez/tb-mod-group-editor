@@ -54,10 +54,7 @@ add_hook("match_begin", MGE.hookname, function()
     local path = MGE.modPath
     MGE.updateSource()
     if path ~= MGE.modPath then set_camera_mode(0) end
-    if Main.window.displayed then
-        Main.page = 1
-        MGE.window.updateWindow(false)
-    end
+    MGE.window.resetWindow()
 end)
 
 add_hook("key_up", MGE.hookname, function(key)
@@ -66,7 +63,7 @@ add_hook("key_up", MGE.hookname, function(key)
         Main.window:hide(false)
     else
         Main.window:show(false)
-        MGE.window.updateWindow(false)
+        MGE.window.updateWindow()
     end
 end)
 

@@ -1,5 +1,4 @@
 local obj_selector = {}
-require("toriui.uielement")
 
 POS_SHIFT = POS_SHIFT or { 0 }
 
@@ -13,8 +12,7 @@ end
 
 ---@param view UIElement
 ---@param fullList EnvObject[]
----@param toggleAll boolean
-local function create(view, fullList, toggleAll)
+local function create(view, fullList)
     -- Creating a global posShift table - this will store the last scrollbar position between script runs within one game session
     POS_SHIFT = POS_SHIFT or { 0 }
     ---@type EnvObject[]
@@ -104,11 +102,12 @@ local function create(view, fullList, toggleAll)
     end
 
     topBar_l:addAdaptedText("Toggle All", topBar_l.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
-    TBMenu:spawnToggle2(topBar_l, toggleRect, toggleAll, function(value)
+    TBMenu:spawnToggle2(topBar_l, toggleRect, Main.toggleAll, function(value)
+        Main.toggleAll = value
         for _, obj in ipairs(fullList) do
             obj.selected = value
         end
-        Main.updateWindow(value)
+        Main.updateWindow()
     end)
     local pageBtnNext = topBar_r:addChild({
         interactive = true,
@@ -126,7 +125,7 @@ local function create(view, fullList, toggleAll)
     pageBtnNext:addMouseUpHandler(function()
         if Main.page * Main.pageSize < #fullList then
             Main.page = Main.page + 1
-            Main.updateWindow(toggleAll)
+            Main.updateWindow()
         end
     end)
     txtPage:addAdaptedText(Main.pageStr, nil, nil, nil, CENTER, 0.7, nil, nil)
@@ -142,11 +141,11 @@ local function create(view, fullList, toggleAll)
     pageBtnPrev:addMouseUpHandler(function()
         if Main.page > 1 then
             Main.page = Main.page - 1
-            Main.updateWindow(toggleAll)
+            Main.updateWindow()
         end
     end)
 
-    --Creatig scrollbar
+    --Creating scrollbar
     local scrollBar = TBMenu:spawnScrollBar(scrollableListHolder, #listElements, listElementHeight)
     if (#listElements * listElementHeight > scrollableListHolder.size.h) then
         for _, v in pairs(listElements) do

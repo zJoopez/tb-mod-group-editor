@@ -5,7 +5,8 @@ require("toriui.uielement")
 ---@field pageStr string
 ---@field page integer
 ---@field pageSize integer
-Main = { page = 1, pageSize = 64 }
+---@field toggleAll boolean
+Main = { page = 1, pageSize = 64, toggleAll = false }
 
 local defaultPos = { 0, 0 }
 local margin = 10
@@ -92,18 +93,25 @@ local function setDynamicStrings()
     Main.pageStr = "Page " .. Main.page .. "/" .. math.max(math.ceil(#ModData.parsed.env_obj / Main.pageSize), 1)
 end
 
-local function createObjSelector(bool)
-    obj_selector.create(obj_selector_container, ModData.parsed.env_obj, bool)
+local function createObjSelector()
+    obj_selector.create(obj_selector_container, ModData.parsed.env_obj)
 end
 
 local function createEditor()
     editor.create(editorContainer)
 end
 
-function Main.updateWindow(bool)
+function Main.updateWindow()
+    if not Main.window.displayed then return end
     obj_selector_container:kill(true)
     setDynamicStrings()
-    createObjSelector(bool)
+    createObjSelector()
+end
+
+function Main.resetWindow()
+    Main.page = 1
+    Main.toggleAll = false
+    Main.updateWindow()
 end
 
 btnSave:addAdaptedText("Save")
