@@ -6,7 +6,7 @@ POS_SHIFT = POS_SHIFT or { 0 }
 local function slice(arr, start, stop)
     local result = {}
     for i = start, stop do
-        result[#result + 1] = arr[i]
+        table.insert(result, arr[i])
     end
     return result
 end
@@ -14,11 +14,11 @@ end
 ---@param view UIElement
 ---@param fullList EnvObject[]
 ---@param toggleAll boolean
-function obj_selector.create(view, fullList, toggleAll)
+local function create(view, fullList, toggleAll)
     -- Creating a global posShift table - this will store the last scrollbar position between script runs within one game session
     POS_SHIFT = POS_SHIFT or { 0 }
     ---@type EnvObject[]
-    local list = slice(fullList, Main.page * Main.pageSize - Main.pageSize - 1, Main.page * Main.pageSize)
+    local list = slice(fullList, (Main.page - 1) * Main.pageSize + 1, Main.page * Main.pageSize)
 
     -- Spawning a parent element for any object that needs to be reloaded every frame
     local toReload = UIElement:new({
@@ -83,7 +83,7 @@ function obj_selector.create(view, fullList, toggleAll)
     -- Populating the scrollable list with objects
     -- First, creating a table to store all list elements, then spawning them one-by-one and adding to the table
     local listElements = {}
-    for i, v in pairs(list) do
+    for i, v in ipairs(list) do
         local listElement = UIElement:new({
             parent = scrollableListHolder,
             pos = { 0, (i - 1) * listElementHeight },
@@ -97,8 +97,7 @@ function obj_selector.create(view, fullList, toggleAll)
             listElement:uiText(v.id, nil, nil, nil, nil, 0.7, nil, nil, nil)
         end)
         TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
-            ModData.objects[v.id].selected = value
-            ModData.parsed.env_obj[v.id].selected = value
+            v.selected = value
             if value then highlight(v) end
         end)
         table.insert(listElements, listElement)
@@ -106,9 +105,8 @@ function obj_selector.create(view, fullList, toggleAll)
 
     topBar_l:addAdaptedText("Toggle All", topBar_l.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
     TBMenu:spawnToggle2(topBar_l, toggleRect, toggleAll, function(value)
-        for _, obj in pairs(fullList) do
+        for _, obj in ipairs(fullList) do
             obj.selected = value
-            ModData.parsed.env_obj[obj.id].selected = value
         end
         Main.updateWindow(value)
     end)
@@ -158,5 +156,7 @@ function obj_selector.create(view, fullList, toggleAll)
         scrollBar:makeScrollBar(scrollableListHolder, listElements, toReload)
     end
 end
+
+obj_selector.create = create
 
 return obj_selector

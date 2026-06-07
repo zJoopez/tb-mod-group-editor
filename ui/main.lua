@@ -88,12 +88,12 @@ local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
 local editor = dofile(MGE.scriptPath .. "ui/editor.lua")
 
 local function setDynamicStrings()
-    titleObjCount:addAdaptedText("Objects " .. #ModData.objects .. "/" .. MAX_ENV_OBJECTS)
-    Main.pageStr = "Page " .. Main.page .. "/" .. math.max(math.ceil(#ModData.objects / Main.pageSize), 1)
+    titleObjCount:addAdaptedText("Objects " .. #ModData.parsed.env_obj .. "/" .. MAX_ENV_OBJECTS)
+    Main.pageStr = "Page " .. Main.page .. "/" .. math.max(math.ceil(#ModData.parsed.env_obj / Main.pageSize), 1)
 end
 
 local function createObjSelector(bool)
-    obj_selector.create(obj_selector_container, ModData.objects, bool)
+    obj_selector.create(obj_selector_container, ModData.parsed.env_obj, bool)
 end
 
 local function createEditor()

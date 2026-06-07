@@ -116,9 +116,9 @@ function RotatingOld.GetSelectionPivot()
     local sumX, sumY, sumZ = 0, 0, 0
     local n = 0
 
-    for _, p in ipairs(ModData.objects) do
-        if p.selected then
-            local pos = { get_obj_pos(p.id - 1) }
+    for _, obj in ipairs(ModData.parsed.env_obj) do
+        if obj.selected then
+            local pos = { get_obj_pos(obj.id - 1) }
             sumX = sumX + pos[1]
             sumY = sumY + pos[2]
             sumZ = sumZ + pos[3]

@@ -88,7 +88,7 @@ function ModData.reloadObjects()
             obj.vis = get_obj_vis(i)
 
             --- imagine sir not providing all object data
-            local item = ModData.parsed.env_obj[obj.id]
+            local item = ModData.parsed.env_obj[#ModData.objects + 1] or { props = {} }
             local fx, fy, fz
             if item.props.force ~= nil then fx, fy, fz = item.props.force:match("(%S+)%s+(%S+)%s+(%S+)") end
             obj.force = { tonumber(fx) or 0, tonumber(fy) or 0, tonumber(fz) or 0 }
@@ -97,12 +97,12 @@ function ModData.reloadObjects()
             obj.use_model = tonumber(item.props.use_model) or 0
             obj.is_static = is_static
 
-            ModData.objects[obj.id] = obj
+            table.insert(ModData.objects, obj)
         else
             if (i >= MAX_NONSTATIC_OBJECTS) then
-                ModData.freeIds.static[#ModData.freeIds.static + 1] = obj.id
+                table.insert(ModData.freeIds.static, obj.id)
             else
-                ModData.freeIds.nonStatic[#ModData.freeIds.nonStatic + 1] = obj.id
+                table.insert(ModData.freeIds.nonStatic, obj.id)
             end
         end
     end

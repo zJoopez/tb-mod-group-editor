@@ -21,15 +21,13 @@ local function moveSelected()
     for i, input in ipairs(inwuts.pos) do
         offsets[i] = tonumber(input.textfieldstr[1]) or 0
     end
-    for _, v in pairs(ModData.objects) do
+    for _, v in pairs(ModData.parsed.env_obj) do
         if v.selected then
-            local pos = { get_obj_pos(v.id - 1) }
-            for i, input in ipairs(pos) do
-                pos[i] = pos[i] + offsets[i]
-            end
+            local x, y, z = get_obj_pos(v.id - 1)
+            local pos = { x + offsets[1], y + offsets[2], z + offsets[3] }
             set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
             formatStrArr(pos)
-            ModData.parsed.env_obj[v.id].props.pos = table.concat(pos, " ")
+            v.props.pos = table.concat(pos, " ")
         end
     end
 end
@@ -41,9 +39,9 @@ local function rotSelected()
         offsets[i] = math.rad(tonumber(input.textfieldstr[1]) or 0)
     end
 
-    for _, v in pairs(ModData.objects) do
+    for _, v in pairs(ModData.parsed.env_obj) do
         if v.selected then
-            local rot = { ModData.parsed.env_obj[v.id].props.rot:match("(%S+)%s+(%S+)%s+(%S+)") }
+            local rot = { v.props.rot:match("(%S+)%s+(%S+)%s+(%S+)") }
             local pos = { get_obj_pos(v.id - 1) }
 
             local outPos = RotatingOld.SetRotPos(
@@ -60,8 +58,8 @@ local function rotSelected()
 
             formatStrArr(outRot)
             formatStrArr(outPos)
-            ModData.parsed.env_obj[v.id].props.rot = table.concat(outRot, " ")
-            ModData.parsed.env_obj[v.id].props.pos = table.concat(outPos, " ")
+            v.props.rot = table.concat(outRot, " ")
+            v.props.pos = table.concat(outPos, " ")
         end
     end
 end
@@ -73,11 +71,11 @@ local function adjustColor()
         n = math.max(0, math.min(500, n))
         color[i] = n / 255
     end
-    for _, v in pairs(ModData.objects) do
+    for _, v in pairs(ModData.parsed.env_obj) do
         if v.selected then
             set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
             formatStrArr(color)
-            ModData.parsed.env_obj[v.id].props.color = table.concat(color, " ")
+            v.props.color = table.concat(color, " ")
         end
     end
 end
@@ -182,11 +180,9 @@ local function shallowCopy(t)
 end
 
 local function duplicate()
-    print_r(ModData.parsed.env_obj)
-    for _, obj in ipairs(ModData.parsed.env_obj) do
-        print(obj.id, obj.selected)
-        if obj.selected then
-            print_r(obj)
+    for i = 1, #ModData.parsed.env_obj do
+        local obj = ModData.parsed.env_obj[i]
+        if obj and obj.selected then
             local freeIds
             if obj.props.flag ~= "0" then
                 freeIds = ModData.freeIds.static
@@ -199,11 +195,10 @@ local function duplicate()
                 print("Not enough objects available")
                 return
             end
-            print(newId)
 
             local copy = shallowCopy(obj)
             copy.id = newId
-            table.insert(ModData.parsed.env_obj, newId, copy)
+            table.insert(ModData.parsed.env_obj, copy)
             table.remove(freeIds, 1)
         end
     end

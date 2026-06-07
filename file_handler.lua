@@ -15,8 +15,8 @@ FileHandler = {}
 ---@field kind string
 
 ---@class FileParserResult
----@field env_obj table<integer, FileParserEnvObj>
----@field env_obj_joint table<integer, FileParserEnvObjJoint>
+---@field env_obj FileParserEnvObj[]
+---@field env_obj_joint FileParserEnvObjJoint[]
 ---@field ignores string[]
 
 local indent = "   "
@@ -54,18 +54,18 @@ function FileHandler.ParseMod(path)
             i = i + 1
 
             while i <= #lines and lines[i]:match("^%s+") do
-                block.lines[#block.lines + 1] = lines[i]
+                table.insert(block.lines, lines[i])
                 i = i + 1
             end
 
             local obj = FileHandler.parseBlock(block)
             if kind == "env_obj" then
-                table.insert(parser.env_obj, obj.id, obj)
+                table.insert(parser.env_obj, obj)
             else
-                table.insert(parser.env_obj_joint, obj.id, obj)
+                table.insert(parser.env_obj_joint, obj)
             end
         else
-            parser.ignores[#parser.ignores + 1] = line
+            table.insert(parser.ignores, line)
             i = i + 1
         end
     end
@@ -96,9 +96,9 @@ function FileHandler.parseBlock(block)
 end
 
 ---@param file File
----@param objects table<number, FileParserEnvObj | FileParserEnvObjJoint>
+---@param objects FileParserEnvObj[] | FileParserEnvObjJoint[]
 local function writeParsedEnvObj(file, objects)
-    for _, obj in pairs(objects) do
+    for _, obj in ipairs(objects) do
         local header = table.concat({ obj.kind, obj.id, obj.obj1, obj.obj2 }, " ")
         file:writeLine(header)
         for key, value in pairs(obj.props) do
