@@ -11,16 +11,19 @@
 ---@field modPath string?
 ---@field modFolder string
 ---@field outputName string
+---@field secondaryOutputName string
+---@field activeOutputName string
 ---@field hookname string
 ---@field window Main
 ---@field assetWindow UIElement?
 MGE = {
-    scriptPath = "mge/",
-    outputName = "mge-modmaker.tbm",
+    hookname = "mge",
+    scriptPath = MGE.hookname .. "/",
+    outputName = MGE.hookname .. "-modmaker.tbm",
+    secondaryOutputName = MGE.hookname .. "-modmaker1.tbm",
     modName = get_game_rules().mod,
     modPath = find_mod(get_game_rules().mod),
     modFolder = "../data/mod/",
-    hookname = "mge",
 }
 dofile(MGE.scriptPath .. "file_handler.lua")
 dofile(MGE.scriptPath .. "mod_export.lua")
@@ -32,15 +35,15 @@ function MGE.updateSource()
     ModData.reloadObjects()
 end
 
-function MGE.loadMod()
-    runCmd("lm " .. "classic") --lm requires actually swapping mod, maybe bypass by swapping between 2 names later
-    runCmd("lm " .. MGE.outputName)
+function MGE.loadMod(outputName)
+    runCmd("lm " .. outputName)
 end
 
 function MGE.save()
-    FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. MGE.outputName)
+    local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or MGE.outputName
+    FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. outputName)
     print("saved")
-    MGE.loadMod()
+    MGE.loadMod(outputName)
 end
 
 function MGE.quit()
@@ -71,7 +74,6 @@ end)
 MGE.updateSource()
 
 MGE.window = dofile(MGE.scriptPath .. "ui/main.lua")
-
 
 -- debug junk
 dofile("chatlog/chatlog.lua")
