@@ -1,47 +1,4 @@
----@class XYZ
----@field x number
----@field y number
----@field z number
-
----@class RGBA
----@field r number
----@field g number
----@field b number
----@field a number
-
----@class EnvObject
----@field id integer
----@field pos number[]
----@field rot number[]
----@field color number[]
----@field sides number[]
----@field flag FLAGS | integer
----@field bounce number
----@field mass number
----@field shape integer
----@field vis integer
----@field friction number
----@field force number[]
----@field use_model number
----@field model_name string
----@field selected boolean? --custom
----@field is_static fun(self: EnvObject): boolean
-
----@class ModData
----@field objects EnvObject[]
----@field parsed FileParserResult
----@field freeIds FreeIdHolder
----@field reloadObjects fun() --reloads objects from currently loaded mod
-
----@class FreeIdHolder
----@field nonStatic integer[]
----@field static integer[]
-
 ---@enum FLAGS
-
----@type ModData
-ModData = {}
-
 FLAGS = {
     NORMAL = 0,
     ALT = 1,
@@ -59,9 +16,37 @@ SHAPE = {
     CAPSULE = 3,
 }
 
+---@class EnvObject
+---@field id integer
+---@field pos number[] --xyz
+---@field rot number[] --rotation matrix
+---@field color number[] --rgba
+---@field sides number[] --xyz
+---@field flag FLAGS
+---@field bounce number
+---@field mass number
+---@field shape integer
+---@field vis integer
+---@field friction number
+---@field force number[]
+---@field use_model number
+---@field model_name string
+---@field selected boolean? --custom variable to track selected
+---@field is_static fun(self: EnvObject): boolean
+
+---@class FreeIdHolder
+---@field nonStatic integer[]
+---@field static integer[]
+
+---@class ModData
+---@field objects EnvObject[]
+---@field parsed FileParserResult
+---@field freeIds FreeIdHolder
+---@field reloadObjects fun() --reloads objects from currently loaded mod
+ModData = {}
+
 MAX_ENV_OBJECTS = 256
 MAX_NONSTATIC_OBJECTS = 48
-
 SHAPE_NAMES = {}
 for name, value in pairs(SHAPE) do
     SHAPE_NAMES[value] = name
@@ -71,11 +56,14 @@ local function is_static(self)
     return bit.band(self.flag, FLAGS.STATIC) ~= 0
 end
 
-function ModData.reloadObjects()
-    ---@type FileParserResult
+local function init()
     ModData.parsed = { env_obj = {}, env_obj_joint = {}, ignores = {} }
     ModData.objects = {}
     ModData.freeIds = { nonStatic = {}, static = {} }
+end
+
+function ModData.reloadObjects()
+    init()
 
     if not MGE.modPath then
         print("Mod not found")
@@ -107,7 +95,6 @@ function ModData.reloadObjects()
             obj.friction = tonumber(item.props.friction) or 10000
             obj.model_name = item.props.model_name
             obj.use_model = tonumber(item.props.use_model) or 0
-
             obj.is_static = is_static
 
             ModData.objects[obj.id] = obj
@@ -122,4 +109,4 @@ function ModData.reloadObjects()
     print("Mod data updated")
 end
 
-return ModData
+init() --initialize data on load

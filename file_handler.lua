@@ -1,4 +1,4 @@
-local FileHandler = {}
+FileHandler = {}
 
 ---@class FileParserEnvObj
 ---@field id integer
@@ -21,9 +21,10 @@ local FileHandler = {}
 
 local indent = "   "
 
+---@param path string
+---@return FileParserResult
 function FileHandler.ParseMod(path)
     local file = Files.Open(path, FILES_MODE_READONLY)
-    if not file then return nil end
 
     ---@type FileParserResult
     local parser = {
@@ -31,6 +32,8 @@ function FileHandler.ParseMod(path)
         env_obj_joint = {},
         ignores = {}
     }
+
+    if not file then return parser end
 
     local lines = file:readAll()
     file:close()
@@ -57,9 +60,9 @@ function FileHandler.ParseMod(path)
 
             local obj = FileHandler.parseBlock(block)
             if kind == "env_obj" then
-                parser.env_obj[obj.id] = obj
+                table.insert(parser.env_obj, obj.id, obj)
             else
-                parser.env_obj_joint[obj.id] = obj
+                table.insert(parser.env_obj_joint, obj.id, obj)
             end
         else
             parser.ignores[#parser.ignores + 1] = line
@@ -123,5 +126,3 @@ function FileHandler.WriteMod(parser, path)
     file:close()
     return true
 end
-
-return FileHandler

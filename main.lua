@@ -22,8 +22,8 @@ MGE = {
     modFolder = "../data/mod/",
     hookname = "mge",
 }
-FileHandler = dofile(MGE.scriptPath .. "file_handler.lua")
-ModData = dofile(MGE.scriptPath .. "mod_export.lua")
+dofile(MGE.scriptPath .. "file_handler.lua")
+dofile(MGE.scriptPath .. "mod_export.lua")
 
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod

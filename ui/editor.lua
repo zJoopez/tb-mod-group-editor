@@ -182,24 +182,30 @@ local function shallowCopy(t)
 end
 
 local function duplicate()
+    print_r(ModData.parsed.env_obj)
     for _, obj in ipairs(ModData.parsed.env_obj) do
-        local taberu
-        if obj.props.flag ~= "0" then
-            taberu = ModData.freeIds.static
-        else
-            taberu = ModData.freeIds.dynamic
+        print(obj.id, obj.selected)
+        if obj.selected then
+            print_r(obj)
+            local freeIds
+            if obj.props.flag ~= "0" then
+                freeIds = ModData.freeIds.static
+            else
+                freeIds = ModData.freeIds.nonStatic
+            end
+
+            local newId = freeIds[1]
+            if not newId then
+                print("Not enough objects available")
+                return
+            end
+            print(newId)
+
+            local copy = shallowCopy(obj)
+            copy.id = newId
+            table.insert(ModData.parsed.env_obj, newId, copy)
+            table.remove(freeIds, 1)
         end
-
-        local newId = taberu[1]
-        if not newId then
-            print("Not enough objects available")
-            return
-        end
-
-        ModData.parsed.env_obj[newId] = shallowCopy(obj)
-
-        obj.id = newId
-        table.remove(taberu, 1)
     end
     MGE.save()
 end
@@ -212,7 +218,7 @@ local function delete()
             if obj.props.flag ~= "0" then
                 table.insert(ModData.freeIds.static, obj.id)
             else
-                table.insert(ModData.freeIds.dynamic, obj.id)
+                table.insert(ModData.freeIds.nonStatic, obj.id)
             end
         end
     end
