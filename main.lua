@@ -1,5 +1,5 @@
 -- Created by joopez
--- Project: Mod Group Editor v.0.9
+-- Project: Mod Group Editor v.0.x
 -- Built for Toribash v.5.76
 
 --- /ls mge/main.lua
@@ -18,9 +18,9 @@
 ---@field assetWindow UIElement?
 MGE = {
     hookname = "mge",
-    scriptPath = MGE.hookname .. "/",
-    outputName = MGE.hookname .. "-modmaker.tbm",
-    secondaryOutputName = MGE.hookname .. "-modmaker1.tbm",
+    scriptPath = "mge/",
+    outputName = "mge-modmaker.tbm",
+    secondaryOutputName = "mge-modmaker1.tbm",
     modName = get_game_rules().mod,
     modPath = find_mod(get_game_rules().mod),
     modFolder = "../data/mod/",
@@ -73,5 +73,5 @@ MGE.updateSource()
 MGE.window = dofile(MGE.scriptPath .. "ui/main.lua")
 
 -- debug junk
-dofile("chatlog/chatlog.lua")
-runCmd("lm torii.tbm")
+-- dofile("chatlog/chatlog.lua")
+-- runCmd("lm torii.tbm")
