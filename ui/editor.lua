@@ -21,7 +21,7 @@ local function moveSelected()
     for i, input in ipairs(inwuts.pos) do
         offsets[i] = tonumber(input.textfieldstr[1]) or 0
     end
-    for _, v in pairs(MGE.modData.objects) do
+    for _, v in pairs(ModData.objects) do
         if v.selected then
             local pos = { get_obj_pos(v.id - 1) }
             for i, input in ipairs(pos) do
@@ -29,7 +29,7 @@ local function moveSelected()
             end
             set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
             formatStrArr(pos)
-            MGE.modData.parsed.env_obj[v.id].props.pos = table.concat(pos, " ")
+            ModData.parsed.env_obj[v.id].props.pos = table.concat(pos, " ")
         end
     end
 end
@@ -41,9 +41,9 @@ local function rotSelected()
         offsets[i] = math.rad(tonumber(input.textfieldstr[1]) or 0)
     end
 
-    for _, v in pairs(MGE.modData.objects) do
+    for _, v in pairs(ModData.objects) do
         if v.selected then
-            local rot = { MGE.modData.parsed.env_obj[v.id].props.rot:match("(%S+)%s+(%S+)%s+(%S+)") }
+            local rot = { ModData.parsed.env_obj[v.id].props.rot:match("(%S+)%s+(%S+)%s+(%S+)") }
             local pos = { get_obj_pos(v.id - 1) }
 
             local outPos = RotatingOld.SetRotPos(
@@ -60,8 +60,8 @@ local function rotSelected()
 
             formatStrArr(outRot)
             formatStrArr(outPos)
-            MGE.modData.parsed.env_obj[v.id].props.rot = table.concat(outRot, " ")
-            MGE.modData.parsed.env_obj[v.id].props.pos = table.concat(outPos, " ")
+            ModData.parsed.env_obj[v.id].props.rot = table.concat(outRot, " ")
+            ModData.parsed.env_obj[v.id].props.pos = table.concat(outPos, " ")
         end
     end
 end
@@ -73,11 +73,11 @@ local function adjustColor()
         n = math.max(0, math.min(500, n))
         color[i] = n / 255
     end
-    for _, v in pairs(MGE.modData.objects) do
+    for _, v in pairs(ModData.objects) do
         if v.selected then
             set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
             formatStrArr(color)
-            MGE.modData.parsed.env_obj[v.id].props.color = table.concat(color, " ")
+            ModData.parsed.env_obj[v.id].props.color = table.concat(color, " ")
         end
     end
 end
@@ -182,12 +182,12 @@ local function shallowCopy(t)
 end
 
 local function duplicate()
-    for _, obj in ipairs(MGE.modData.parsed.env_obj) do
+    for _, obj in ipairs(ModData.parsed.env_obj) do
         local taberu
         if obj.props.flag ~= "0" then
-            taberu = MGE.modData.freeIds.static
+            taberu = ModData.freeIds.static
         else
-            taberu = MGE.modData.freeIds.dynamic
+            taberu = ModData.freeIds.dynamic
         end
 
         local newId = taberu[1]
@@ -196,7 +196,7 @@ local function duplicate()
             return
         end
 
-        MGE.modData.parsed.env_obj[newId] = shallowCopy(obj)
+        ModData.parsed.env_obj[newId] = shallowCopy(obj)
 
         obj.id = newId
         table.remove(taberu, 1)
@@ -205,14 +205,14 @@ local function duplicate()
 end
 
 local function delete()
-    for i = #MGE.modData.parsed.env_obj, 1, -1 do -- iterating backwards to prevent index issues when removing
-        local obj = MGE.modData.parsed.env_obj[i]
+    for i = #ModData.parsed.env_obj, 1, -1 do -- iterating backwards to prevent index issues when removing
+        local obj = ModData.parsed.env_obj[i]
         if obj.selected then
-            table.remove(MGE.modData.parsed.env_obj, i)
+            table.remove(ModData.parsed.env_obj, i)
             if obj.props.flag ~= "0" then
-                table.insert(MGE.modData.freeIds.static, obj.id)
+                table.insert(ModData.freeIds.static, obj.id)
             else
-                table.insert(MGE.modData.freeIds.dynamic, obj.id)
+                table.insert(ModData.freeIds.dynamic, obj.id)
             end
         end
     end

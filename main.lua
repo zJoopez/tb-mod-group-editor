@@ -7,11 +7,10 @@
 
 ---@class MGE
 ---@field scriptPath string
----@field outputName string
 ---@field modName string
 ---@field modPath string?
 ---@field modFolder string
----@field modData ModExport
+---@field outputName string
 ---@field hookname string
 ---@field window Main
 ---@field assetWindow UIElement?
@@ -24,18 +23,13 @@ MGE = {
     hookname = "mge",
 }
 FileHandler = dofile(MGE.scriptPath .. "file_handler.lua")
+ModData = dofile(MGE.scriptPath .. "mod_export.lua")
 
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod
     MGE.modPath = find_mod(MGE.modName)
-    if(MGE.modPath == "modmaker/modmaker.tbm") then MGE.modPath = "modmaker.tbm" end --fixes modmaker setting a wrong source
-    if MGE.modPath then
-        MGE.modData = dofile(MGE.scriptPath .. "mod_export.lua")
-        print("Object list updated")
-    else
-        MGE.modData = { objects = {}, parsed = {} }
-        print("Failed to update object list")
-    end
+    if (MGE.modPath == "modmaker/modmaker.tbm") then MGE.modPath = "modmaker.tbm" end --fixes modmaker setting a wrong source
+    ModData.reloadObjects()
 end
 
 function MGE.loadMod()
@@ -44,7 +38,7 @@ function MGE.loadMod()
 end
 
 function MGE.save()
-    FileHandler.WriteMod(MGE.modData.parsed, MGE.modFolder .. MGE.outputName)
+    FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. MGE.outputName)
     print("saved")
     MGE.loadMod()
 end

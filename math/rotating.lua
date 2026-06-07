@@ -116,7 +116,7 @@ function RotatingOld.GetSelectionPivot()
     local sumX, sumY, sumZ = 0, 0, 0
     local n = 0
 
-    for _, p in ipairs(MGE.modData.objects) do
+    for _, p in ipairs(ModData.objects) do
         if p.selected then
             local pos = { get_obj_pos(p.id - 1) }
             sumX = sumX + pos[1]

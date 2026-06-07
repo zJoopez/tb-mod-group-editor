@@ -97,8 +97,8 @@ function obj_selector.create(view, fullList, toggleAll)
             listElement:uiText(v.id, nil, nil, nil, nil, 0.7, nil, nil, nil)
         end)
         TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
-            MGE.modData.objects[v.id].selected = value
-            MGE.modData.parsed.env_obj[v.id].selected = value
+            ModData.objects[v.id].selected = value
+            ModData.parsed.env_obj[v.id].selected = value
             if value then highlight(v) end
         end)
         table.insert(listElements, listElement)
@@ -108,7 +108,7 @@ function obj_selector.create(view, fullList, toggleAll)
     TBMenu:spawnToggle2(topBar_l, toggleRect, toggleAll, function(value)
         for _, obj in pairs(fullList) do
             obj.selected = value
-            MGE.modData.parsed.env_obj[obj.id].selected = value
+            ModData.parsed.env_obj[obj.id].selected = value
         end
         Main.updateWindow(value)
     end)

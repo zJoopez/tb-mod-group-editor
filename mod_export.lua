@@ -1,4 +1,3 @@
-ModEnvObjects = {}
 ---@class XYZ
 ---@field x number
 ---@field y number
@@ -16,28 +15,33 @@ ModEnvObjects = {}
 ---@field rot number[]
 ---@field color number[]
 ---@field sides number[]
----@field flag FLAGS
+---@field flag FLAGS | integer
 ---@field bounce number
 ---@field mass number
 ---@field shape integer
 ---@field vis integer
 ---@field friction number
----@field force XYZ
+---@field force number[]
 ---@field use_model number
 ---@field model_name string
 ---@field selected boolean? --custom
 ---@field is_static fun(self: EnvObject): boolean
 
----@class ModExport
+---@class ModData
 ---@field objects EnvObject[]
 ---@field parsed FileParserResult
 ---@field freeIds FreeIdHolder
+---@field reloadObjects fun() --reloads objects from currently loaded mod
 
 ---@class FreeIdHolder
----@field dynamic integer[]
+---@field nonStatic integer[]
 ---@field static integer[]
 
 ---@enum FLAGS
+
+---@type ModData
+ModData = {}
+
 FLAGS = {
     NORMAL = 0,
     ALT = 1,
@@ -55,7 +59,6 @@ SHAPE = {
     CAPSULE = 3,
 }
 
-require('toriui.uielement3d')
 MAX_ENV_OBJECTS = 256
 MAX_NONSTATIC_OBJECTS = 48
 
@@ -68,11 +71,18 @@ local function is_static(self)
     return bit.band(self.flag, FLAGS.STATIC) ~= 0
 end
 
-function ModEnvObjects:reloadObjects()
+function ModData.reloadObjects()
     ---@type FileParserResult
-    ModEnvObjects.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
-    ModEnvObjects.objects = {}
-    ModEnvObjects.freeIds = { nonStatic = {}, static = {} }
+    ModData.parsed = { env_obj = {}, env_obj_joint = {}, ignores = {} }
+    ModData.objects = {}
+    ModData.freeIds = { nonStatic = {}, static = {} }
+
+    if not MGE.modPath then
+        print("Mod not found")
+        return
+    end
+
+    ModData.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
 
     for i = 0, MAX_ENV_OBJECTS - 1, 1 do
         ---@type EnvObject
@@ -90,27 +100,26 @@ function ModEnvObjects:reloadObjects()
             obj.vis = get_obj_vis(i)
 
             --- imagine sir not providing all object data
-            local item = ModEnvObjects.parsed.env_obj[obj.id]
+            local item = ModData.parsed.env_obj[obj.id]
             local fx, fy, fz
             if item.props.force ~= nil then fx, fy, fz = item.props.force:match("(%S+)%s+(%S+)%s+(%S+)") end
-            obj.force = { x = tonumber(fx) or 0, y = tonumber(fy) or 0, z = tonumber(fz) or 0 }
+            obj.force = { tonumber(fx) or 0, tonumber(fy) or 0, tonumber(fz) or 0 }
             obj.friction = tonumber(item.props.friction) or 10000
             obj.model_name = item.props.model_name
             obj.use_model = tonumber(item.props.use_model) or 0
 
             obj.is_static = is_static
 
-            ModEnvObjects.objects[obj.id] = obj
+            ModData.objects[obj.id] = obj
         else
             if (i >= MAX_NONSTATIC_OBJECTS) then
-                ModEnvObjects.freeIds.static[#ModEnvObjects.freeIds.static + 1] = obj.id
+                ModData.freeIds.static[#ModData.freeIds.static + 1] = obj.id
             else
-                ModEnvObjects.freeIds.nonStatic[#ModEnvObjects.freeIds.nonStatic + 1] = obj.id
+                ModData.freeIds.nonStatic[#ModData.freeIds.nonStatic + 1] = obj.id
             end
         end
     end
+    print("Mod data updated")
 end
 
-ModEnvObjects:reloadObjects()
-
-return ModEnvObjects
+return ModData
