@@ -112,29 +112,4 @@ function RotateObjectAroundPivot(obj, pivot, rx, ry, rz)
     obj.rotMatrixTB = Utils3D.MatrixToMatrixTB(newRotMatrix)
 end
 
-function RotatingOld.GetSelectionPivot()
-    local sumX, sumY, sumZ = 0, 0, 0
-    local n = 0
-
-    for _, obj in ipairs(ModData.parsed.env_obj) do
-        if obj.selected then
-            local pos = { get_obj_pos(obj.id - 1) }
-            sumX = sumX + pos[1]
-            sumY = sumY + pos[2]
-            sumZ = sumZ + pos[3]
-            n = n + 1
-        end
-    end
-
-    if n == 0 then
-        return { x = 0, y = 0, z = 0 }
-    end
-
-    return {
-        x = sumX / n,
-        y = sumY / n,
-        z = sumZ / n
-    }
-end
-
 return RotatingOld

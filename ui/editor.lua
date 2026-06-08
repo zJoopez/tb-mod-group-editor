@@ -16,6 +16,31 @@ local function formatStrArr(arr)
     end
 end
 
+local function getSelectionPivot()
+    local sumX, sumY, sumZ = 0, 0, 0
+    local n = 0
+
+    for _, obj in ipairs(ModData.parsed.env_obj) do
+        if obj.selected then
+            local pos = { get_obj_pos(obj.id - 1) }
+            sumX = sumX + pos[1]
+            sumY = sumY + pos[2]
+            sumZ = sumZ + pos[3]
+            n = n + 1
+        end
+    end
+
+    if n == 0 then
+        return { x = 0, y = 0, z = 0 }
+    end
+
+    return {
+        x = sumX / n,
+        y = sumY / n,
+        z = sumZ / n
+    }
+end
+
 local function moveSelected()
     local offsets = {}
     for i, input in ipairs(inwuts.pos) do
@@ -33,7 +58,7 @@ local function moveSelected()
 end
 
 local function rotSelected()
-    local pivot = RotatingOld.GetSelectionPivot()
+    local pivot = getSelectionPivot()
     local offsets = {}
     for i, input in ipairs(inwuts.rot) do
         offsets[i] = math.rad(tonumber(input.textfieldstr[1]) or 0)
@@ -60,6 +85,50 @@ local function rotSelected()
             formatStrArr(outPos)
             v.props.rot = table.concat(outRot, " ")
             v.props.pos = table.concat(outPos, " ")
+        end
+    end
+end
+
+local function scaleSelected()
+    local pivot = getSelectionPivot()
+    local scale = {}
+    for i, input in ipairs(inwuts.scale) do
+        local value = tonumber(input.textfieldstr[1]) or 0
+        if value == 0 or value == -1 then
+            scale[i] = 1
+        else
+            scale[i] = value
+        end
+    end
+
+    for _, v in pairs(ModData.parsed.env_obj) do
+        if v.selected then
+            local sides = { get_obj_sides(v.id - 1) }
+            local pos = { get_obj_pos(v.id - 1) }
+
+            local rel = {
+                pos[1] - pivot.x,
+                pos[2] - pivot.y,
+                pos[3] - pivot.z,
+            }
+            local outPos = {
+                pivot.x + rel[1] * scale[1],
+                pivot.y + rel[2] * scale[2],
+                pivot.z + rel[3] * scale[3],
+            }
+            local outSides = {
+                sides[1] * scale[1],
+                sides[2] * scale[2],
+                sides[3] * scale[3],
+            }
+
+            set_obj_pos(v.id - 1, outPos[1], outPos[2], outPos[3])
+            set_obj_sides(v.id - 1, outSides[1], outSides[2], outSides[3])
+
+            formatStrArr(outPos)
+            formatStrArr(outSides)
+            v.props.pos = table.concat(outPos, " ")
+            v.props.sides = table.concat(outSides, " ")
         end
     end
 end
@@ -248,6 +317,9 @@ end
 function container.create(container)
     inwuts.pos = createRow("Pos", container, 3, moveSelected)
     inwuts.rot = createRow("Rot", container, 3, rotSelected)
+    inwuts.scale = createRow("Scale", container, 3, scaleSelected)
+
+    updateContentHeight(margin)
     createRow("Color", container, 0, nil)
     inwuts.color = createRow(nil, container, 4, adjustColor, { "", "", "", "255" })
 
