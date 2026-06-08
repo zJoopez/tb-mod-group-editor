@@ -157,7 +157,7 @@ local function createButtonRow(container, funcs, names)
     for i, value in ipairs(funcs) do
         local btn = row:addChild({
             pos = { width, 0 },
-            size = { columnSize, row.size.h },
+            size = { columnSize - margin, row.size.h },
             interactive = true,
             bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
             hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
