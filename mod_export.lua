@@ -31,7 +31,8 @@ SHAPE = {
 ---@field force number[]
 ---@field use_model number
 ---@field model_name string
----@field selected boolean? --custom variable to track selected
+---@field selected boolean? --custom, tracks selected objects
+---@field has_joint boolean? --custom, tracks if object is linked to joint
 ---@field is_static fun(self: EnvObject): boolean
 
 ---@class FreeIdHolder
@@ -42,6 +43,7 @@ SHAPE = {
 ---@field objects EnvObject[]
 ---@field parsed FileParserResult
 ---@field freeIds FreeIdHolder
+---@field jointIds table<integer, boolean>
 ---@field reloadObjects fun() --reloads objects from currently loaded mod
 ModData = {}
 
@@ -56,10 +58,20 @@ local function is_static(self)
     return bit.band(self.flag, FLAGS.STATIC) ~= 0
 end
 
+local function getJointIds(joints)
+    local ids = {}
+    for _, joint in ipairs(joints or {}) do
+        if joint.obj1 then ids[joint.obj1] = true end
+        if joint.obj2 then ids[joint.obj2] = true end
+    end
+    return ids
+end
+
 local function init()
     ModData.parsed = { env_obj = {}, env_obj_joint = {}, ignores = {} }
     ModData.objects = {}
     ModData.freeIds = { nonStatic = {}, static = {} }
+    ModData.jointIds = {}
 end
 
 function ModData.reloadObjects()
@@ -71,6 +83,7 @@ function ModData.reloadObjects()
     end
 
     ModData.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
+    ModData.jointIds = getJointIds(ModData.parsed.env_obj_joint)
 
     for i = 0, MAX_ENV_OBJECTS - 1, 1 do
         ---@type EnvObject
@@ -86,6 +99,7 @@ function ModData.reloadObjects()
             obj.mass = get_obj_mass(i)
             obj.shape = get_obj_shape(i)
             obj.vis = get_obj_vis(i)
+            obj.has_joint = ModData.jointIds[obj.id] == true
 
             --- imagine sir not providing all object data
             local item = ModData.parsed.env_obj[#ModData.objects + 1] or { props = {} }

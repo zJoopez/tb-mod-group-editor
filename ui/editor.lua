@@ -179,12 +179,33 @@ local function shallowCopy(t)
     return copy
 end
 
+local function reindexNonDynamic()
+    local taberu = ModData.parsed.env_obj
+    local freeStatic = ModData.freeIds.static
+    local freeNonStatic = ModData.freeIds.nonStatic
+    local jointIds = ModData.jointIds
+
+    for i = #taberu, 1, -1 do
+        local obj = taberu[i]
+        if obj.id < MAX_NONSTATIC_OBJECTS and obj.props.flag ~= "0" and not jointIds[obj.id] then
+            local newId = table.remove(freeStatic, 1)
+            if not newId then break end
+            table.insert(freeNonStatic, obj.id)
+            obj.id = newId
+        end
+    end
+
+    table.sort(freeNonStatic)
+end
+
 local function duplicate()
-    for i = 1, #ModData.parsed.env_obj do
-        local obj = ModData.parsed.env_obj[i]
+    reindexNonDynamic()
+    local taberu = ModData.parsed.env_obj
+    for i = 1, #taberu do
+        local obj = taberu[i]
         if obj and obj.selected then
             local freeIds
-            if obj.props.flag ~= "0" then
+            if obj.props.flag ~= "0" and not ModData.jointIds[obj.id] then
                 freeIds = ModData.freeIds.static
             else
                 freeIds = ModData.freeIds.nonStatic
@@ -202,6 +223,9 @@ local function duplicate()
             table.remove(freeIds, 1)
         end
     end
+    table.sort(taberu, function(a, b)
+        return a.id < b.id
+    end)
     MGE.save()
 end
 
@@ -210,7 +234,7 @@ local function delete()
         local obj = ModData.parsed.env_obj[i]
         if obj.selected then
             table.remove(ModData.parsed.env_obj, i)
-            if obj.props.flag ~= "0" then
+            if obj.props.flag ~= "0" and not ModData.jointIds[obj.id] then
                 table.insert(ModData.freeIds.static, obj.id)
             else
                 table.insert(ModData.freeIds.nonStatic, obj.id)
