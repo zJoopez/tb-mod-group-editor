@@ -179,27 +179,7 @@ local function shallowCopy(t)
     return copy
 end
 
-local function reindexNonDynamic()
-    local taberu = ModData.parsed.env_obj
-    local freeStatic = ModData.freeIds.static
-    local freeNonStatic = ModData.freeIds.nonStatic
-    local jointIds = ModData.jointIds
-
-    for i = #taberu, 1, -1 do
-        local obj = taberu[i]
-        if obj.id < MAX_NONSTATIC_OBJECTS and obj.props.flag ~= "0" and not jointIds[obj.id] then
-            local newId = table.remove(freeStatic, 1)
-            if not newId then break end
-            table.insert(freeNonStatic, obj.id)
-            obj.id = newId
-        end
-    end
-
-    table.sort(freeNonStatic)
-end
-
 local function duplicate()
-    reindexNonDynamic()
     local taberu = ModData.parsed.env_obj
     for i = 1, #taberu do
         local obj = taberu[i]
@@ -244,6 +224,27 @@ local function delete()
     MGE.save()
 end
 
+local function reindexNonDynamic()
+    local taberu = ModData.parsed.env_obj
+    local freeStatic = ModData.freeIds.static
+    local freeNonStatic = ModData.freeIds.nonStatic
+    local jointIds = ModData.jointIds
+
+    for i = #taberu, 1, -1 do
+        local obj = taberu[i]
+        if obj.id < MAX_NONSTATIC_OBJECTS and obj.props.flag ~= "0" and not jointIds[obj.id] then
+            local newId = table.remove(freeStatic, 1)
+            if not newId then break end
+            table.insert(freeNonStatic, obj.id)
+            obj.id = newId
+        end
+    end
+    table.sort(taberu, function(a, b)
+        return a.id < b.id
+    end)
+    MGE.save()
+end
+
 function container.create(container)
     inwuts.pos = createRow("Pos", container, 3, moveSelected)
     inwuts.rot = createRow("Rot", container, 3, rotSelected)
@@ -252,6 +253,8 @@ function container.create(container)
 
     updateContentHeight(margin)
     createButtonRow(container, { duplicate, delete }, { "duplicate", "delete" })
+    updateContentHeight(margin)
+    createButtonRow(container, { reindexNonDynamic }, { "reindex" })
 end
 
 return container
