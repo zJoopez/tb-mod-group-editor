@@ -60,6 +60,8 @@ local function moveSelected()
             v.props.pos = table.concat(pos, " ")
         end
     end
+    set_camera_mode(4)
+    set_camera_lookat(getSelectionPivot())
 end
 
 local function rotSelected()
