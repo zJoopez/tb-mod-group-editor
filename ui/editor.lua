@@ -1,5 +1,5 @@
 local container = {}
-dofile(MGE.scriptPath .. "math/rotating.lua")
+dofile(MGE.scriptPath .. "utils/rotating.lua")
 
 local totalHeight = 0
 local margin = 10

@@ -1,5 +1,3 @@
-require("toriui.uielement")
-
 local window, windowContainer = TBMenu:spawnMoveableWindow({
     x = 10,
     y = 100,

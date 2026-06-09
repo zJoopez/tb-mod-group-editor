@@ -1,5 +1,5 @@
 -- Created by joopez
--- Project: Mod Group Editor v.0.x
+-- Project: Mod Group Editor v.1.0
 -- Built for Toribash v.5.76
 
 --- /ls mge/main.lua
@@ -25,8 +25,8 @@ MGE = {
     modPath = find_mod(get_game_rules().mod),
     modFolder = "../data/mod/",
 }
-dofile(MGE.scriptPath .. "file_handler.lua")
-dofile(MGE.scriptPath .. "mod_export.lua")
+dofile(MGE.scriptPath .. "utils/file_handler.lua")
+dofile(MGE.scriptPath .. "utils/mod_export.lua")
 
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod

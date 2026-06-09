@@ -17,8 +17,6 @@ local function rotateZ(x, y, z, angle)
     return cosA * x - sinA * y, sinA * x + cosA * y, z
 end
 
-
-
 local function eulerToQuaternion(x, y, z)
     local cx, cy, cz = math.cos(x / 2), math.cos(y / 2), math.cos(z / 2)
     local sx, sy, sz = math.sin(x / 2), math.sin(y / 2), math.sin(z / 2)
@@ -81,35 +79,6 @@ function RotatingOld.SetRotPos(x, y, z, px, py, pz, ox, oy, oz)
 
     -- Translate object back to its new position
     return { x + px, y + py, z + pz }
-end
-
-function RotateObjectAroundPivot(obj, pivot, rx, ry, rz)
-    -- 1. offset vector
-    local ox = obj.pos.x - pivot.x
-    local oy = obj.pos.y - pivot.y
-    local oz = obj.pos.z - pivot.z
-
-    -- 2. rotation matrix from Euler offset
-    local R = Utils3D.GetMatrixFromEuler(
-        math.rad(rx), math.rad(ry), math.rad(rz),
-        EULER_XYZ
-    )
-
-    -- 3. rotate offset vector
-    local rotated = Utils3D.MatrixMultiply({ { ox, oy, oz } }, R)[1]
-
-    -- 4. new world position
-    obj.pos.x = pivot.x + rotated[1]
-    obj.pos.y = pivot.y + rotated[2]
-    obj.pos.z = pivot.z + rotated[3]
-
-    -- 5. rotate object’s rotation matrix
-    local Rdelta = R
-    local newRotMatrix = Utils3D.MatrixMultiply(Rdelta, obj.rotMatrix)
-
-    -- 6. apply rotation
-    obj.rotMatrix = newRotMatrix
-    obj.rotMatrixTB = Utils3D.MatrixToMatrixTB(newRotMatrix)
 end
 
 return RotatingOld

@@ -19,7 +19,7 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 700
+    h = 650
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
