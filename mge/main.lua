@@ -2,9 +2,6 @@
 -- Project: Mod Group Editor v.1.0
 -- Built for Toribash v.5.76
 
---- /ls mge/main.lua
---- /lm mge-modmaker.tbm
-
 ---@class MGE
 ---@field scriptPath string
 ---@field modName string
@@ -18,13 +15,14 @@
 ---@field assetWindow UIElement?
 MGE = {
     hookname = "mge",
-    scriptPath = "mge/",
+    scriptPath = MGE_DEV_PREFIX .. "mge/",
     outputName = "mge-modmaker.tbm",
     secondaryOutputName = "mge-modmaker1.tbm",
     modName = get_game_rules().mod,
     modPath = find_mod(get_game_rules().mod),
     modFolder = "../data/mod/",
 }
+runCmd("reset") --Fixes sync if there are unsaved rotations
 dofile(MGE.scriptPath .. "utils/file_handler.lua")
 dofile(MGE.scriptPath .. "utils/mod_export.lua")
 
@@ -72,7 +70,6 @@ MGE.updateSource()
 
 MGE.window = dofile(MGE.scriptPath .. "ui/main.lua")
 
-runCmd("reset") --Fixes sync if there are unsaved rotations
 -- debug junk
 -- dofile("chatlog/chatlog.lua")
 -- runCmd("lm torii.tbm")
