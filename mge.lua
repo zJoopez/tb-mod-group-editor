@@ -1,5 +1,5 @@
 MGE_DEV_PREFIX = ""
-MGE_DEV_PREFIX = "mge/" --dev
+-- MGE_DEV_PREFIX = "mge/" --dev
 
 dofile(MGE_DEV_PREFIX .. "mge/main.lua")
 
