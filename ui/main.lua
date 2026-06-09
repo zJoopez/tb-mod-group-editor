@@ -19,7 +19,7 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 700
+    h = 650
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
@@ -39,33 +39,30 @@ local obj_selector_container = content:addChild({
 })
 updateContentHeight(obj_selector_container.size.h)
 
-
 local editorContainer = content:addChild({
     pos = defaultPos,
-    size = { content.size.w, 250 },
+    size = { content.size.w, 300 },
 })
 updateContentHeight(editorContainer.size.h)
 
-local btnAssets = content:addChild({
-    pos = defaultPos,
-    size = { content.size.w, 30 },
-    interactive = true,
-    bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-    hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-    pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
-})
-btnAssets:addAdaptedText("Assets")
-updateContentHeight(btnAssets.size.h)
+-- local btnAssets = content:addChild({
+--     pos = defaultPos,
+--     size = { content.size.w, 30 },
+--     interactive = true,
+--     bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+--     hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
+--     pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+-- })
+-- btnAssets:addAdaptedText("Assets")
+-- updateContentHeight(btnAssets.size.h)
 
-local btnSave = content:addChild({
-    pos = defaultPos,
-    size = { content.size.w, 30 },
-    interactive = true,
-    bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-    hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-    pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
-})
-updateContentHeight(btnSave.size.h)
+-- btnAssets:addMouseUpHandler(function()
+--     if not MGE.assetWindow then
+--         MGE.assetWindow = dofile(MGE.scriptPath .. "/ui/assets.lua")
+--     else
+--         MGE.assetWindow:show()
+--     end
+-- end)
 
 local info = content:addChild({
     pos = defaultPos,
@@ -113,21 +110,6 @@ function Main.resetWindow()
     Main.toggleAll = false
     Main.updateWindow()
 end
-
-btnSave:addAdaptedText("Save")
-updateContentHeight(btnSave.size.h)
-
-btnSave:addMouseUpHandler(function()
-    MGE.save()
-end)
-
-btnAssets:addMouseUpHandler(function()
-    if not MGE.assetWindow then
-        MGE.assetWindow = dofile(MGE.scriptPath .. "/ui/assets.lua")
-    else
-        MGE.assetWindow:show()
-    end
-end)
 
 setDynamicStrings()
 createObjSelector(false);

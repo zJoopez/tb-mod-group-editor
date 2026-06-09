@@ -1,8 +1,9 @@
 local container = {}
-dofile(MGE.scriptPath .. "math/rotating.lua")
+dofile(MGE.scriptPath .. "utils/rotating.lua")
 
 local totalHeight = 0
 local margin = 10
+local absoluteMode = false
 
 ---@type table<string, UIElement[]>
 local inwuts = {}
@@ -16,6 +17,7 @@ local function formatStrArr(arr)
     end
 end
 
+---@return number, number, number
 local function getSelectionPivot()
     local sumX, sumY, sumZ = 0, 0, 0
     local n = 0
@@ -30,21 +32,24 @@ local function getSelectionPivot()
         end
     end
 
-    if n == 0 then
-        return { x = 0, y = 0, z = 0 }
-    end
+    if n == 0 then return 0, 0, 0 end
 
-    return {
-        x = sumX / n,
-        y = sumY / n,
-        z = sumZ / n
-    }
+    return
+        sumX / n,
+        sumY / n,
+        sumZ / n
 end
 
 local function moveSelected()
     local offsets = {}
     for i, input in ipairs(inwuts.pos) do
         offsets[i] = tonumber(input.textfieldstr[1]) or 0
+    end
+    if absoluteMode then
+        local pivot = { getSelectionPivot() }
+        for i = 1, #offsets do
+            offsets[i] = offsets[i] - pivot[i]
+        end
     end
     for _, v in pairs(ModData.parsed.env_obj) do
         if v.selected then
@@ -55,10 +60,12 @@ local function moveSelected()
             v.props.pos = table.concat(pos, " ")
         end
     end
+    set_camera_mode(4)
+    set_camera_lookat(getSelectionPivot())
 end
 
 local function rotSelected()
-    local pivot = getSelectionPivot()
+    local pivot = { getSelectionPivot() }
     local offsets = {}
     for i, input in ipairs(inwuts.rot) do
         offsets[i] = math.rad(tonumber(input.textfieldstr[1]) or 0)
@@ -66,16 +73,17 @@ local function rotSelected()
 
     for _, v in pairs(ModData.parsed.env_obj) do
         if v.selected then
-            local rot = { v.props.rot:match("(%S+)%s+(%S+)%s+(%S+)") }
+            local x, y, z = v.props.rot:match("(%S+)%s+(%S+)%s+(%S+)")
+            local rot = { math.rad(tonumber(x) or 0), math.rad(tonumber(y) or 0), math.rad(tonumber(z) or 0) }
             local pos = { get_obj_pos(v.id - 1) }
 
             local outPos = RotatingOld.SetRotPos(
                 pos[1], pos[2], pos[3],
-                pivot.x, pivot.y, pivot.z,
+                pivot[1], pivot[2], pivot[3],
                 offsets[1], offsets[2], offsets[3]
             )
             local outRot = RotatingOld.SetRotOffset(
-                math.rad(tonumber(rot[1]) or 0), math.rad(tonumber(rot[2]) or 0), math.rad(tonumber(rot[3]) or 0),
+                rot[1], rot[2], rot[3],
                 offsets[1], offsets[2], offsets[3]
             )
             set_obj_rot(v.id - 1, math.rad(outRot[1]), math.rad(outRot[2]), math.rad(outRot[3]))
@@ -90,7 +98,7 @@ local function rotSelected()
 end
 
 local function scaleSelected()
-    local pivot = getSelectionPivot()
+    local pivot = { getSelectionPivot() }
     local scale = {}
     for i, input in ipairs(inwuts.scale) do
         local value = tonumber(input.textfieldstr[1]) or 0
@@ -107,14 +115,14 @@ local function scaleSelected()
             local pos = { get_obj_pos(v.id - 1) }
 
             local rel = {
-                pos[1] - pivot.x,
-                pos[2] - pivot.y,
-                pos[3] - pivot.z,
+                pos[1] - pivot[1],
+                pos[2] - pivot[2],
+                pos[3] - pivot[3],
             }
             local outPos = {
-                pivot.x + rel[1] * scale[1],
-                pivot.y + rel[2] * scale[2],
-                pivot.z + rel[3] * scale[3],
+                pivot[1] + rel[1] * scale[1],
+                pivot[2] + rel[2] * scale[2],
+                pivot[3] + rel[3] * scale[3],
             }
             local outSides = {
                 sides[1] * scale[1],
@@ -171,7 +179,7 @@ end
 ---@param container UIElement
 ---@param inputCount integer
 ---@param defaultValue string[]?
-local function createRow(label, container, inputCount, func, defaultValue)
+local function createInputRow(label, container, inputCount, func, defaultValue)
     local width = 0
     local row = container:addChild({
         pos = { 0, totalHeight },
@@ -314,19 +322,25 @@ local function reindexNonDynamic()
     MGE.save()
 end
 
+local function save()
+    dofile(MGE.scriptPath .. "ui/save_overlay.lua")
+end
+
 function container.create(container)
-    inwuts.pos = createRow("Pos", container, 3, moveSelected)
-    inwuts.rot = createRow("Rot", container, 3, rotSelected)
-    inwuts.scale = createRow("Scale", container, 3, scaleSelected)
-
+    inwuts.pos = createInputRow("Pos", container, 3, moveSelected)
+    inwuts.rot = createInputRow("Rot", container, 3, rotSelected)
+    inwuts.scale = createInputRow("Scale", container, 3, scaleSelected)
     updateContentHeight(margin)
-    createRow("Color", container, 0, nil)
-    inwuts.color = createRow(nil, container, 4, adjustColor, { "", "", "", "255" })
 
+    createInputRow("Color", container, 0, nil)
+    inwuts.color = createInputRow(nil, container, 4, adjustColor, { "", "", "", "255" })
     updateContentHeight(margin)
+
     createButtonRow(container, { duplicate, delete }, { "duplicate", "delete" })
     updateContentHeight(margin)
     createButtonRow(container, { reindexNonDynamic }, { "reindex" })
+    updateContentHeight(margin)
+    createButtonRow(container, { save }, { "save" })
 end
 
 return container
