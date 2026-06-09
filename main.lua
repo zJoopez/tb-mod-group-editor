@@ -40,9 +40,12 @@ function MGE.loadMod(outputName)
 end
 
 function MGE.save()
-    local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or MGE.outputName
-    FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. outputName)
+    --Written twice to keep potential custom name always uptodate
+    FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. MGE.outputName)
+    FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. MGE.secondaryOutputName)
     print("saved")
+    --Need to swap between mods for lm to load updates
+    local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or MGE.outputName
     MGE.loadMod(outputName)
 end
 

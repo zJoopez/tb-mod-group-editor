@@ -179,7 +179,7 @@ end
 ---@param container UIElement
 ---@param inputCount integer
 ---@param defaultValue string[]?
-local function createRow(label, container, inputCount, func, defaultValue)
+local function createInputRow(label, container, inputCount, func, defaultValue)
     local width = 0
     local row = container:addChild({
         pos = { 0, totalHeight },
@@ -322,19 +322,25 @@ local function reindexNonDynamic()
     MGE.save()
 end
 
+local function save()
+    dofile(MGE.scriptPath .. "ui/save_overlay.lua")
+end
+
 function container.create(container)
-    inwuts.pos = createRow("Pos", container, 3, moveSelected)
-    inwuts.rot = createRow("Rot", container, 3, rotSelected)
-    inwuts.scale = createRow("Scale", container, 3, scaleSelected)
-
+    inwuts.pos = createInputRow("Pos", container, 3, moveSelected)
+    inwuts.rot = createInputRow("Rot", container, 3, rotSelected)
+    inwuts.scale = createInputRow("Scale", container, 3, scaleSelected)
     updateContentHeight(margin)
-    createRow("Color", container, 0, nil)
-    inwuts.color = createRow(nil, container, 4, adjustColor, { "", "", "", "255" })
 
+    createInputRow("Color", container, 0, nil)
+    inwuts.color = createInputRow(nil, container, 4, adjustColor, { "", "", "", "255" })
     updateContentHeight(margin)
+
     createButtonRow(container, { duplicate, delete }, { "duplicate", "delete" })
     updateContentHeight(margin)
     createButtonRow(container, { reindexNonDynamic }, { "reindex" })
+    updateContentHeight(margin)
+    createButtonRow(container, { save }, { "save" })
 end
 
 return container
