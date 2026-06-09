@@ -72,6 +72,7 @@ MGE.updateSource()
 
 MGE.window = dofile(MGE.scriptPath .. "ui/main.lua")
 
+runCmd("reset") --Fixes sync if there are unsaved rotations
 -- debug junk
 -- dofile("chatlog/chatlog.lua")
 -- runCmd("lm torii.tbm")
