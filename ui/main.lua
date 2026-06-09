@@ -19,7 +19,7 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 650
+    h = 590
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
@@ -41,7 +41,7 @@ updateContentHeight(obj_selector_container.size.h)
 
 local editorContainer = content:addChild({
     pos = defaultPos,
-    size = { content.size.w, 300 },
+    size = { content.size.w, 240 },
 })
 updateContentHeight(editorContainer.size.h)
 
@@ -111,8 +111,13 @@ function Main.resetWindow()
     Main.updateWindow()
 end
 
+function Main.resetEditor()
+    editorContainer:kill(true)
+    createEditor()
+end
+
 setDynamicStrings()
-createObjSelector(false);
+createObjSelector();
 createEditor()
 
 Main.window.killAction = MGE.quit

@@ -31,7 +31,7 @@ dofile(MGE.scriptPath .. "utils/mod_export.lua")
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod
     MGE.modPath = find_mod(MGE.modName)
-    if (MGE.modPath == "modmaker/modmaker.tbm") then MGE.modPath = "modmaker.tbm" end --fixes modmaker setting a wrong source
+    if (MGE.modPath == "modmaker/modmaker.tbm") then MGE.modPath = "modmaker.tbm" end --fixes modmaker setting a wrong path
     ModData.reloadObjects()
 end
 
@@ -40,12 +40,9 @@ function MGE.loadMod(outputName)
 end
 
 function MGE.save()
-    --Written twice to keep potential custom name always uptodate
-    FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. MGE.outputName)
-    FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. MGE.secondaryOutputName)
-    print("saved")
-    --Need to swap between mods for lm to load updates
-    local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or MGE.outputName
+    local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or MGE.outputName --bypass for lm not loaading updates without mod swap
+    FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. outputName)
+    print("save complete")
     MGE.loadMod(outputName)
 end
 
@@ -75,6 +72,7 @@ MGE.updateSource()
 
 MGE.window = dofile(MGE.scriptPath .. "ui/main.lua")
 
+runCmd("reset") --Fixes sync if there are unsaved rotations
 -- debug junk
 -- dofile("chatlog/chatlog.lua")
 -- runCmd("lm torii.tbm")

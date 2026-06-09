@@ -73,9 +73,9 @@ function RotatingOld.SetRotPos(x, y, z, px, py, pz, ox, oy, oz)
     local x, y, z = x - px, y - py, z - pz
 
     -- Apply rotations in 3D space
-    x, y, z = rotateX(x, y, z, ox) -- Rotate around X axis
-    x, y, z = rotateY(x, y, z, oy) -- Rotate around Y axis
     x, y, z = rotateZ(x, y, z, oz) -- Rotate around Z axis
+    x, y, z = rotateY(x, y, z, oy) -- Rotate around Y axis
+    x, y, z = rotateX(x, y, z, ox) -- Rotate around X axis
 
     -- Translate object back to its new position
     return { x + px, y + py, z + pz }

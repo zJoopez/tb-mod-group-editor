@@ -179,7 +179,7 @@ end
 ---@param container UIElement
 ---@param inputCount integer
 ---@param defaultValue string[]?
-local function createInputRow(label, container, inputCount, func, defaultValue)
+local function createInputRow(label, container, inputCount, func, defaultValue) --todo margin as param?
     local width = 0
     local row = container:addChild({
         pos = { 0, totalHeight },
@@ -246,7 +246,7 @@ local function createButtonRow(container, funcs, names)
         width = width + columnSize
     end
 
-    updateContentHeight(row.size.h)
+    updateContentHeight(row.size.h + margin)
     return btns
 end
 
@@ -301,32 +301,12 @@ local function delete()
     MGE.save()
 end
 
-local function reindexNonDynamic()
-    local taberu = ModData.parsed.env_obj
-    local freeStatic = ModData.freeIds.static
-    local freeNonStatic = ModData.freeIds.nonStatic
-    local jointIds = ModData.jointIds
-
-    for i = #taberu, 1, -1 do
-        local obj = taberu[i]
-        if obj.id < MAX_NONSTATIC_OBJECTS and obj.props.flag ~= "0" and not jointIds[obj.id] then
-            local newId = table.remove(freeStatic, 1)
-            if not newId then break end
-            table.insert(freeNonStatic, obj.id)
-            obj.id = newId
-        end
-    end
-    table.sort(taberu, function(a, b)
-        return a.id < b.id
-    end)
-    MGE.save()
-end
-
-local function save()
+local function export()
     dofile(MGE.scriptPath .. "ui/save_overlay.lua")
 end
 
 function container.create(container)
+    totalHeight = 0
     inwuts.pos = createInputRow("Pos", container, 3, moveSelected)
     inwuts.rot = createInputRow("Rot", container, 3, rotSelected)
     inwuts.scale = createInputRow("Scale", container, 3, scaleSelected)
@@ -334,13 +314,10 @@ function container.create(container)
 
     createInputRow("Color", container, 0, nil)
     inwuts.color = createInputRow(nil, container, 4, adjustColor, { "", "", "", "255" })
-    updateContentHeight(margin)
+    updateContentHeight(margin) 
 
-    createButtonRow(container, { duplicate, delete }, { "duplicate", "delete" })
-    updateContentHeight(margin)
-    createButtonRow(container, { reindexNonDynamic }, { "reindex" })
-    updateContentHeight(margin)
-    createButtonRow(container, { save }, { "save" })
+    createButtonRow(container, { duplicate, delete }, { "Duplicate", "Delete" })
+    createButtonRow(container, { MGE.save, export }, { "Save", "Export" })
 end
 
 return container
