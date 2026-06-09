@@ -114,27 +114,29 @@ local function create(view, fullList)
         pos = { -topBar_r.size.h, 2 },
         size = { topBar_r.size.h - 4, topBar_r.size.h - 4 },
         bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_BG_COLOR,
+        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
         pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
     })
     pageBtnNext:addAdaptedText(">", nil, nil, nil, CENTER, 0.7, nil, nil, nil)
-    local txtPage = topBar_r:addChild({
-        pos = { -topBar_r.size.h - topBar_r.size.h * 3 - 2, 3 },
-        size = { topBar_r.size.h * 3, topBar_r.size.h }
-    })
     pageBtnNext:addMouseUpHandler(function()
         if Main.page * Main.pageSize < #fullList then
             Main.page = Main.page + 1
             Main.updateWindow()
         end
     end)
+
+    local txtPage = topBar_r:addChild({
+        pos = { -topBar_r.size.h - topBar_r.size.h * 3 - 2, 3 },
+        size = { topBar_r.size.h * 3, topBar_r.size.h }
+    })
     txtPage:addAdaptedText(Main.pageStr, nil, nil, nil, CENTER, 0.7, nil, nil)
+
     local pageBtnPrev = topBar_r:addChild({
         interactive = true,
         pos = { topBar_r.size.w - topBar_r.size.h * 5, 2 },
         size = { topBar_r.size.h - 4, topBar_r.size.h - 4 },
         bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_BG_COLOR,
+        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
         pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
     })
     pageBtnPrev:addAdaptedText("<", nil, nil, nil, CENTER, 0.7, nil, nil, nil)
@@ -143,6 +145,54 @@ local function create(view, fullList)
             Main.page = Main.page - 1
             Main.updateWindow()
         end
+    end)
+
+    local function reindexNonDynamic()
+        local taberu = ModData.parsed.env_obj
+        local freeStatic = ModData.freeIds.static
+        local freeNonStatic = ModData.freeIds.nonStatic
+        local jointIds = ModData.jointIds
+
+        for i = #taberu, 1, -1 do
+            local obj = taberu[i]
+            if obj.id < MAX_NONSTATIC_OBJECTS and obj.props.flag ~= "0" and not jointIds[obj.id] then
+                local newId = table.remove(freeStatic, 1)
+                if not newId then break end
+                table.insert(freeNonStatic, obj.id)
+                obj.id = newId
+            end
+        end
+        table.sort(taberu, function(a, b)
+            return a.id < b.id
+        end)
+        MGE.save()
+        print("reindex done")
+    end
+
+    local reindexBtn = botBar:addChild({
+        interactive = true,
+        pos = { 0, 2 },
+        size = { view.size.w / 2 - 2, listElementHeight - 4 },
+        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
+        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
+    })
+    reindexBtn:addAdaptedText("reindex", nil, nil, nil, CENTERMID, 0.7, nil, nil, nil)
+    reindexBtn:addMouseUpHandler(function()
+        reindexNonDynamic()
+    end)
+
+    local resetUIBtn = botBar:addChild({
+        interactive = true,
+        pos = { view.size.w - view.size.w / 2 + 2, 2 },
+        size = { view.size.w / 2 - 2, listElementHeight - 4 },
+        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
+        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
+    })
+    resetUIBtn:addAdaptedText("reset inputs", nil, nil, nil, CENTERMID, 0.7, nil, nil, nil)
+    resetUIBtn:addMouseUpHandler(function()
+        Main.resetEditor()
     end)
 
     --Creating scrollbar
