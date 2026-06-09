@@ -322,7 +322,7 @@ local function reindexNonDynamic()
     MGE.save()
 end
 
-local function save()
+local function export()
     dofile(MGE.scriptPath .. "ui/save_overlay.lua")
 end
 
@@ -340,7 +340,7 @@ function container.create(container)
     updateContentHeight(margin)
     createButtonRow(container, { reindexNonDynamic }, { "reindex" })
     updateContentHeight(margin)
-    createButtonRow(container, { save }, { "save" })
+    createButtonRow(container, { MGE.save, export }, { "save", "export" })
 end
 
 return container

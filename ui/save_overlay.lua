@@ -65,7 +65,7 @@ local replayNameInput = TBMenu:spawnTextField2(replayNameBackground, {}, nil, "E
 	darkerMode = true
 })
 
-local function updateName(newname)
+local function save(newname)
 	if (newname == "" or not newname) then
 		return
 	end
@@ -74,12 +74,8 @@ local function updateName(newname)
 			"Mod name must be alphanumeric and can only contain underscores, spaces or dashes as special characters")
 		return
 	end
-	MGE.secondaryOutputName = newname .. ".tbm"
-end
-
-local function save(newname)
-	updateName(newname)
-	MGE.save()
+	FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. newname .. ".tbm")
+	print("export complete")
 	ModSaveOverlay:kill()
 end
 
