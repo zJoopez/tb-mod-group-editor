@@ -22,9 +22,14 @@ MGE = {
     modPath = find_mod(get_game_rules().mod),
     modFolder = "../data/mod/",
 }
+
+local function loadModule(path)
+    return dofile(MGE.scriptPath .. path)
+end
+
 runCmd("reset") --Fixes sync if there are unsaved rotations
-dofile(MGE.scriptPath .. "utils/file_handler.lua")
-dofile(MGE.scriptPath .. "utils/mod_export.lua")
+loadModule("utils/file_handler.lua")
+loadModule("utils/mod_export.lua")
 
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod
@@ -38,7 +43,8 @@ function MGE.loadMod(outputName)
 end
 
 function MGE.save()
-    local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or MGE.outputName --bypass for lm not loaading updates without mod swap
+    local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or
+    MGE.outputName                                                                                 --bypass for lm not loaading updates without mod swap
     FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. outputName)
     print("save complete")
     MGE.loadMod(outputName)
@@ -67,9 +73,4 @@ end)
 
 ---start
 MGE.updateSource()
-
-MGE.window = dofile(MGE.scriptPath .. "ui/main.lua")
-
--- debug junk
--- dofile("chatlog/chatlog.lua")
--- runCmd("lm torii.tbm")
+MGE.window = loadModule("ui/main.lua")

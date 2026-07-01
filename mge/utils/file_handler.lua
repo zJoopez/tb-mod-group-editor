@@ -21,6 +21,10 @@ FileHandler = {}
 
 local indent = "   "
 
+local function isBlockHeader(line)
+    return line and (line:match("^env_obj%s+%d+") or line:match("^env_obj_joint%s+"))
+end
+
 ---@param path string
 ---@return FileParserResult
 function FileHandler.ParseMod(path)
@@ -40,8 +44,8 @@ function FileHandler.ParseMod(path)
 
     local i = 1
     while i <= #lines do
-        local kind, line
-        line = lines[i]
+        local line = lines[i]
+        local kind
 
         if line:match("^env_obj%s+%d+") then
             kind = "env_obj"
@@ -65,7 +69,9 @@ function FileHandler.ParseMod(path)
                 table.insert(parser.env_obj_joint, obj)
             end
         else
-            table.insert(parser.ignores, line)
+            if line ~= nil then
+                table.insert(parser.ignores, line)
+            end
             i = i + 1
         end
     end
@@ -85,7 +91,7 @@ function FileHandler.parseBlock(block)
         obj.obj2 = tonumber(c) or 0
     end
 
-    for _, line in ipairs(block.lines) do
+    for _, line in ipairs(block.lines or {}) do
         local key, value = line:match("^%s*(%S+)%s*(.-)%s*$")
         if key then
             obj.props[key] = value
@@ -95,13 +101,24 @@ function FileHandler.parseBlock(block)
     return obj
 end
 
+---@param obj FileParserEnvObj|FileParserEnvObjJoint
+local function buildHeader(obj)
+    if not obj then return "" end
+    if obj.kind == "env_obj_joint" then
+        return string.format("%s %d %d %d", obj.kind, obj.id or 0, obj.obj1 or 0, obj.obj2 or 0)
+    end
+    return string.format("%s %d", obj.kind, obj.id or 0)
+end
+
 ---@param file File
 ---@param objects FileParserEnvObj[] | FileParserEnvObjJoint[]
 local function writeParsedEnvObj(file, objects)
-    for _, obj in ipairs(objects) do
-        local header = table.concat({ obj.kind, obj.id, obj.obj1, obj.obj2 }, " ")
-        file:writeLine(header)
-        for key, value in pairs(obj.props) do
+    for _, obj in ipairs(objects or {}) do
+        local header = buildHeader(obj)
+        if header ~= "" then
+            file:writeLine(header)
+        end
+        for key, value in pairs(obj.props or {}) do
             file:writeLine(indent .. key .. " " .. value)
         end
     end
