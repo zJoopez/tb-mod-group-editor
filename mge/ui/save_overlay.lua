@@ -15,6 +15,8 @@ ModSaveOverlay.killAction = function()
     if (defaultKillAction ~= nil) then
         defaultKillAction()
     end
+    -- the name field would otherwise stay in toriui's keyboard list (see Widgets.releaseKeyboard)
+    if MGE and MGE.Widgets then MGE.Widgets.releaseKeyboard(ModSaveOverlay) end
     if MGE then MGE.saveOverlay = nil end
     if MGE then MGE.saveOverlayContext = nil end
     enable_camera_movement()

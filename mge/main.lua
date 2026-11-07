@@ -28,10 +28,10 @@
 ---@field Mat3 Mat3 utils/mat3.lua
 ---@field ScrollList ScrollList ui/scroll_list.lua
 ---@field FLAGS table
----@field SHAPE table
----@field SHAPE_NAMES table
+---@field SHAPE table get_obj_shape values
 ---@field MAX_ENV_OBJECTS integer
 ---@field MAX_NONSTATIC_OBJECTS integer
+---@field MAX_ENV_JOINTS integer env_obj_joint ids 1-24
 ---@field MIN_SIDE number smallest object side written, zero sides crash physics
 ---@field saveOverlay UIElement? open name prompt (ui/save_overlay.lua)
 ---@field confirmOverlay UIElement? open confirmation popup (TBMenu:showConfirmationWindow)
@@ -107,6 +107,8 @@ function MGE.quit(fromWindow)
         end
     end
     local window = MGE.Main and MGE.Main.window
+    -- our text fields and toggles would otherwise stay in toriui's keyboard list after quitting
+    if window and MGE.Widgets then pcall(MGE.Widgets.releaseKeyboard, window) end
     if not fromWindow and window and not window.destroyed then
         window.killAction = nil
         pcall(function() window:kill() end)

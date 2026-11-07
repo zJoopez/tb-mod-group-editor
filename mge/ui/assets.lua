@@ -20,30 +20,30 @@ local assetPage = 1
 local assetPageSize = 64
 local refreshAssetList
 
-local function getAssetDirectory()
-    if MGE and type(MGE.scriptPath) == "string" and MGE.scriptPath ~= "" then
-        return (MGE.scriptPath:gsub("/$", "")) .. "/assets"
+local ASSET_DIR = MGE.scriptPath .. "assets" -- scriptPath ends with "/"
+
+-- the game shifts mod file positions by this much when a mod loads (world = file - shift),
+-- exported assets subtract it again so they hold the values a mod file would
+local LOAD_SHIFT_X = -1
+local LOAD_SHIFT_Y = 0.1
+
+---File name for an asset: spaces become _, other unsafe characters are dropped, .tbm is added
+---@param name string?
+---@return string "" when nothing usable is left
+local function sanitizeAssetName(name)
+    local sanitized = (name or ""):gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", "_"):gsub("[^%w%-%_%.]+", "")
+    if sanitized ~= "" and not sanitized:find("%.") then
+        sanitized = sanitized .. ".tbm"
     end
-    return "mge/mge/assets"
+    return sanitized
 end
 
+---@param name string?
+---@return string?
 local function getAssetPath(name)
-    local assetName = (name or ""):gsub("^%s+", ""):gsub("%s+$", "")
-    if assetName == "" then return nil end
-    assetName = assetName:gsub("%s+", "_")
-    assetName = assetName:gsub("[^%w%-%_%.]+", "")
-    if not assetName:find("%.") then
-        assetName = assetName .. ".tbm"
-    end
-    return getAssetDirectory() .. "/" .. assetName
-end
-
-local function copyProps(source)
-    local props = {}
-    for key, value in pairs(source or {}) do
-        props[key] = value
-    end
-    return props
+    local fileName = sanitizeAssetName(name)
+    if fileName == "" then return nil end
+    return ASSET_DIR .. "/" .. fileName
 end
 
 ---Distance from object center to its lowest point in world space, accounts for rotation
@@ -58,43 +58,31 @@ local function getObjHalfHeight(id)
     local rot = Utils3D.MatrixToMatrixTB(rawRot)
     local zx, zy, zz = math.abs(rot.r8), math.abs(rot.r9), math.abs(rot.r10)
 
-    if shape == SHAPE.SPHERE - 1 then
+    if shape == SHAPE.SPHERE then
         return sx -- x is radius
-    elseif shape == SHAPE.CAPSULE - 1 then
+    elseif shape == SHAPE.CAPSULE then
         return zz * sy / 2 + sx -- x radius, y length of the straight part along local z, caps add radius
     end
     return (zx * sx + zy * sy + zz * sz) / 2 -- box: projected half extents
 end
 
-local function getSelectedObjects()
-    local selectedObjects = {}
-    for _, obj in ipairs(ModData.parsed.env_obj) do
-        if obj.selected then
-            table.insert(selectedObjects, obj)
-        end
-    end
-    return selectedObjects
-end
+---@type string[]? cached folder listing, search filters this instead of reading the folder per key
+local assetFiles = nil
 
+---@return string[] asset file names, sorted
 local function getAssetFiles()
-    local assetFiles = {}
-    local seen = {}
-    local basePath = getAssetDirectory()
-
-    for _, fileName in ipairs(get_files("data/script/".. MGE.scriptPath .."/assets", "")) do
+    if assetFiles then return assetFiles end
+    assetFiles = {}
+    for _, fileName in ipairs(get_files("data/script/" .. ASSET_DIR, "")) do
         local name = tostring(fileName):gsub("^.*[/\\]", "")
-        if name ~= "" and name:match("%.tbm$") and not seen[name] then
-            seen[name] = true
-            table.insert(assetFiles, name)
-        end
+        if name:match("%.tbm$") then table.insert(assetFiles, name) end
     end
-
     table.sort(assetFiles)
     return assetFiles
 end
 
 local function saveSelectedToAsset()
-    local selectedObjects = getSelectedObjects()
+    local selectedObjects = ModData.getSelected()
     if #selectedObjects == 0 then
         print("No objects selected")
         return
@@ -104,16 +92,7 @@ local function saveSelectedToAsset()
         title = "Asset Name",
         placeholder = "Enter asset name",
         defaultName = selectedAssetName or "",
-        sanitize = function(name)
-            local sanitized = (name or ""):gsub("^%s+", ""):gsub("%s+$", "")
-            sanitized = sanitized:gsub("%s+", "_")
-            sanitized = sanitized:gsub("[^%w%-%_%.]+", "")
-            if sanitized == "" then return "" end
-            if not sanitized:find("%.") then
-                sanitized = sanitized .. ".tbm"
-            end
-            return sanitized
-        end,
+        sanitize = sanitizeAssetName,
         validate = function(name)
             if name == "" then
                 return false, "Enter an asset name"
@@ -139,11 +118,13 @@ local function saveSelectedToAsset()
                 minZ = minZ and math.min(minZ, z - halfHeight) or z - halfHeight
             end
 
-            local centerX = totalX / #positions - 1
-            local centerY = totalY / #positions + 0.1
+            -- positions read from the game are shifted from the file values, undo that so the
+            -- asset file holds file coordinates
+            local centerX = totalX / #positions + LOAD_SHIFT_X
+            local centerY = totalY / #positions + LOAD_SHIFT_Y
             for i, obj in ipairs(selectedObjects) do
                 -- frame keeps the group's axes so the asset scales properly after import
-                local assetObj = { kind = "env_obj", id = obj.id, props = copyProps(obj.props), frame = obj.frame }
+                local assetObj = { kind = "env_obj", id = obj.id, props = ModData.copy(obj.props), frame = obj.frame }
                 local pos = positions[i]
                 assetObj.props.pos = FileHandler.formatNumbers(pos.x - centerX, pos.y - centerY, pos.z - minZ)
                 table.insert(parser.env_obj, assetObj)
@@ -158,6 +139,7 @@ local function saveSelectedToAsset()
             end
             if FileHandler.WriteMod(parser, path) then
                 print("asset saved: " .. path)
+                assetFiles = nil -- re-read the folder to show the new asset
                 refreshAssetList()
                 return true
             end
@@ -181,17 +163,19 @@ local function importAssetFromFile(assetName)
         return
     end
 
-    -- objects linked by the asset's own joints need non static ids
+    -- id pool per object (the asset's own joints need dynamic ids), counted first so it imports
+    -- everything or nothing
     local assetJointIds = Joints.getObjectIds(parser.env_obj_joint)
-    local requiredIds = { static = 0, nonStatic = 0 }
-    for _, assetObj in ipairs(parser.env_obj) do
-        if assetObj.props.flag ~= "0" and not assetJointIds[assetObj.id] then
-            requiredIds.static = requiredIds.static + 1
-        else
-            requiredIds.nonStatic = requiredIds.nonStatic + 1
-        end
+    local pools = {}
+    local need = { static = 0, nonStatic = 0 }
+    for i, assetObj in ipairs(parser.env_obj) do
+        pools[i] = ModData.idPool(assetObj, false, assetJointIds)
+        need[pools[i]] = need[pools[i]] + 1
     end
-    if requiredIds.static > #ModData.freeIds.static or requiredIds.nonStatic > #ModData.freeIds.nonStatic then
+    if not Joints.haveRoom(Joints.countLinked(parser.env_obj_joint, Joints.idSet(parser.env_obj))) then return end
+    -- static objects on dynamic ids are moved up only if the import needs their ids
+    if need.static > #ModData.freeIds.static
+        or not ModData.freeDynamicIds(need.nonStatic, { reserveStatic = need.static }) then
         print("Not enough objects available")
         return
     end
@@ -201,41 +185,19 @@ local function importAssetFromFile(assetName)
         obj.selected = nil
     end
 
-    local imported = 0
     local idMap = {} -- asset object id -> id in the mod
-    for _, assetObj in ipairs(parser.env_obj) do
-        local freeIds
-        if assetObj.props.flag ~= "0" and not assetJointIds[assetObj.id] then
-            freeIds = ModData.freeIds.static
-        else
-            freeIds = ModData.freeIds.nonStatic
-        end
-
-        local newId = freeIds[1]
-        if not newId then
-            print("Not enough objects available")
-            return
-        end
-
-        local importedObj = { kind = "env_obj", id = newId, props = copyProps(assetObj.props), frame = assetObj.frame,
-            selected = true }
-        table.insert(ModData.parsed.env_obj, importedObj)
-        table.remove(freeIds, 1)
+    for i, assetObj in ipairs(parser.env_obj) do
+        local newId = table.remove(ModData.freeIds[pools[i]], 1)
+        table.insert(ModData.parsed.env_obj, { kind = "env_obj", id = newId, props = ModData.copy(assetObj.props),
+            frame = assetObj.frame, selected = true })
         idMap[assetObj.id] = newId
-        imported = imported + 1
     end
     local importedJoints = Joints.copyLinked(parser.env_obj_joint, idMap)
 
-    table.sort(ModData.parsed.env_obj, function(a, b)
-        return a.id < b.id
-    end)
+    ModData.sortObjects()
     History.commit()
-    MGE.save()
-    if Main and Main.updateWindow then
-        Main.updateWindow()
-        Main.resetEditor()
-    end
-    print("imported " .. imported .. " objects, " .. importedJoints .. " joints")
+    MGE.save() -- the reload refreshes the window
+    print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints")
 end
 
 local function filterAssets()
@@ -304,10 +266,6 @@ refreshAssetList = function()
     if Main and Main.applyTab then Main.applyTab() end
 end
 
-
----Creates the list frame once: pager bar on top, rows, search field in the bottom bar
----@param y number
----@param h number
 ---Creates the list frame once: search + pager on top, rows, export/import buttons on the bottom
 local function createListFrame()
     local barHeight = ScrollList.rowHeight

@@ -9,14 +9,18 @@ local Widgets = {}
 ---@field w number
 ---@field h number
 
+-- one text size for every button (tabs, bars, editor rows), adapted text only shrinks it to fit
+Widgets.TEXT_SCALE = 0.7
+
 ---Standard MGE button
 ---@param parent UIElement
 ---@param rect WidgetRect position relative to parent
 ---@param label string|fun(): string function labels are re-read every frame
 ---@param onClick function?
----@param textScale number? omit to let the text adapt to the button size
+---@param textScale number? defaults to Widgets.TEXT_SCALE
 ---@return UIElement
 function Widgets.button(parent, rect, label, onClick, textScale)
+    textScale = textScale or Widgets.TEXT_SCALE
     local btn = parent:addChild({
         pos = { rect.x, rect.y },
         size = { rect.w, rect.h },
@@ -27,12 +31,10 @@ function Widgets.button(parent, rect, label, onClick, textScale)
     }, true)
     if type(label) == "function" then
         btn:addCustomDisplay(false, function()
-            btn:uiText(label(), nil, nil, nil, CENTERMID, textScale or 0.8, nil, nil, nil)
+            btn:uiText(label(), nil, nil, nil, CENTERMID, textScale, nil, nil, nil)
         end)
-    elseif textScale then
-        btn:addAdaptedText(label, nil, nil, nil, CENTERMID, textScale, nil, nil)
     else
-        btn:addAdaptedText(label)
+        btn:addAdaptedText(label, nil, nil, nil, CENTERMID, textScale, nil, nil)
     end
     if onClick then btn:addMouseUpHandler(onClick) end
     return btn
@@ -57,7 +59,7 @@ function Widgets.buttonRow(parent, y, h, buttons, gap, textScale)
     return created
 end
 
--- buttons inside list bars (object list, asset list): 2px top/bottom padding, small text
+-- buttons inside list bars (object list, asset list): 2px top/bottom padding
 local BAR_PADDING = 2
 local BAR_GAP = 4
 
@@ -66,7 +68,49 @@ local BAR_GAP = 4
 ---@param buttons { label: string|fun(): string, onClick: function? }[]
 ---@return UIElement[]
 function Widgets.barButtons(bar, buttons)
-    return Widgets.buttonRow(bar, BAR_PADDING, bar.size.h - BAR_PADDING * 2, buttons, BAR_GAP, 0.7)
+    return Widgets.buttonRow(bar, BAR_PADDING, bar.size.h - BAR_PADDING * 2, buttons, BAR_GAP)
+end
+
+---Removes an element and its descendants from toriui's keyboard handler list (UIKeyboardHandler).
+---Text fields and toggles add themselves there on creation, but kill() only removes the one that
+---has focus. UI that is rebuilt often (object list, properties panel) would keep piling up dead
+---entries, and toriui walks the whole list on every key press and mouse click.
+---@param element UIElement
+function Widgets.releaseKeyboard(element)
+    if not UIKeyboardHandler or not element then return end
+    local owned = { [element] = true }
+    local function collect(e)
+        for _, c in ipairs(e.child or {}) do
+            owned[c] = true
+            collect(c)
+        end
+    end
+    collect(element)
+    for i = #UIKeyboardHandler, 1, -1 do
+        local v = UIKeyboardHandler[i]
+        if owned[v] then
+            if v.menuKeyboardId then v:disableMenuKeyboard() end
+            table.remove(UIKeyboardHandler, i)
+        end
+    end
+end
+
+---Destroys an element's children (kill(true)) without leaving them in toriui's keyboard list
+---@param element UIElement
+function Widgets.clearChildren(element)
+    for _, c in ipairs(element.child or {}) do Widgets.releaseKeyboard(c) end
+    element:kill(true)
+end
+
+-- small centered info lines (Enter hint, window footer)
+Widgets.INFO_HEIGHT = 18
+local INFO_MAX_SCALE = 0.7 -- adapted text shrinks below this only if the line doesn't fit
+
+---Small centered info text, replaces the element's previous text
+---@param element UIElement
+---@param text string
+function Widgets.infoText(element, text)
+    element:addAdaptedText(true, text, nil, nil, FONTS.SMALL, CENTERMID, INFO_MAX_SCALE)
 end
 
 MGE.Widgets = Widgets

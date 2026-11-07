@@ -1,12 +1,15 @@
 require("toriui.uielement3d") -- Utils3D.MatrixToMatrixTB
 
-local container = {}
+local editor = {}
 local RotatingOld = dofile(MGE.scriptPath .. "utils/rotating.lua")
 local ModData = MGE.ModData
 local History = MGE.History
 local Joints = MGE.Joints
 local Mat3 = MGE.Mat3
 local Widgets = MGE.Widgets
+local FileHandler = MGE.FileHandler
+local SHAPE = MGE.SHAPE
+local getSelected = ModData.getSelected
 
 local totalHeight = 0
 local margin = 10
@@ -14,41 +17,43 @@ local margin = 10
 ---@type table<string, UIElement[]>
 local inwuts = {}
 
-local function getSelectedObjects()
-    local selected = {}
-    for _, obj in ipairs(ModData.parsed.env_obj) do
-        if obj.selected then
-            table.insert(selected, obj)
-        end
-    end
-    return selected
-end
 local function updateContentHeight(height)
     totalHeight = totalHeight + height
 end
 
-local function formatStrArr(arr)
-    for index, value in ipairs(arr) do
-        arr[index] = MGE.FileHandler.formatNumber(value)
-    end
-    return arr
-end
-
-local function readNumberInputs(inputs)
+---Numbers typed in a row's inputs, nil for empty fields. With `only`, just that input is read
+---(Enter applies the field it was pressed in, the row's other fields count as empty)
+---@param inputs UIElement[]
+---@param only integer?
+---@return (number?)[]
+local function readInputs(inputs, only)
     local values = {}
     for i, input in ipairs(inputs) do
-        values[i] = tonumber(input.textfieldstr[1]) or 0
+        if not only or i == only then values[i] = tonumber(input.textfieldstr[1]) end
     end
     return values
 end
 
 local function writeVectorProperty(obj, key, values)
-    local formatted = formatStrArr(values)
-    obj.props[key] = table.concat(formatted, " ")
-    return formatted
+    obj.props[key] = FileHandler.formatNumbers(table.unpack(values))
 end
 
----@param selectedObjects EnvObject[]
+---Applies fn to the anchor (and axis) of joints linked between the selected objects, then commits.
+---Joints can't be moved live, so a change with linked joints saves to show them right away.
+---@param selected FileParserEnvObj[]
+---@param posFn (fun(x: number, y: number, z: number): number, number, number)?
+---@param axisFn (fun(x: number, y: number, z: number): number, number, number)?
+local function finishTransform(selected, posFn, axisFn)
+    local linked = Joints.getLinked(Joints.idSet(selected))
+    for _, joint in ipairs(linked) do
+        if posFn then Joints.transformPos(joint, posFn) end
+        if axisFn then Joints.transformAxis(joint, axisFn) end
+    end
+    History.commit()
+    if #linked > 0 then MGE.save() end
+end
+
+---@param selectedObjects FileParserEnvObj[]
 ---@return number, number, number
 local function getSelectionPivot(selectedObjects)
     local total = #selectedObjects
@@ -65,41 +70,37 @@ local function getSelectionPivot(selectedObjects)
     return sumX / total, sumY / total, sumZ / total
 end
 
-local function moveSelected()
-    local offsets = readNumberInputs(inwuts.pos)
+---@param only integer? axis input Enter was pressed in, nil applies all
+local function moveSelected(only)
+    local typed = readInputs(inwuts.pos, only)
+    local offsets = { typed[1] or 0, typed[2] or 0, typed[3] or 0 }
 
-    local selectedObjects = getSelectedObjects()
+    local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
 
+    local function move(x, y, z) return x + offsets[1], y + offsets[2], z + offsets[3] end
     for _, v in ipairs(selectedObjects) do
-        local x, y, z = get_obj_pos(v.id - 1)
-        local pos = { x + offsets[1], y + offsets[2], z + offsets[3] }
+        local pos = { move(get_obj_pos(v.id - 1)) }
         set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
         writeVectorProperty(v, "pos", pos)
-    end
-    local linked = Joints.getLinked(Joints.idSet(selectedObjects))
-    for _, joint in ipairs(linked) do
-        Joints.transformPos(joint, function(x, y, z)
-            return x + offsets[1], y + offsets[2], z + offsets[3]
-        end)
     end
 
     set_camera_mode(4)
     MGE.cameraChanged = true -- restored on quit
     set_camera_lookat(getSelectionPivot(selectedObjects))
-    History.commit()
-    -- joints can't be moved live, save so they match the objects right away
-    if #linked > 0 then MGE.save() end
+    finishTransform(selectedObjects, move)
 end
 
-local function rotSelected()
-    local selectedObjects = getSelectedObjects()
+---@param only integer? axis input Enter was pressed in, nil applies all
+local function rotSelected(only)
+    local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
 
     local pivot = { getSelectionPivot(selectedObjects) }
+    local typed = readInputs(inwuts.rot, only)
     local offsets = {}
-    for i, input in ipairs(inwuts.rot) do
-        offsets[i] = math.rad(tonumber(input.textfieldstr[1]) or 0)
+    for i = 1, 3 do
+        offsets[i] = math.rad(typed[i] or 0)
     end
 
     for _, v in ipairs(selectedObjects) do
@@ -131,20 +132,13 @@ local function rotSelected()
     end
 
     -- anchors rotate around the same pivot, axis directions get the same rotation without translation
-    local linked = Joints.getLinked(Joints.idSet(selectedObjects))
-    for _, joint in ipairs(linked) do
-        Joints.transformPos(joint, function(x, y, z)
-            local p = RotatingOld.SetRotPos(x, y, z, pivot[1], pivot[2], pivot[3], offsets[1], offsets[2], offsets[3])
-            return p[1], p[2], p[3]
-        end)
-        Joints.transformAxis(joint, function(x, y, z)
-            local a = RotatingOld.SetRotPos(x, y, z, 0, 0, 0, offsets[1], offsets[2], offsets[3])
-            return a[1], a[2], a[3]
-        end)
-    end
-    History.commit()
-    -- joints can't be moved live, save so they match the objects right away
-    if #linked > 0 then MGE.save() end
+    finishTransform(selectedObjects, function(x, y, z)
+        local p = RotatingOld.SetRotPos(x, y, z, pivot[1], pivot[2], pivot[3], offsets[1], offsets[2], offsets[3])
+        return p[1], p[2], p[3]
+    end, function(x, y, z)
+        local a = RotatingOld.SetRotPos(x, y, z, 0, 0, 0, offsets[1], offsets[2], offsets[3])
+        return a[1], a[2], a[3]
+    end)
 end
 
 ---World directions of an object's local x, y, z axes.
@@ -184,10 +178,10 @@ local function scaleSides(id, sides, map)
 
     local out
     local shape = get_obj_shape(id)
-    if shape == MGE.SHAPE.SPHERE - 1 then -- x radius
+    if shape == SHAPE.SPHERE then -- x radius
         local r = sides[1] * (f[1] + f[2] + f[3]) / 3
         out = { r, r, r }
-    elseif shape == MGE.SHAPE.CAPSULE - 1 then -- x radius, y length along local z
+    elseif shape == SHAPE.CAPSULE then -- x radius, y length along local z
         out = { sides[1] * (f[1] + f[2]) / 2, sides[2] * f[3], sides[3] }
     else
         out = { sides[1] * f[1], sides[2] * f[2], sides[3] * f[3] }
@@ -235,31 +229,29 @@ local function pickGroupFrame(objects)
     return best and best.frame or Mat3.IDENTITY
 end
 
-local function scaleSelected()
-    local selectedObjects = getSelectedObjects()
+---@param only integer? axis input Enter was pressed in, nil applies all
+local function scaleSelected(only)
+    local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
 
     local pivot = { getSelectionPivot(selectedObjects) }
+    local typed = readInputs(inwuts.scale, only)
     local scale = {}
-    for i, input in ipairs(inwuts.scale) do
-        local value = tonumber(input.textfieldstr[1]) or 0
-        if value == 0 or value == -1 then
-            scale[i] = 1
-        else
-            scale[i] = value
-        end
+    for i = 1, 3 do
+        local value = typed[i] or 0
+        scale[i] = (value == 0 or value == -1) and 1 or value -- 0 and -1 mean no change
     end
 
     -- scale along the group's own axes (world axes if never rotated by MGE), as if scaled before rotating
     local map = groupScaleMatrix(pickGroupFrame(selectedObjects), scale)
+    local function scalePos(x, y, z)
+        local rel = Mat3.apply(map, { x - pivot[1], y - pivot[2], z - pivot[3] })
+        return pivot[1] + rel[1], pivot[2] + rel[2], pivot[3] + rel[3]
+    end
 
     for _, v in ipairs(selectedObjects) do
-        local sides = { get_obj_sides(v.id - 1) }
-        local pos = { get_obj_pos(v.id - 1) }
-
-        local rel = Mat3.apply(map, { pos[1] - pivot[1], pos[2] - pivot[2], pos[3] - pivot[3] })
-        local outPos = { pivot[1] + rel[1], pivot[2] + rel[2], pivot[3] + rel[3] }
-        local outSides = scaleSides(v.id - 1, sides, map)
+        local outPos = { scalePos(get_obj_pos(v.id - 1)) }
+        local outSides = scaleSides(v.id - 1, { get_obj_sides(v.id - 1) }, map)
 
         set_obj_pos(v.id - 1, outPos[1], outPos[2], outPos[3])
         set_obj_sides(v.id - 1, outSides[1], outSides[2], outSides[3])
@@ -267,16 +259,7 @@ local function scaleSelected()
         writeVectorProperty(v, "pos", outPos)
         writeVectorProperty(v, "sides", outSides)
     end
-    local linked = Joints.getLinked(Joints.idSet(selectedObjects))
-    for _, joint in ipairs(linked) do
-        Joints.transformPos(joint, function(x, y, z)
-            local rel = Mat3.apply(map, { x - pivot[1], y - pivot[2], z - pivot[3] })
-            return pivot[1] + rel[1], pivot[2] + rel[2], pivot[3] + rel[3]
-        end)
-    end
-    History.commit()
-    -- joints can't be moved live, save so they match the objects right away
-    if #linked > 0 then MGE.save() end
+    finishTransform(selectedObjects, scalePos)
 end
 
 -- Rebuilds the Properties tab so its placeholders show the selection's current values
@@ -296,13 +279,13 @@ local PROPERTIES = {
 local function setProperty(key, input)
     local value = tonumber(input.textfieldstr[1])
     if not value then return end
-    local selectedObjects = getSelectedObjects()
+    local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
 
     local property = PROPERTIES[key]
     value = math.max(value, property.min)
     for _, v in ipairs(selectedObjects) do
-        v.props[key] = MGE.FileHandler.formatNumber(value)
+        v.props[key] = FileHandler.formatNumber(value)
         if property.setter then property.setter(v.id - 1, value) end
     end
     History.commit()
@@ -314,14 +297,15 @@ local function setProperty(key, input)
 end
 
 ---Sets color on selected objects, empty fields keep each object's current component (values 0-255)
-local function adjustColor()
-    local selectedObjects = getSelectedObjects()
+---@param only integer? channel input Enter was pressed in, nil applies all
+local function adjustColor(only)
+    local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
 
-    local typed = {}
-    for i, input in ipairs(inwuts.color) do
-        local n = tonumber(input.textfieldstr[1])
-        typed[i] = n and math.max(0, math.min(500, n)) / 255 or nil
+    local typed = readInputs(inwuts.color, only)
+    for i = 1, 4 do
+        -- 255 is the official max, the game accepts up to 500 and draws those brighter
+        typed[i] = typed[i] and math.max(0, math.min(500, typed[i])) / 255 or nil
     end
     for _, v in ipairs(selectedObjects) do
         local current = get_obj_color(v.id - 1) or { 1, 1, 1, 1 }
@@ -334,21 +318,31 @@ local function adjustColor()
     refreshProperties()
 end
 
----Value shared by all selected objects as text, "mixed" when they differ, nil when nothing is selected
----@param read fun(obj: FileParserEnvObj): number?
----@return string?
-local function sharedValue(read)
+---Value shared by the objects, "mixed" when they differ, nil for no objects
+---@param objects FileParserEnvObj[]
+---@param read fun(obj: FileParserEnvObj): any never nil
+local function sharedChoice(objects, read)
     local value
-    for _, obj in ipairs(getSelectedObjects()) do
+    for _, obj in ipairs(objects) do
         local v = read(obj)
-        local text = v and MGE.FileHandler.formatNumber(v) or "-"
         if value == nil then
-            value = text
-        elseif value ~= text then
+            value = v
+        elseif value ~= v then
             return "mixed"
         end
     end
     return value
+end
+
+---Number shared by the objects as text, "-" for objects without it, "mixed" when they differ
+---@param objects FileParserEnvObj[]
+---@param read fun(obj: FileParserEnvObj): number?
+---@return string?
+local function sharedValue(objects, read)
+    return sharedChoice(objects, function(obj)
+        local v = read(obj)
+        return v and FileHandler.formatNumber(v) or "-"
+    end)
 end
 
 ---@param placeholder string? text shown while empty, defaults to "0"
@@ -373,14 +367,13 @@ local function createInput(container, onInputFunc, placeholder)
     return input
 end
 
----Label column followed by equally sized inputs and an optional "?" help icon at the end
+---Row with the label column on the left and an optional "?" help icon at the end.
+---Returns the row and the x and width of the space between them, for inputs or buttons
 ---@param label string
 ---@param parent UIElement
----@param func fun(inputs: UIElement[], index: integer) called on enter
----@param placeholders string[] one per input
 ---@param help string? explanation shown when hovering the "?" icon
----@return UIElement[]
-local function createInputRow(label, parent, func, placeholders, help)
+---@return UIElement row, number contentX, number contentW
+local function createRow(label, parent, help)
     local row = parent:addChild({
         pos = { 0, totalHeight },
         size = { parent.size.w, 30 },
@@ -390,22 +383,11 @@ local function createInputRow(label, parent, func, placeholders, help)
     local labelW = 80
     local helpSize = 22
     local helpW = help and helpSize + 8 or 0 -- space reserved at the end of the row for the "?" icon
-    local columnSize = (row.size.w - labelW - helpW) / #placeholders
     local labelContainer = row:addChild({
         pos = { 0, 0 },
         size = { labelW, row.size.h },
     }, true)
     labelContainer:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.7, nil, nil)
-
-    local inputs = {}
-    for i, placeholder in ipairs(placeholders) do
-        local inputContainer = row:addChild({
-            pos = { labelW + (i - 1) * columnSize, 0 },
-            size = { columnSize, row.size.h },
-            interactive = true,
-        }, true)
-        inputs[i] = createInput(inputContainer, function() func(inputs, i) end, placeholder)
-    end
 
     if help then
         -- round "?" that shows a short explanation on hover, same style as the game's mods menu
@@ -426,7 +408,51 @@ local function createInputRow(label, parent, func, placeholders, help)
     end
 
     updateContentHeight(row.size.h)
+    return row, labelW, row.size.w - labelW - helpW
+end
+
+---Label column followed by equally sized inputs and an optional "?" help icon at the end
+---@param label string
+---@param parent UIElement
+---@param func fun(inputs: UIElement[], index: integer) called on enter
+---@param placeholders string[] one per input
+---@param help string? explanation shown when hovering the "?" icon
+---@return UIElement[]
+local function createInputRow(label, parent, func, placeholders, help)
+    local row, contentX, contentW = createRow(label, parent, help)
+    local columnSize = contentW / #placeholders
+    local inputs = {}
+    for i, placeholder in ipairs(placeholders) do
+        local inputContainer = row:addChild({
+            pos = { contentX + (i - 1) * columnSize, 0 },
+            size = { columnSize, row.size.h },
+            interactive = true,
+        }, true)
+        inputs[i] = createInput(inputContainer, function() func(inputs, i) end, placeholder)
+    end
     return inputs
+end
+
+---Label column followed by buttons for a fixed set of values, the current one is highlighted
+---@param label string
+---@param parent UIElement
+---@param choices { label: string, value: any }[]
+---@param current any value shared by the selection, nil or "mixed" highlights nothing
+---@param onPick fun(value: any)
+---@param help string?
+local function createChoiceRow(label, parent, choices, current, onPick, help)
+    local row, contentX, contentW = createRow(label, parent, help)
+    local holder = row:addChild({
+        pos = { contentX + 2, 2 },
+        size = { contentW - 4, row.size.h - 4 },
+    }, true)
+    local items = {}
+    for i, choice in ipairs(choices) do
+        items[i] = { label = choice.label, onClick = function() onPick(choice.value) end }
+    end
+    for i, btn in ipairs(Widgets.buttonRow(holder, 0, holder.size.h, items, 4)) do
+        if choices[i].value == current then btn.bgColor = TB_MENU_DEFAULT_LIGHTER_COLOR end
+    end
 end
 
 ---Full width row of equal buttons at the current height
@@ -437,44 +463,38 @@ local function createButtonRow(parent, buttons)
     updateContentHeight(30 + margin)
 end
 
-local function shallowCopy(t)
-    local copy = {}
-    for k, v in pairs(t) do copy[k] = v end
-    return copy
-end
-
 local function duplicate()
-    local taberu = ModData.parsed.env_obj
+    local selected = getSelected()
+    if #selected == 0 then return end
+    -- pick each copy's id pool and count them first, so it either copies everything or nothing
+    local pools = {}
+    local need = { static = 0, nonStatic = 0 }
+    for i, obj in ipairs(selected) do
+        pools[i] = ModData.idPool(obj, true)
+        need[pools[i]] = need[pools[i]] + 1
+    end
+    if not Joints.haveRoom(Joints.countLinked(ModData.parsed.env_obj_joint, Joints.idSet(selected))) then return end
+    -- static objects on dynamic ids are moved up only if the copies need their ids
+    if need.static > #ModData.freeIds.static
+        or not ModData.freeDynamicIds(need.nonStatic, { reserveStatic = need.static }) then
+        print("Not enough objects available")
+        return
+    end
+
     local idMap = {} -- original id -> copy id, used to copy joints between duplicated objects
-    for i = 1, #taberu do
-        local obj = taberu[i]
-        if obj and obj.selected then
-            local freeIds
-            if obj.props.flag ~= "0" and not ModData.jointIds[obj.id] then
-                freeIds = ModData.freeIds.static
-            else
-                freeIds = ModData.freeIds.nonStatic
-            end
-
-            local newId = freeIds[1]
-            if not newId then
-                print("Not enough objects available")
-                return
-            end
-
-            local copy = shallowCopy(obj)
-            copy.id = newId
-            copy.props = shallowCopy(obj.props) -- don't share props with the original
-            table.insert(ModData.parsed.env_obj, copy)
-            table.remove(freeIds, 1)
-            idMap[obj.id] = newId
-            obj.selected = false -- selection moves to the copies (copy keeps selected = true)
-        end
+    for i, obj in ipairs(selected) do
+        local copy = ModData.copy(obj)
+        copy.id = table.remove(ModData.freeIds[pools[i]], 1)
+        copy.props = ModData.copy(obj.props) -- don't share props with the original
+        -- the game flag is read by id, a copy without a flag line could get a different default
+        -- (objects moved by freeDynamicIds already have their flag written)
+        copy.props.flag = copy.props.flag or tostring(get_obj_flag(obj.id - 1) or 0)
+        table.insert(ModData.parsed.env_obj, copy)
+        idMap[obj.id] = copy.id
+        obj.selected = false -- selection moves to the copies (copy keeps selected = true)
     end
     Joints.copyLinked(Joints.getLinked(idMap), idMap)
-    table.sort(taberu, function(a, b)
-        return a.id < b.id
-    end)
+    ModData.sortObjects()
     History.commit()
     MGE.save()
 end
@@ -486,11 +506,7 @@ local function delete()
         if obj.selected then
             deleted[obj.id] = true
             table.remove(ModData.parsed.env_obj, i)
-            if obj.props.flag ~= "0" and not ModData.jointIds[obj.id] then
-                table.insert(ModData.freeIds.static, obj.id)
-            else
-                table.insert(ModData.freeIds.nonStatic, obj.id)
-            end
+            table.insert(ModData.freeIds[ModData.idPool(obj, true)], obj.id)
         end
     end
     Joints.removeLinkedToAny(deleted) -- a joint can't point to a missing object
@@ -500,7 +516,7 @@ end
 
 ---Asks for confirmation with Toribash's own popup (TBMenu:showConfirmationWindow) before deleting
 local function onDeleteClick()
-    local count = #getSelectedObjects()
+    local count = #getSelected()
     if count == 0 or (MGE.confirmOverlay and not MGE.confirmOverlay.destroyed) then return end
     local message = "Delete " .. count .. " selected object" .. (count == 1 and "" or "s") .. "?\nUndo can bring them back."
     -- stored so MGE.quit can close it, cleared by either button
@@ -512,20 +528,125 @@ local function onDeleteClick()
     end)
 end
 
+-- Shape, static/dynamic and visibility. The game reads them when the mod loads, so they're saved
+-- instead of set live (undo restores them the same way).
+
+-- names used in mod files, indexed by get_obj_shape
+local SHAPE_FILE_NAMES = { [SHAPE.SPHERE] = "sphere", [SHAPE.BOX] = "box", [SHAPE.CAPSULE] = "cylinder" }
+
+---@param obj FileParserEnvObj
+---@return string
+local function getShape(obj)
+    local shape = obj.props.shape and obj.props.shape:lower()
+    return shape or SHAPE_FILE_NAMES[get_obj_shape(obj.id - 1)] or "box"
+end
+
+---@param obj FileParserEnvObj
+---@return boolean
+local function isVisible(obj)
+    local vis = tonumber(obj.props.visible)
+    if vis == nil then
+        local live = get_obj_vis(obj.id - 1)
+        if type(live) == "boolean" then return live end
+        vis = tonumber(live) or 1
+    end
+    return vis ~= 0
+end
+
+---Writes a prop on all selected objects and saves if any of them changed
+---@param key string
+---@param value string
+local function setSelectedProp(key, value)
+    local changed = false
+    for _, v in ipairs(getSelected()) do
+        if v.props[key] ~= value then
+            v.props[key] = value
+            changed = true
+        end
+    end
+    if not changed then return end
+    History.commit()
+    MGE.save()
+end
+
+---Makes selected objects static or dynamic. Dynamic objects need ids 1-48: objects above that get a
+---free low id, static objects are moved off low ids if there aren't enough (ModData.freeDynamicIds).
+---New static objects move above 48 when a free id exists, so they don't hold a dynamic id.
+---Joints follow the new ids. Nothing changes if there aren't enough ids.
+---@param static boolean
+local function setStatic(static)
+    local freeIds = ModData.freeIds
+    local MAX = MGE.MAX_NONSTATIC_OBJECTS
+    local toChange = {}
+    local keep = {} -- objects being changed must not be moved by freeDynamicIds
+    local needIds = 0
+    for _, v in ipairs(getSelected()) do
+        if ModData.isStatic(v, true) ~= static then
+            table.insert(toChange, v)
+            keep[v.id] = true
+            if not static and v.id > MAX then needIds = needIds + 1 end
+        end
+    end
+    if #toChange == 0 then return end
+    if not static and not ModData.freeDynamicIds(needIds, { keep = keep }) then
+        print("Not enough dynamic object ids: " .. needIds .. " needed, " .. #freeIds.nonStatic .. " free")
+        return
+    end
+
+    local idMap = {} -- old id -> new id
+    local function moveTo(v, pool, releaseTo)
+        local newId = table.remove(pool, 1)
+        table.insert(releaseTo, v.id)
+        idMap[v.id] = newId
+        v.id = newId
+    end
+    for _, v in ipairs(toChange) do
+        local flag = tonumber(v.props.flag) or get_obj_flag(v.id - 1) or 0
+        if static then
+            flag = bit.bor(flag, MGE.FLAGS.STATIC)
+        else
+            flag = flag - bit.band(flag, MGE.FLAGS.STATIC) -- keeps the other flags (ungrippable...)
+        end
+        v.props.flag = tostring(flag)
+        if not static and v.id > MAX then
+            moveTo(v, freeIds.nonStatic, freeIds.static)
+        elseif static and v.id <= MAX and #freeIds.static > 0 and not ModData.jointIds[v.id] then
+            moveTo(v, freeIds.static, freeIds.nonStatic)
+        end
+    end
+    table.sort(freeIds.static)
+    table.sort(freeIds.nonStatic)
+    for _, joint in ipairs(ModData.parsed.env_obj_joint) do
+        joint.obj1 = idMap[joint.obj1] or joint.obj1
+        joint.obj2 = idMap[joint.obj2] or joint.obj2
+    end
+    ModData.sortObjects()
+    History.commit()
+    MGE.save()
+end
+
 -- Two panels sharing the editor area: Transform (move/rotate/scale) and Properties (color, mass,
--- friction, bounce). The window's tab row picks one through Main.applyTab -> container.applyPanel.
+-- friction, bounce, shape, type, visibility). The window's tab row picks one through
+-- Main.applyTab -> editor.applyPanel.
+local ROW_H = 30
+local PANEL_ROWS = { transform = 3, properties = 7 }
 ---@type table<string, UIElement>
 local panels = {}
 ---@type UIElement
 local propertiesPanel = nil
+---@type UIElement? reset/duplicate/delete, moved under the shown panel
+local bottom = nil
 
 ---Shows one editor panel, called by Main.applyTab
 ---@param id string "transform"|"properties"
-function container.applyPanel(id)
+function editor.applyPanel(id)
     for panelId, panel in pairs(panels) do
         if not panel.destroyed then
             if panelId == id then panel:show(true) else panel:hide(true) end
         end
+    end
+    if bottom and not bottom.destroyed and PANEL_ROWS[id] then
+        bottom:moveTo(nil, PANEL_ROWS[id] * ROW_H + 4)
     end
 end
 
@@ -537,28 +658,32 @@ end
 local function buildTransformPanel(panel)
     totalHeight = 0
     local zeros = { "0.00", "0.00", "0.00" }
-    inwuts.pos = createInputRow("Move", panel, function() moveSelected() end, zeros,
-        "Moves selected objects by X Y Z.\nEmpty fields count as 0.")
-    inwuts.rot = createInputRow("Rotate", panel, function() rotSelected() end, zeros,
-        "Rotates selected objects around their center\nby X Y Z degrees.")
-    inwuts.scale = createInputRow("Scale", panel, function() scaleSelected() end, zeros,
-        "Multiplies size and spacing of selected objects\nalong the group's X Y Z. Empty or 0 means no change.")
+    -- Enter applies only the field it's pressed in (index i), the row's other fields are ignored
+    inwuts.pos = createInputRow("Move", panel, function(_, i) moveSelected(i) end, zeros,
+        "Moves selected objects along X, Y or Z.\nEnter applies the field you typed in.")
+    inwuts.rot = createInputRow("Rotate", panel, function(_, i) rotSelected(i) end, zeros,
+        "Rotates selected objects around their center\nby X, Y or Z degrees. Enter applies the field you typed in.")
+    inwuts.scale = createInputRow("Scale", panel, function(_, i) scaleSelected(i) end, zeros,
+        "Multiplies size and spacing of selected objects\nalong the group's X, Y or Z. 0 means no change.\nEnter applies the field you typed in.")
 end
 
 local function buildPropertiesPanel(panel)
     totalHeight = 0
     -- placeholders show the selection's current value ("mixed" if objects differ),
     -- or the expected input type without a selection
+    local selected = getSelected() -- read once, every row below shows values of the same objects
+    local colors = {}
+    for _, obj in ipairs(selected) do colors[obj] = get_obj_color(obj.id - 1) or {} end
     local colorHints = {}
     for i = 1, 4 do
-        colorHints[i] = sharedValue(function(obj)
-            local c = get_obj_color(obj.id - 1)
-            return c and c[i] and math.floor(c[i] * 255 + 0.5)
+        colorHints[i] = sharedValue(selected, function(obj)
+            local c = colors[obj][i]
+            return c and math.floor(c * 255 + 0.5)
         end) or "0"
         if colorHints[i] == "mixed" or colorHints[i] == "-" then colorHints[i] = "0" end -- 4 narrow fields, "mixed" doesn't fit
     end
-    inwuts.color = createInputRow("Color", panel, function() adjustColor() end, colorHints,
-        "Red, green, blue and alpha (0-255).\nEmpty fields keep each object's current value.")
+    inwuts.color = createInputRow("Color", panel, function(_, i) adjustColor(i) end, colorHints,
+        "Red, green, blue and alpha (0-255, up to 500 for brighter colors).\nEnter sets the channel you typed in,\nothers keep each object's current value.")
 
     local helpTexts = {
         mass = "Sets mass of selected objects.\nShows the current value, \"mixed\" if they differ.",
@@ -569,7 +694,7 @@ local function buildPropertiesPanel(panel)
     for _, entry in ipairs({ { "Mass", "mass" }, { "Friction", "friction" }, { "Bounce", "bounce" } }) do
         local label, key = entry[1], entry[2]
         local property = PROPERTIES[key]
-        local hint = sharedValue(function(obj)
+        local hint = sharedValue(selected, function(obj)
             if property.getter then return property.getter(obj.id - 1) end
             return tonumber(obj.props[key])
         end) or "0.00"
@@ -577,6 +702,25 @@ local function buildPropertiesPanel(panel)
         local inputs = createInputRow(label, panel, function(inputs) setProperty(key, inputs[1]) end, { hint }, helpTexts[key])
         table.insert(inwuts.properties, inputs[1])
     end
+
+    -- buttons for fixed values, the selection's current one is highlighted
+    createChoiceRow("Shape", panel, {
+        { label = "Box", value = "box" },
+        { label = "Sphere", value = "sphere" },
+        { label = "Cylinder", value = "cylinder" },
+    }, sharedChoice(selected, getShape), function(shape) setSelectedProp("shape", shape) end,
+        "Shape of selected objects.\nSides are kept, so the size may look different.")
+    createChoiceRow("Type", panel, {
+        { label = "Dynamic", value = false },
+        { label = "Static", value = true },
+    }, sharedChoice(selected, function(obj) return ModData.isStatic(obj, true) end), setStatic,
+        "Static objects stay in place, dynamic ones fall and can be moved.\nDynamic objects need ids 1-" ..
+        MGE.MAX_NONSTATIC_OBJECTS .. ", higher ids get a free low id.")
+    createChoiceRow("Visible", panel, {
+        { label = "Shown", value = true },
+        { label = "Hidden", value = false },
+    }, sharedChoice(selected, isVisible), function(visible) setSelectedProp("visible", visible and "1" or "0") end,
+        "Hidden objects aren't drawn but still collide.")
 end
 
 ---Empties all transform and property fields, placeholders show again
@@ -590,46 +734,52 @@ end
 
 refreshProperties = function()
     if not propertiesPanel or propertiesPanel.destroyed then return end
-    propertiesPanel:kill(true)
+    Widgets.clearChildren(propertiesPanel)
     buildPropertiesPanel(propertiesPanel)
     reapplyTabs()
 end
 
 ---Called when the selection changes: refresh current values
-function container.onSelectionChanged()
+function editor.onSelectionChanged()
     refreshProperties()
 end
 
 ---@param parent UIElement editor container from ui/main.lua
-function container.create(parent)
-    -- both panels share the top of the editor area, Properties has 4 rows so it sets the height
-    local panelY = 0
-    local panelH = 30 * 4
+function editor.create(parent)
+    -- both panels start at the top of the editor area, each as tall as its rows
     panels = {}
     for _, id in ipairs({ "transform", "properties" }) do
         panels[id] = parent:addChild({
-            pos = { 0, panelY },
-            size = { parent.size.w, panelH },
+            pos = { 0, 0 },
+            size = { parent.size.w, PANEL_ROWS[id] * ROW_H },
         })
     end
     buildTransformPanel(panels.transform)
     propertiesPanel = panels.properties
     buildPropertiesPanel(propertiesPanel)
 
-    -- bottom of the input panels: hint on the left, reset button on the right (it only affects these fields)
-    totalHeight = panelY + panelH + 4
-    local footerH = 22
+    -- under the shown panel (applyPanel moves it): centered Enter hint, reset button under it
+    -- (it only affects these fields), then duplicate/delete
+    local hintH = Widgets.INFO_HEIGHT
+    local resetH = 22
     local resetW = 110
-    local hint = parent:addChild({
-        pos = { 0, totalHeight },
-        size = { parent.size.w - resetW - margin, footerH },
+    local bottomH = hintH + 2 + resetH + 8 + ROW_H
+    bottom = parent:addChild({
+        pos = { 0, PANEL_ROWS.transform * ROW_H + 4 },
+        size = { parent.size.w, bottomH },
     })
-    hint:addAdaptedText(true, "Enter applies the value to selected objects", nil, nil, FONTS.SMALL, LEFTMID, 0.6)
-    Widgets.button(parent, { x = parent.size.w - resetW, y = totalHeight, w = resetW, h = footerH },
-        "Reset inputs", clearInputs, 0.6)
-    updateContentHeight(footerH + 8)
+    totalHeight = 0
+    local hint = bottom:addChild({
+        pos = { 0, totalHeight },
+        size = { bottom.size.w, hintH },
+    })
+    Widgets.infoText(hint, "Enter applies the value to selected objects")
+    updateContentHeight(hintH + 2)
+    Widgets.button(bottom, { x = (bottom.size.w - resetW) / 2, y = totalHeight, w = resetW, h = resetH },
+        "Reset inputs", clearInputs)
+    updateContentHeight(resetH + 8)
 
-    createButtonRow(parent, {
+    createButtonRow(bottom, {
         { label = "Duplicate", onClick = duplicate },
         { label = "Delete", onClick = onDeleteClick },
     })
@@ -637,4 +787,4 @@ function container.create(parent)
     -- visibility is applied by Main.applyTab after create (initial build and Main.resetEditor)
 end
 
-return container
+return editor

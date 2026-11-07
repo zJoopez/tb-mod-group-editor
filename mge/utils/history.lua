@@ -16,10 +16,8 @@ local History = {
 
 ---@param obj FileParserEnvObj|FileParserEnvObjJoint
 local function copyObject(obj)
-    local copy = {}
-    for k, v in pairs(obj) do copy[k] = v end
-    copy.props = {}
-    for k, v in pairs(obj.props or {}) do copy.props[k] = v end
+    local copy = ModData.copy(obj)
+    copy.props = ModData.copy(obj.props)
     -- lines, ignores and trailer are never modified after parsing, frame is replaced not modified, safe to share
     return copy
 end
@@ -36,15 +34,20 @@ end
 -- object props applyLive can set on world objects, any other prop difference needs a save
 local LIVE_KEYS = { pos = true, rot = true, sides = true, color = true, mass = true, bounce = true }
 
+---Same keys, and same values except for keys in `live` (those can be set on world objects).
+---A live key that exists on one side only still counts as a difference: applyLive can only set
+---values, it can't take a prop away (e.g. bounce added to an object that had none would stay on
+---the world object after undo, leaving the world out of sync with the mod file)
 ---@param a table<string, string>
 ---@param b table<string, string>
----@param ignore table<string, boolean>?
-local function sameProps(a, b, ignore)
+---@param live table<string, boolean>?
+local function sameProps(a, b, live)
     for key, value in pairs(a) do
-        if not (ignore and ignore[key]) and b[key] ~= value then return false end
+        if b[key] == nil then return false end
+        if not (live and live[key]) and b[key] ~= value then return false end
     end
     for key in pairs(b) do
-        if not (ignore and ignore[key]) and a[key] == nil then return false end
+        if a[key] == nil then return false end
     end
     return true
 end
@@ -148,11 +151,9 @@ local function restore(index)
 
     if sameObjects(current, ModData.parsed) then
         applyLive(ModData.parsed)
+        -- refreshes the list and the editor's current values, typed inputs stay for the next edit
         local Main = MGE.Main -- created after this module loads
-        if Main then
-            Main.updateWindow()
-            Main.resetEditor()
-        end
+        if Main then Main.updateWindow() end
     else
         MGE.save() -- object list changed, rewrite file and reload
     end

@@ -2,6 +2,7 @@
 require("toriui.uielement3d") -- Utils3D.MatrixToMatrixTB
 
 local ModData = MGE.ModData
+local SHAPE = MGE.SHAPE
 
 local Highlight = {
     color = { 0.0, 0.333, 1.0 },
@@ -25,20 +26,20 @@ local function drawObjectHighlight(id)
     local x, y, z = get_obj_pos(id)
     if x == nil then return end
     local sx, sy, sz = get_obj_sides(id)
-    local shape = get_obj_shape(id) -- 0 sphere, 1 box, 2 capsule
+    local shape = get_obj_shape(id)
     local rot = getObjRotTB(id)
     local c = Highlight.color
 
     set_color(c[1], c[2], c[3], Highlight.fillAlpha)
-    if shape == 0 then -- sx = radius
+    if shape == SHAPE.SPHERE then -- sx = radius
         draw_sphere_m(x, y, z, sx + 0.01, rot)
         set_color(c[1], c[2], c[3], 1.0)
         draw_sphere_m(x, y, z, -(sx + 0.02), rot)
-    elseif shape == 1 then
+    elseif shape == SHAPE.BOX then
         draw_box_m(x, y, z, sx + 0.02, sy + 0.02, sz + 0.01, rot)
         set_color(c[1], c[2], c[3], 1.0)
         draw_box_m(x, y, z, -(sx + 0.04), -(sy + 0.04), -(sz + 0.02), rot)
-    elseif shape == 2 then -- sx = radius, sy = length
+    elseif shape == SHAPE.CAPSULE then -- sx = radius, sy = length
         draw_capsule_m(x, y, z, sy + 0.01, sx + 0.01, rot)
         set_color(c[1], c[2], c[3], 1.0)
         draw_capsule_m(x, y, z, -(sy + 0.02), -(sx + 0.02), rot)

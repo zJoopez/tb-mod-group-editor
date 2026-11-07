@@ -86,30 +86,20 @@ local function create(view, fullList)
             Main.updateWindow()
         end)
 
+    -- duplicate, import and the Dynamic button free ids on their own when needed,
+    -- this moves every static object it can off the dynamic ids at once
     local function reindexNonDynamic()
-        local taberu = ModData.parsed.env_obj
-        local freeStatic = ModData.freeIds.static
-        local freeNonStatic = ModData.freeIds.nonStatic
-        local jointIds = ModData.jointIds
-
-        for i = #taberu, 1, -1 do
-            local obj = taberu[i]
-            if obj.id < MGE.MAX_NONSTATIC_OBJECTS and obj.props.flag ~= "0" and not jointIds[obj.id] then
-                local newId = table.remove(freeStatic, 1)
-                if not newId then break end
-                table.insert(freeNonStatic, obj.id)
-                obj.id = newId
-            end
+        local _, moved = ModData.freeDynamicIds(math.huge, { partial = true })
+        if moved == 0 then
+            print("reindex: nothing to move")
+            return
         end
-        table.sort(taberu, function(a, b)
-            return a.id < b.id
-        end)
         History.commit()
         MGE.save()
-        print("reindex done")
+        print("reindex moved " .. moved .. " objects")
     end
 
-    -- "Reset inputs" lives under the editor fields it clears (ui/editor.lua)
+    -- dynamic/joint counters are in the window footer (ui/main.lua)
     Widgets.barButtons(botBar, { { label = "reindex", onClick = function() reindexNonDynamic() end } })
 end
 

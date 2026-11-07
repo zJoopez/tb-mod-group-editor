@@ -25,7 +25,7 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 710 -- +40 for the Save/Export row
+    h = 750
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
@@ -46,7 +46,7 @@ local historyHolder = content:addChild({
 Widgets.buttonRow(historyHolder, 2, 26, {
     { label = "Undo", onClick = function() History.undo() end },
     { label = "Redo", onClick = function() History.redo() end },
-}, 5, 0.7)
+}, 5)
 updateContentHeight(titleObjCount.size.h)
 
 local obj_selector_container = content:addChild({
@@ -73,18 +73,19 @@ for i, tab in ipairs(tabNames) do
     tabItems[i] = { label = tab.label, onClick = function() Main.setTab(tab.id) end }
 end
 local tabButtons = {}
-for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, margin, 0.7)) do
+for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, margin)) do
     tabButtons[tabNames[i].id] = btn
 end
 
 -- editor and assets tabs share the same area, only one is shown at a time
+-- (300 fits the Properties panel with the hint, reset and duplicate/delete rows under it)
 local editorContainer = content:addChild({
     pos = defaultPos,
-    size = { content.size.w, 280 },
+    size = { content.size.w, 300 },
 })
 local assetsContainer = content:addChild({
     pos = defaultPos,
-    size = { content.size.w, 280 },
+    size = { content.size.w, 300 },
 })
 updateContentHeight(editorContainer.size.h)
 
@@ -99,22 +100,22 @@ Widgets.buttonRow(fileRow, 0, fileRow.size.h, {
 }, margin)
 updateContentHeight(fileRow.size.h)
 
-local info = content:addChild({
-    pos = defaultPos,
-    size = { content.size.w, 15 },
-    bgColor = { 0, 0, 0, 0 }
-})
-info:addAdaptedText(true, "F1 shows/hides window", nil, nil, FONTS.SMALL, CENTER, 0.6)
-updateContentHeight(info.size.h - margin)
-
--- copyright
-local copyright = content:addChild({
-    pos = defaultPos,
-    size = { content.size.w, 15 },
-    bgColor = { 0, 0, 0, 0 }
-})
-copyright:addAdaptedText(true, "Project Mod Group Editor by joopez", nil, nil, FONTS.SMALL, CENTER, 0.6)
-updateContentHeight(copyright.size.h)
+-- footer: small centered info rows stacked without gaps
+---@param text string?
+---@return UIElement
+local function addFooterRow(text)
+    local row = content:addChild({
+        pos = defaultPos,
+        size = { content.size.w, Widgets.INFO_HEIGHT },
+        bgColor = { 0, 0, 0, 0 }
+    })
+    if text then Widgets.infoText(row, text) end
+    updateContentHeight(row.size.h - margin)
+    return row
+end
+local limitsRow = addFooterRow() -- dynamic id and joint usage, set by setDynamicStrings
+addFooterRow("F1 shows/hides window")
+addFooterRow("Project Mod Group Editor by joopez")
 
 
 dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by obj_selector and assets
@@ -150,6 +151,8 @@ end
 
 local function setDynamicStrings()
     titleObjCount:addAdaptedText("Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS, nil, nil, nil, LEFTMID, nil, nil, nil)
+    Widgets.infoText(limitsRow, "Dynamic " .. ModData.countDynamic() .. "/" .. MGE.MAX_NONSTATIC_OBJECTS ..
+        "    Joints " .. #ModData.parsed.env_obj_joint .. "/" .. MGE.MAX_ENV_JOINTS)
 end
 
 local function createObjSelector()
@@ -167,7 +170,7 @@ end
 
 function Main.updateWindow()
     if not Main.window.displayed then return end
-    obj_selector_container:kill(true)
+    Widgets.clearChildren(obj_selector_container)
     setDynamicStrings()
     createObjSelector()
     Main.onSelectionChanged() -- called after toggle all, saves and reloads
@@ -180,7 +183,7 @@ function Main.resetWindow()
 end
 
 function Main.resetEditor()
-    editorContainer:kill(true)
+    Widgets.clearChildren(editorContainer)
     createEditor()
     Main.applyTab() -- rebuilt children are visible by default
 end
