@@ -77,13 +77,13 @@ end
 function ModData.reloadObjects()
     init()
 
-    if not MGE.modPath then
+    -- still scan world objects without a mod file, otherwise freeIds stay empty and imports fail
+    if MGE.modPath then
+        ModData.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
+        ModData.jointIds = getJointIds(ModData.parsed.env_obj_joint)
+    else
         print("Mod not found")
-        return
     end
-
-    ModData.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
-    ModData.jointIds = getJointIds(ModData.parsed.env_obj_joint)
 
     for i = 0, MAX_ENV_OBJECTS - 1, 1 do
         ---@type EnvObject

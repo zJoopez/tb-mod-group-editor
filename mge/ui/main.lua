@@ -2,11 +2,11 @@ require("toriui.uielement")
 
 ---@class Main
 ---@field window UIElement
----@field pageStr string
 ---@field page integer
 ---@field pageSize integer
 ---@field toggleAll boolean
-Main = { page = 1, pageSize = 64, toggleAll = false }
+---@field activeTab "editor"|"assets"
+Main = { page = 1, pageSize = 64, toggleAll = false, activeTab = "editor" }
 
 local defaultPos = { 0, 0 }
 local margin = 10
@@ -19,12 +19,38 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 590
+    h = 670
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
     size = { windowContainer.size.w - margin * 2, windowContainer.size.h - margin * 2 },
 }, true)
+
+-- Tabs
+local tabRow = content:addChild({
+    pos = defaultPos,
+    size = { content.size.w, 30 },
+})
+updateContentHeight(tabRow.size.h)
+
+local tabButtons = {}
+local tabNames = { { id = "editor", label = "Editor" }, { id = "assets", label = "Assets" } }
+for i, tab in ipairs(tabNames) do
+    local tabWidth = (tabRow.size.w - margin) / #tabNames
+    local btn = tabRow:addChild({
+        pos = { (i - 1) * (tabWidth + margin), 0 },
+        size = { tabWidth, tabRow.size.h },
+        interactive = true,
+        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
+        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+    }, true)
+    btn:addAdaptedText(tab.label, nil, nil, nil, CENTERMID, 0.7, nil, nil)
+    btn:addMouseUpHandler(function()
+        Main.setTab(tab.id)
+    end)
+    tabButtons[tab.id] = btn
+end
 
 local titleObjCount = content:addChild({
     pos = defaultPos,
@@ -39,30 +65,16 @@ local obj_selector_container = content:addChild({
 })
 updateContentHeight(obj_selector_container.size.h)
 
+-- editor and assets tabs share the same area, only one is shown at a time
 local editorContainer = content:addChild({
     pos = defaultPos,
-    size = { content.size.w, 240 },
+    size = { content.size.w, 280 },
+})
+local assetsContainer = content:addChild({
+    pos = defaultPos,
+    size = { content.size.w, 280 },
 })
 updateContentHeight(editorContainer.size.h)
-
--- local btnAssets = content:addChild({
---     pos = defaultPos,
---     size = { content.size.w, 30 },
---     interactive = true,
---     bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
---     hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
---     pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
--- })
--- btnAssets:addAdaptedText("Assets")
--- updateContentHeight(btnAssets.size.h)
-
--- btnAssets:addMouseUpHandler(function()
---     if not MGE.assetWindow then
---         MGE.assetWindow = dofile(MGE.scriptPath .. "/ui/assets.lua")
---     else
---         MGE.assetWindow:show()
---     end
--- end)
 
 local info = content:addChild({
     pos = defaultPos,
@@ -82,12 +94,34 @@ copyright:addAdaptedText(true, "Project Mod Group Editor by joopez", nil, nil, F
 updateContentHeight(copyright.size.h)
 
 
+dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- ScrollList, used by obj_selector and assets
 local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
 local editor = dofile(MGE.scriptPath .. "ui/editor.lua")
+local assetsView = dofile(MGE.scriptPath .. "ui/assets.lua")
+
+local tabContainers = { editor = editorContainer, assets = assetsContainer }
+
+---Shows the active tab and hides the rest. hide(true) keeps hidden tabs hidden when the window is re-shown (F1)
+function Main.applyTab()
+    for id, container in pairs(tabContainers) do
+        if id == Main.activeTab then
+            container:show(true)
+        else
+            container:hide(true)
+        end
+        tabButtons[id].bgColor = id == Main.activeTab and TB_MENU_DEFAULT_LIGHTER_COLOR or TB_MENU_DEFAULT_DARKER_COLOR
+    end
+end
+
+---@param id "editor"|"assets"
+function Main.setTab(id)
+    if not tabContainers[id] then return end
+    Main.activeTab = id
+    Main.applyTab()
+end
 
 local function setDynamicStrings()
     titleObjCount:addAdaptedText("Objects " .. #ModData.parsed.env_obj .. "/" .. MAX_ENV_OBJECTS)
-    Main.pageStr = "Page " .. Main.page .. "/" .. math.max(math.ceil(#ModData.parsed.env_obj / Main.pageSize), 1)
 end
 
 local function createObjSelector()
@@ -114,11 +148,14 @@ end
 function Main.resetEditor()
     editorContainer:kill(true)
     createEditor()
+    Main.applyTab() -- rebuilt children are visible by default
 end
 
 setDynamicStrings()
 createObjSelector();
 createEditor()
+assetsView.create(assetsContainer)
+Main.applyTab()
 
 Main.window.killAction = MGE.quit
 return Main

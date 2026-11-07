@@ -3,6 +3,8 @@ if (ModSaveOverlay ~= nil) then
     return
 end
 
+local saveContext = _G.ModSaveOverlayContext or {}
+
 ModSaveOverlay = TBMenu:spawnWindowOverlay()
 local defaultKillAction = ModSaveOverlay.killAction
 ModSaveOverlay.killAction = function()
@@ -10,6 +12,7 @@ ModSaveOverlay.killAction = function()
         defaultKillAction()
     end
     ModSaveOverlay = nil
+    _G.ModSaveOverlayContext = nil
     enable_camera_movement()
 end
 
@@ -31,7 +34,7 @@ local modSaveTitle = modSave:addChild({
     pos = { 10, 0 },
     size = { modSave.size.w - 20, 50 }
 })
-modSaveTitle:addAdaptedText(true, "Mod Name", nil, nil, FONTS.BIG, nil, 0.65)
+modSaveTitle:addAdaptedText(true, saveContext.title or "Mod Name", nil, nil, FONTS.BIG, nil, 0.65)
 
 local modSaveButton = modSave:addChild({
     pos = { modSave.size.w / 2 + 5, -50 },
@@ -64,7 +67,7 @@ local replayNameBackground = modSave:addChild({
     bgColor = TB_MENU_DEFAULT_DARKEST_COLOR,
     rounded = 4
 }, true)
-local replayNameInput = TBMenu:spawnTextField2(replayNameBackground, {}, nil, "Enter Mod Name", {
+local replayNameInput = TBMenu:spawnTextField2(replayNameBackground, {}, nil, saveContext.placeholder or "Enter Mod Name", {
     fontId = 4,
     textScale = 0.7,
     textAlign = CENTERMID,
@@ -73,6 +76,9 @@ local replayNameInput = TBMenu:spawnTextField2(replayNameBackground, {}, nil, "E
 
 local function sanitizeName(newname)
     if not newname then return "" end
+    if saveContext.sanitize then
+        return saveContext.sanitize(newname)
+    end
     return newname:gsub("%.tbm$", "")
 end
 
@@ -81,9 +87,22 @@ local function save(newname)
     if name == "" then
         return
     end
-    if (utf8.find(name, "[^%d%a-_ ]") or not utf8.find(name, "[%a%d]")) then
+    if saveContext.validate then
+        local ok, err = saveContext.validate(name)
+        if not ok then
+            TBMenu:showStatusMessage(err or "Invalid name")
+            return
+        end
+    elseif (utf8.find(name, "[^%d%a-_ ]") or not utf8.find(name, "[%a%d]")) then
         TBMenu:showStatusMessage(
             "Mod name must be alphanumeric and can only contain underscores, spaces or dashes as special characters")
+        return
+    end
+    if saveContext.onSave then
+        local ok = saveContext.onSave(name)
+        if ok ~= false then
+            closeOverlay()
+        end
         return
     end
     FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. name .. ".tbm")
@@ -98,6 +117,9 @@ modSaveButton:addMouseHandlers(nil, function()
     save(replayNameInput.textfieldstr[1])
 end)
 
+if saveContext.defaultName then
+    replayNameInput.textfieldstr[1] = saveContext.defaultName
+end
 replayNameInput.btnDown()
 replayNameInput.keyboard = true
 disable_camera_movement()

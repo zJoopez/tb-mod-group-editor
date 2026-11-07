@@ -1,16 +1,369 @@
-local window, windowContainer = TBMenu:spawnMoveableWindow({
-    x = 10,
-    y = 100,
-    w = 300,
-    h = 500
-})
-local content = windowContainer:addChild({
-    pos = { 10, 10 },
-    size = { windowContainer.size.w - 20, windowContainer.size.h - 20 },
-}, true)
+require("toriui.uielement3d") -- Utils3D.MatrixToMatrixTB
 
-window.killAction = function()
-    MGE.assetWindow = nil
+local assetsView = {}
+
+---@type UIElement
+local content = nil
+-- list fills the space between the save and import buttons
+local layout = { buttonH = 30, gap = 5 }
+local selectedAssetName = nil
+---@type { row: UIElement, index: integer }?
+local selectedRow = nil
+local searchText = ""
+local assetPage = 1
+local assetPageSize = 64
+local refreshAssetList
+
+local function getAssetDirectory()
+    if MGE and type(MGE.scriptPath) == "string" and MGE.scriptPath ~= "" then
+        return (MGE.scriptPath:gsub("/$", "")) .. "/assets"
+    end
+    return "mge/mge/assets"
 end
 
-return window
+local function getAssetPath(name)
+    local assetName = (name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if assetName == "" then return nil end
+    assetName = assetName:gsub("%s+", "_")
+    assetName = assetName:gsub("[^%w%-%_%.]+", "")
+    if not assetName:find("%.") then
+        assetName = assetName .. ".tbm"
+    end
+    return getAssetDirectory() .. "/" .. assetName
+end
+
+local function copyProps(source)
+    local props = {}
+    for key, value in pairs(source or {}) do
+        props[key] = value
+    end
+    return props
+end
+
+---Distance from object center to its lowest point in world space, accounts for rotation
+---@param id integer 0-based object id
+---@return number?
+local function getObjHalfHeight(id)
+    local sx, sy, sz = get_obj_sides(id)
+    local shape = get_obj_shape(id)
+    local rawRot = get_obj_rot(id)
+    if sx == nil or shape == nil or type(rawRot) ~= "table" then return nil end
+    -- r2, r6, r10: world z component of local x, y, z axes (see Utils3D.MatrixTBToMatrix)
+    local rot = Utils3D.MatrixToMatrixTB(rawRot)
+    local zx, zy, zz = math.abs(rot.r2), math.abs(rot.r6), math.abs(rot.r10)
+
+    if shape == SHAPE.SPHERE - 1 then
+        return sx -- x is radius
+    elseif shape == SHAPE.CAPSULE - 1 then
+        return zz * sy / 2 + sx -- x radius, y length of the straight part along local z, caps add radius
+    end
+    return (zx * sx + zy * sy + zz * sz) / 2 -- box: projected half extents
+end
+
+local function getSelectedObjects()
+    local selectedObjects = {}
+    for _, obj in ipairs(ModData.parsed.env_obj) do
+        if obj.selected then
+            table.insert(selectedObjects, obj)
+        end
+    end
+    return selectedObjects
+end
+
+local function getAssetFiles()
+    local assetFiles = {}
+    local seen = {}
+    local basePath = getAssetDirectory()
+
+    for _, fileName in ipairs(get_files("data/script/".. MGE.scriptPath .."/assets", "")) do
+        local name = tostring(fileName):gsub("^.*[/\\]", "")
+        if name ~= "" and name:match("%.tbm$") and not seen[name] then
+            seen[name] = true
+            table.insert(assetFiles, name)
+        end
+    end
+
+    table.sort(assetFiles)
+    return assetFiles
+end
+
+local function saveSelectedToAsset()
+    local selectedObjects = getSelectedObjects()
+    if #selectedObjects == 0 then
+        print("No objects selected")
+        return
+    end
+
+    _G.ModSaveOverlayContext = {
+        title = "Asset Name",
+        placeholder = "Enter asset name",
+        defaultName = selectedAssetName or "",
+        sanitize = function(name)
+            local sanitized = (name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            sanitized = sanitized:gsub("%s+", "_")
+            sanitized = sanitized:gsub("[^%w%-%_%.]+", "")
+            if sanitized == "" then return "" end
+            if not sanitized:find("%.") then
+                sanitized = sanitized .. ".tbm"
+            end
+            return sanitized
+        end,
+        validate = function(name)
+            if name == "" then
+                return false, "Enter an asset name"
+            end
+            return true
+        end,
+        onSave = function(name)
+            local path = getAssetPath(name)
+            local parser = { env_obj = {}, env_obj_joint = {}, ignores = {} }
+            local positions = {}
+            local totalX, totalY, minZ = 0, 0, nil
+
+            for i, obj in ipairs(selectedObjects) do
+                local x, y, z = get_obj_pos(obj.id - 1)
+                local halfHeight = getObjHalfHeight(obj.id - 1)
+                if x == nil or y == nil or z == nil or halfHeight == nil then
+                    print("Unable to read selected object position or scale")
+                    return false
+                end
+                positions[i] = { x = x, y = y, z = z }
+                totalX = totalX + x
+                totalY = totalY + y
+                minZ = minZ and math.min(minZ, z - halfHeight) or z - halfHeight
+            end
+
+            local centerX = totalX / #positions - 1
+            local centerY = totalY / #positions + 0.1
+            for i, obj in ipairs(selectedObjects) do
+                local assetObj = { kind = "env_obj", id = obj.id, props = copyProps(obj.props) }
+                local pos = positions[i]
+                assetObj.props.pos = string.format("%.2f %.2f %.2f", pos.x - centerX, pos.y - centerY, pos.z - minZ)
+                table.insert(parser.env_obj, assetObj)
+            end
+            if FileHandler.WriteMod(parser, path) then
+                print("asset saved: " .. path)
+                refreshAssetList()
+                return true
+            end
+            print("failed to save asset")
+            return false
+        end
+    }
+    dofile(MGE.scriptPath .. "ui/save_overlay.lua")
+end
+
+local function importAssetFromFile(assetName)
+    local path = getAssetPath(assetName)
+    if not path or not Files.Exists(path) then
+        print("Asset not found")
+        return
+    end
+
+    local parser = FileHandler.ParseMod(path)
+    if #parser.env_obj == 0 then
+        print("Asset file contains no objects")
+        return
+    end
+
+    local requiredIds = { static = 0, nonStatic = 0 }
+    for _, assetObj in ipairs(parser.env_obj) do
+        if assetObj.props.flag ~= "0" and not ModData.jointIds[assetObj.id] then
+            requiredIds.static = requiredIds.static + 1
+        else
+            requiredIds.nonStatic = requiredIds.nonStatic + 1
+        end
+    end
+    if requiredIds.static > #ModData.freeIds.static or requiredIds.nonStatic > #ModData.freeIds.nonStatic then
+        print("Not enough objects available")
+        return
+    end
+
+    local imported = 0
+    for _, assetObj in ipairs(parser.env_obj) do
+        local freeIds
+        if assetObj.props.flag ~= "0" and not ModData.jointIds[assetObj.id] then
+            freeIds = ModData.freeIds.static
+        else
+            freeIds = ModData.freeIds.nonStatic
+        end
+
+        local newId = freeIds[1]
+        if not newId then
+            print("Not enough objects available")
+            return
+        end
+
+        local importedObj = { kind = "env_obj", id = newId, props = copyProps(assetObj.props) }
+        table.insert(ModData.parsed.env_obj, importedObj)
+        table.remove(freeIds, 1)
+        imported = imported + 1
+    end
+
+    table.sort(ModData.parsed.env_obj, function(a, b)
+        return a.id < b.id
+    end)
+    MGE.save()
+    if Main and Main.updateWindow then
+        Main.updateWindow()
+        Main.resetEditor()
+    end
+    print("imported " .. imported .. " objects")
+end
+
+local function filterAssets()
+    local assets = getAssetFiles()
+    local searchTerm = string.lower(tostring(searchText or ""))
+    if searchTerm == "" then return assets, searchTerm end
+
+    local filteredAssets = {}
+    for _, assetName in ipairs(assets) do
+        if string.find(string.lower(assetName), searchTerm, 1, true) then
+            table.insert(filteredAssets, assetName)
+        end
+    end
+    return filteredAssets, searchTerm
+end
+
+---@class AssetListElements
+---@field topBar UIElement pager is rebuilt in here
+---@field rowsHolder UIElement rows are rebuilt in here
+---@field toReload UIElement bars redrawn over rows that scroll past the list edges
+local list = nil
+
+---Rebuilds pager and rows, the list frame and search field stay as they are
+local function buildAssetList()
+    local filteredAssets, searchTerm = filterAssets()
+    local pageAssets, page, pageCount = ScrollList.paginate(filteredAssets, assetPage, assetPageSize)
+    assetPage = page
+
+    -- kill(true) keeps the holders, kill() would leave destroyed elements in the parent's child list
+    list.topBar:kill(true)
+    list.rowsHolder:kill(true)
+
+    ScrollList.createPager(list.topBar, { x = 0, y = 0, w = list.topBar.size.w, h = list.topBar.size.h },
+        assetPage, pageCount, function(newPage)
+            assetPage = newPage
+            refreshAssetList()
+        end)
+
+    selectedRow = nil
+    ScrollList.create(list.rowsHolder, {
+        x = 0,
+        y = 0,
+        w = list.rowsHolder.size.w,
+        h = list.rowsHolder.size.h
+    }, pageAssets, function(row, assetName, index)
+        row:addAdaptedText(assetName, 5, nil, nil, LEFTMID, 0.6, nil, nil)
+
+        local function select()
+            if selectedRow then
+                selectedRow.row.bgColor = ScrollList.getRowColor(selectedRow.index)
+            end
+            selectedRow = { row = row, index = index }
+            selectedAssetName = assetName
+            row.bgColor = ScrollList.selectedColor
+        end
+        if assetName == selectedAssetName then select() end
+
+        -- selecting only highlights, importing is done with the import button
+        row:addMouseUpHandler(select)
+    end, list.toReload, searchTerm ~= "" and "No matching assets" or "No assets saved yet")
+end
+
+refreshAssetList = function()
+    buildAssetList()
+    -- new children are displayed on creation, re-apply tab visibility in case this tab is hidden
+    if Main and Main.applyTab then Main.applyTab() end
+end
+
+local function createButton(y, label, onClick)
+    local btn = content:addChild({
+        pos = { 0, y },
+        size = { content.size.w, layout.buttonH },
+        interactive = true,
+        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
+        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+    }, true)
+    btn:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.7, nil, nil)
+    btn:addMouseUpHandler(onClick)
+    return btn
+end
+
+---Creates the list frame once: pager bar on top, rows, search field in the bottom bar
+---@param y number
+---@param h number
+local function createListFrame(y, h)
+    local barHeight = ScrollList.rowHeight
+    local listView = content:addChild({
+        pos = { 0, y },
+        size = { content.size.w, h },
+    }, true)
+
+    local toReload = listView:addChild({
+        pos = { 0, 0 },
+        size = { listView.size.w, listView.size.h },
+    }, true)
+    local topBar = toReload:addChild({
+        pos = { 0, 0 },
+        size = { listView.size.w, barHeight },
+        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+    }, true)
+    local bottomBar = toReload:addChild({
+        pos = { 0, -barHeight },
+        size = { listView.size.w, barHeight },
+        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+    }, true)
+
+    -- created once so typing doesn't rebuild the text field, only the list.
+    -- keepFocusOnHide keeps focus when toReload is hidden/shown on scroll
+    local search = TBMenu:spawnTextField2(bottomBar, {
+        x = 0, y = 0,
+        w = bottomBar.size.w, h = bottomBar.size.h
+    }, nil, "Search assets", {
+        fontId = 4,
+        textScale = 0.65,
+        textAlign = LEFTMID,
+        keepFocusOnHide = true,
+    })
+    if searchText ~= "" then
+        search:setText(searchText)
+    end
+    search:addInputCallback(function()
+        searchText = tostring(search.textfieldstr[1] or "")
+        assetPage = 1
+        refreshAssetList()
+    end)
+
+    local rowsHolder = listView:addChild({
+        pos = { 0, barHeight },
+        size = { listView.size.w, listView.size.h - barHeight * 2 },
+    })
+
+    list = { topBar = topBar, rowsHolder = rowsHolder, toReload = toReload }
+end
+
+---Layout top to bottom: save button, list (pager, rows, search), import button
+---@param container UIElement
+function assetsView.create(container)
+    content = container
+    selectedRow = nil
+
+    local importY = content.size.h - layout.buttonH
+    local listY = layout.buttonH + layout.gap
+
+    createButton(0, "Export as asset", saveSelectedToAsset)
+    createListFrame(listY, importY - layout.gap - listY)
+    createButton(importY, "Import asset", function()
+        if selectedAssetName then
+            importAssetFromFile(selectedAssetName)
+        else
+            print("Select an asset from the list")
+        end
+    end)
+
+    buildAssetList()
+end
+
+return assetsView

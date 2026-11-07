@@ -12,7 +12,6 @@
 ---@field activeOutputName string
 ---@field hookname string
 ---@field window Main
----@field assetWindow UIElement?
 MGE = {
     hookname = "mge",
     scriptPath = MGE_DEV_PREFIX .. "mge/",
@@ -30,6 +29,7 @@ end
 runCmd("reset") --Fixes sync if there are unsaved rotations
 loadModule("utils/file_handler.lua")
 loadModule("utils/mod_export.lua")
+loadModule("utils/highlight.lua")
 
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod
@@ -43,11 +43,10 @@ function MGE.loadMod(outputName)
 end
 
 function MGE.save()
-    local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or
-    MGE.outputName                                                                                 --bypass for lm not loaading updates without mod swap
+    local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or MGE.outputName  --bypass for lm not loaading updates without mod swap
     FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. outputName)
     print("save complete")
-    MGE.loadMod(outputName)
+    MGE.loadMod(outputName) 
 end
 
 function MGE.quit()

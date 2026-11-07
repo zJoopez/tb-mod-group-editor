@@ -21,8 +21,17 @@ FileHandler = {}
 
 local indent = "   "
 
-local function isBlockHeader(line)
-    return line and (line:match("^env_obj%s+%d+") or line:match("^env_obj_joint%s+"))
+local function getBlockKind(line)
+    if line:match("^env_obj%s+") then
+        return "env_obj"
+    elseif line:match("^env_obj_joint%s+") then
+        return "env_obj_joint"
+    end
+end
+
+local function isSectionHeader(line)
+    return getBlockKind(line) ~= nil or line:match("^body%s+%S+") ~= nil or
+        line:match("^joint%s+%S+") ~= nil or line:match("^gamerule%s*$") ~= nil
 end
 
 ---@param path string
@@ -37,7 +46,7 @@ function FileHandler.ParseMod(path)
         ignores = {}
     }
 
-    if not file then return parser end
+    if not file or not file.data then return parser end -- Files.Open sets data to nil on failure
 
     local lines = file:readAll()
     file:close()
@@ -45,20 +54,16 @@ function FileHandler.ParseMod(path)
     local i = 1
     while i <= #lines do
         local line = lines[i]
-        local kind
-
-        if line:match("^env_obj%s+%d+") then
-            kind = "env_obj"
-        elseif line:match("^env_obj_joint%s+") then
-            kind = "env_obj_joint"
-        end
+        local kind = getBlockKind(line)
 
         if kind then
             local block = { kind = kind, header = line, lines = {} }
             i = i + 1
 
-            while i <= #lines and lines[i]:match("^%s+") do
-                table.insert(block.lines, lines[i])
+            while i <= #lines and not isSectionHeader(lines[i]) do
+                if not lines[i]:match("^%s*$") then
+                    table.insert(block.lines, lines[i])
+                end
                 i = i + 1
             end
 
@@ -129,7 +134,7 @@ end
 ---@return boolean
 function FileHandler.WriteMod(parser, path)
     local file = Files.Open(path, FILES_MODE_WRITE)
-    if not file then return false end
+    if not file or not file.data then return false end
 
     -- Write ignored lines first (headers, gamerules, etc.)
     for _, line in ipairs(parser.ignores) do
