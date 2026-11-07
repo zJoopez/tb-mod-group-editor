@@ -56,9 +56,9 @@ local function getObjHalfHeight(id)
     local shape = get_obj_shape(id)
     local rawRot = get_obj_rot(id)
     if sx == nil or shape == nil or type(rawRot) ~= "table" then return nil end
-    -- r2, r6, r10: world z component of local x, y, z axes (see Utils3D.MatrixTBToMatrix)
+    -- get_obj_rot is row-major, so the third row r8 r9 r10 holds the world z component of local x, y, z axes
     local rot = Utils3D.MatrixToMatrixTB(rawRot)
-    local zx, zy, zz = math.abs(rot.r2), math.abs(rot.r6), math.abs(rot.r10)
+    local zx, zy, zz = math.abs(rot.r8), math.abs(rot.r9), math.abs(rot.r10)
 
     if shape == SHAPE.SPHERE - 1 then
         return sx -- x is radius
@@ -144,9 +144,10 @@ local function saveSelectedToAsset()
             local centerX = totalX / #positions - 1
             local centerY = totalY / #positions + 0.1
             for i, obj in ipairs(selectedObjects) do
-                local assetObj = { kind = "env_obj", id = obj.id, props = copyProps(obj.props) }
+                -- frame keeps the group's axes so the asset scales properly after import
+                local assetObj = { kind = "env_obj", id = obj.id, props = copyProps(obj.props), frame = obj.frame }
                 local pos = positions[i]
-                assetObj.props.pos = string.format("%.2f %.2f %.2f", pos.x - centerX, pos.y - centerY, pos.z - minZ)
+                assetObj.props.pos = FileHandler.formatNumbers(pos.x - centerX, pos.y - centerY, pos.z - minZ)
                 table.insert(parser.env_obj, assetObj)
             end
             -- joints between selected objects get the same offset, ids stay as in the mod
@@ -197,6 +198,11 @@ local function importAssetFromFile(assetName)
         return
     end
 
+    -- selection moves to the imported objects so they can be moved right away
+    for _, obj in ipairs(ModData.parsed.env_obj) do
+        obj.selected = nil
+    end
+
     local imported = 0
     local idMap = {} -- asset object id -> id in the mod
     for _, assetObj in ipairs(parser.env_obj) do
@@ -213,7 +219,8 @@ local function importAssetFromFile(assetName)
             return
         end
 
-        local importedObj = { kind = "env_obj", id = newId, props = copyProps(assetObj.props) }
+        local importedObj = { kind = "env_obj", id = newId, props = copyProps(assetObj.props), frame = assetObj.frame,
+            selected = true }
         table.insert(ModData.parsed.env_obj, importedObj)
         table.remove(freeIds, 1)
         idMap[assetObj.id] = newId

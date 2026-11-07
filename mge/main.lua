@@ -25,12 +25,14 @@
 ---@field ModData ModData utils/mod_export.lua
 ---@field History History utils/history.lua
 ---@field Joints Joints utils/joints.lua
+---@field Mat3 Mat3 utils/mat3.lua
 ---@field ScrollList ScrollList ui/scroll_list.lua
 ---@field FLAGS table
 ---@field SHAPE table
 ---@field SHAPE_NAMES table
 ---@field MAX_ENV_OBJECTS integer
 ---@field MAX_NONSTATIC_OBJECTS integer
+---@field MIN_SIDE number smallest object side written, zero sides crash physics
 ---@field saveOverlay UIElement? open name prompt (ui/save_overlay.lua)
 ---@field saveOverlayContext table? options for the next name prompt
 MGE = MGE or { scriptPath = "mge/" }
@@ -47,6 +49,7 @@ local function loadModule(path)
 end
 
 runCmd("reset") --Fixes sync if there are unsaved rotations
+loadModule("utils/mat3.lua")
 loadModule("utils/file_handler.lua")
 loadModule("utils/mod_export.lua")
 loadModule("utils/history.lua")

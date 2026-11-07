@@ -2,12 +2,12 @@
 -- Live edits (pos/rot/scale/color) are restored directly on world objects, structural changes
 -- (duplicate/delete/import/reindex) are restored by saving and reloading the mod.
 
+local ModData = MGE.ModData
+
 ---@class History
 ---@field states FileParserResult[]
 ---@field index integer current state in states
 ---@field limit integer max stored states
-local ModData = MGE.ModData
-
 local History = {
     states = {},
     index = 0,
@@ -20,7 +20,7 @@ local function copyObject(obj)
     for k, v in pairs(obj) do copy[k] = v end
     copy.props = {}
     for k, v in pairs(obj.props or {}) do copy.props[k] = v end
-    -- lines, ignores and trailer are never modified after parsing, safe to share
+    -- lines, ignores and trailer are never modified after parsing, frame is replaced not modified, safe to share
     return copy
 end
 
@@ -41,10 +41,16 @@ local function sameObjects(a, b)
     for i, obj in ipairs(a.env_obj) do
         if obj.id ~= b.env_obj[i].id then return false end
     end
+    -- joints can't be changed live, any difference in them needs a save
     for i, obj in ipairs(a.env_obj_joint) do
         local other = b.env_obj_joint[i]
-        if obj.id ~= other.id or obj.obj1 ~= other.obj1 or obj.obj2 ~= other.obj2 or
-            obj.props.pos ~= other.props.pos then return false end
+        if obj.id ~= other.id or obj.obj1 ~= other.obj1 or obj.obj2 ~= other.obj2 then return false end
+        for key, value in pairs(obj.props) do
+            if other.props[key] ~= value then return false end
+        end
+        for key in pairs(other.props) do
+            if obj.props[key] == nil then return false end
+        end
     end
     return true
 end
@@ -75,7 +81,12 @@ local function applyLive(parsed)
             if p.sides then
                 local cur = { get_obj_sides(id) }
                 local v = parseNumbers(p.sides)
-                set_obj_sides(id, v[1] or cur[1], v[2] or cur[2], v[3] or cur[3])
+                local s = {}
+                for i = 1, 3 do
+                    -- zero sides crash physics (old saves wrote 0.0001 as 0.00)
+                    s[i] = math.max(math.abs(v[i] or cur[i] or 1), MGE.MIN_SIDE)
+                end
+                set_obj_sides(id, s[1], s[2], s[3])
             end
             if p.color then
                 local v = parseNumbers(p.color)

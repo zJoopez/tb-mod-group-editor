@@ -15,7 +15,7 @@ end
 
 ---@return string
 local function formatVector(x, y, z)
-    return string.format("%.2f %.2f %.2f", x, y, z)
+    return MGE.FileHandler.formatNumbers(x, y, z)
 end
 
 ---@param objects { id: integer }[]

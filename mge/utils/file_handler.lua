@@ -1,6 +1,24 @@
 local FileHandler = {}
 MGE.FileHandler = FileHandler
 
+---Formats a number for mod files: up to 6 decimals, trailing zeros removed.
+---Keeps small values like 0.0001 that a fixed 2 decimal format would round to 0.
+---@param value number
+---@return string
+function FileHandler.formatNumber(value)
+    local s = string.format("%.6f", value):gsub("0+$", ""):gsub("%.$", "")
+    if s == "-0" then s = "0" end
+    return s
+end
+
+---@param ... number
+---@return string space separated numbers
+function FileHandler.formatNumbers(...)
+    local parts = {}
+    for i, v in ipairs({ ... }) do parts[i] = FileHandler.formatNumber(v) end
+    return table.concat(parts, " ")
+end
+
 ---One line inside an object block: a property (key, value in props) or a raw line kept as is (comments)
 ---@class FileParserLine
 ---@field key string?
@@ -10,6 +28,7 @@ MGE.FileHandler = FileHandler
 ---@field id integer
 ---@field props table<string, string>
 ---@field lines FileParserLine[]? original line order, nil for objects created in the editor
+---@field frame number[][]? rotation applied by MGE's rotate tool (3x3), stored as a "#mge_frame" comment line
 ---@field selected boolean?
 ---@field kind string
 
@@ -47,6 +66,34 @@ local KEY_ORDER = {
 }
 local KEY_RANK = {}
 for i, key in ipairs(KEY_ORDER) do KEY_RANK[key] = i end
+
+-- comment line storing the rotation MGE applied to an object, the game ignores # lines
+local FRAME_TAG = "#mge_frame"
+
+---@param value string 9 numbers, row by row
+---@return number[][]?
+local function parseFrame(value)
+    local n = {}
+    for v in value:gmatch("%S+") do table.insert(n, tonumber(v) or 0) end
+    if #n ~= 9 then return nil end
+    return { { n[1], n[2], n[3] }, { n[4], n[5], n[6] }, { n[7], n[8], n[9] } }
+end
+
+---@param frame number[][]?
+---@return string? nil when there's nothing worth storing (no frame or identity)
+local function formatFrame(frame)
+    if not frame then return nil end
+    local parts, identity = {}, true
+    for i = 1, 3 do
+        for j = 1, 3 do
+            local v = frame[i][j]
+            if math.abs(v - (i == j and 1 or 0)) > 1e-6 then identity = false end
+            table.insert(parts, string.format("%.6f", v))
+        end
+    end
+    if identity then return nil end
+    return table.concat(parts, " ")
+end
 
 ---@param line string
 ---@return string?
@@ -150,6 +197,8 @@ function FileHandler.parseBlock(block)
             -- duplicate keys: later value wins, line stays at its first position
             if obj.props[key] == nil then table.insert(obj.lines, { key = key }) end
             obj.props[key] = value
+        elseif key == FRAME_TAG then
+            obj.frame = parseFrame(value) -- written back from obj.frame, not kept as a raw line
         else
             -- comments (#..., //...) and other non property lines are kept in place
             table.insert(obj.lines, { raw = (line:gsub("^%s+", ""):gsub("%s+$", "")) })
@@ -195,6 +244,11 @@ local function writeObjectLines(file, obj)
     end)
     for _, key in ipairs(rest) do
         file:writeLine(indent .. key .. " " .. props[key])
+    end
+
+    local frameLine = formatFrame(obj.frame)
+    if frameLine then
+        file:writeLine(indent .. FRAME_TAG .. " " .. frameLine)
     end
 end
 
