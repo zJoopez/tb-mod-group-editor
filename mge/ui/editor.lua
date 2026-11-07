@@ -1,5 +1,8 @@
 local container = {}
-dofile(MGE.scriptPath .. "utils/rotating.lua")
+local RotatingOld = dofile(MGE.scriptPath .. "utils/rotating.lua")
+local ModData = MGE.ModData
+local History = MGE.History
+local Joints = MGE.Joints
 
 local totalHeight = 0
 local margin = 10
@@ -70,9 +73,19 @@ local function moveSelected()
         set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
         writeVectorProperty(v, "pos", pos)
     end
+    local linked = Joints.getLinked(Joints.idSet(selectedObjects))
+    for _, joint in ipairs(linked) do
+        Joints.transformPos(joint, function(x, y, z)
+            return x + offsets[1], y + offsets[2], z + offsets[3]
+        end)
+    end
 
     set_camera_mode(4)
+    MGE.cameraChanged = true -- restored on quit
     set_camera_lookat(getSelectionPivot(selectedObjects))
+    History.commit()
+    -- joints can't be moved live, save so they match the objects right away
+    if #linked > 0 then MGE.save() end
 end
 
 local function rotSelected()
@@ -106,6 +119,21 @@ local function rotSelected()
         writeVectorProperty(v, "rot", outRot)
         writeVectorProperty(v, "pos", outPos)
     end
+    -- anchors rotate around the same pivot, axis directions get the same rotation without translation
+    local linked = Joints.getLinked(Joints.idSet(selectedObjects))
+    for _, joint in ipairs(linked) do
+        Joints.transformPos(joint, function(x, y, z)
+            local p = RotatingOld.SetRotPos(x, y, z, pivot[1], pivot[2], pivot[3], offsets[1], offsets[2], offsets[3])
+            return p[1], p[2], p[3]
+        end)
+        Joints.transformAxis(joint, function(x, y, z)
+            local a = RotatingOld.SetRotPos(x, y, z, 0, 0, 0, offsets[1], offsets[2], offsets[3])
+            return a[1], a[2], a[3]
+        end)
+    end
+    History.commit()
+    -- joints can't be moved live, save so they match the objects right away
+    if #linked > 0 then MGE.save() end
 end
 
 local function scaleSelected()
@@ -149,6 +177,16 @@ local function scaleSelected()
         writeVectorProperty(v, "pos", outPos)
         writeVectorProperty(v, "sides", outSides)
     end
+    local linked = Joints.getLinked(Joints.idSet(selectedObjects))
+    for _, joint in ipairs(linked) do
+        Joints.transformPos(joint, function(x, y, z)
+            return pivot[1] + (x - pivot[1]) * scale[1], pivot[2] + (y - pivot[2]) * scale[2],
+                pivot[3] + (z - pivot[3]) * scale[3]
+        end)
+    end
+    History.commit()
+    -- joints can't be moved live, save so they match the objects right away
+    if #linked > 0 then MGE.save() end
 end
 
 local function adjustColor()
@@ -165,6 +203,7 @@ local function adjustColor()
         set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
         writeVectorProperty(v, "color", color)
     end
+    History.commit()
 end
 
 local function createInput(container, onInputFunc)
@@ -268,6 +307,7 @@ end
 
 local function duplicate()
     local taberu = ModData.parsed.env_obj
+    local idMap = {} -- original id -> copy id, used to copy joints between duplicated objects
     for i = 1, #taberu do
         local obj = taberu[i]
         if obj and obj.selected then
@@ -286,20 +326,27 @@ local function duplicate()
 
             local copy = shallowCopy(obj)
             copy.id = newId
+            copy.props = shallowCopy(obj.props) -- don't share props with the original
             table.insert(ModData.parsed.env_obj, copy)
             table.remove(freeIds, 1)
+            idMap[obj.id] = newId
+            obj.selected = false -- selection moves to the copies (copy keeps selected = true)
         end
     end
+    Joints.copyLinked(Joints.getLinked(idMap), idMap)
     table.sort(taberu, function(a, b)
         return a.id < b.id
     end)
+    History.commit()
     MGE.save()
 end
 
 local function delete()
+    local deleted = {}
     for i = #ModData.parsed.env_obj, 1, -1 do -- iterating backwards to prevent index issues when removing
         local obj = ModData.parsed.env_obj[i]
         if obj.selected then
+            deleted[obj.id] = true
             table.remove(ModData.parsed.env_obj, i)
             if obj.props.flag ~= "0" and not ModData.jointIds[obj.id] then
                 table.insert(ModData.freeIds.static, obj.id)
@@ -308,6 +355,8 @@ local function delete()
             end
         end
     end
+    Joints.removeLinkedToAny(deleted) -- a joint can't point to a missing object
+    History.commit()
     MGE.save()
 end
 

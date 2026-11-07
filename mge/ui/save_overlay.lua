@@ -1,18 +1,22 @@
 --stolen and modified from rpl save, tanks :)
-if (ModSaveOverlay ~= nil) then
+if (MGE.saveOverlay ~= nil) then
     return
 end
 
-local saveContext = _G.ModSaveOverlayContext or {}
+local saveContext = MGE.saveOverlayContext or {}
 
-ModSaveOverlay = TBMenu:spawnWindowOverlay()
+local ModData = MGE.ModData
+local FileHandler = MGE.FileHandler
+
+local ModSaveOverlay = TBMenu:spawnWindowOverlay()
+MGE.saveOverlay = ModSaveOverlay -- lets MGE.quit close it
 local defaultKillAction = ModSaveOverlay.killAction
 ModSaveOverlay.killAction = function()
     if (defaultKillAction ~= nil) then
         defaultKillAction()
     end
-    ModSaveOverlay = nil
-    _G.ModSaveOverlayContext = nil
+    if MGE then MGE.saveOverlay = nil end
+    if MGE then MGE.saveOverlayContext = nil end
     enable_camera_movement()
 end
 

@@ -3,7 +3,7 @@
 ---@class ScrollList
 ---@field rowHeight number
 ---@field scrollBarWidth number
-ScrollList = {
+local ScrollList = {
     rowHeight = 25,
     scrollBarWidth = 18,
     selectedColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
@@ -145,3 +145,5 @@ function ScrollList.create(parent, rect, items, buildRow, toReload, emptyText)
 
     return listMainView, rows
 end
+
+MGE.ScrollList = ScrollList

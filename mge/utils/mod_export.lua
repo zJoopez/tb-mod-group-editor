@@ -1,5 +1,7 @@
+local FileHandler = MGE.FileHandler
+
 ---@enum FLAGS
-FLAGS = {
+local FLAGS = {
     NORMAL = 0,
     ALT = 1,
     SHIELD = 2,
@@ -10,7 +12,7 @@ FLAGS = {
     NO_DAMAGE = 64
 }
 ---@enum SHAPE
-SHAPE = {
+local SHAPE = {
     SPHERE = 1,
     BOX = 2,
     CAPSULE = 3,
@@ -45,11 +47,11 @@ SHAPE = {
 ---@field freeIds FreeIdHolder
 ---@field jointIds table<integer, boolean>
 ---@field reloadObjects fun() --reloads objects from currently loaded mod
-ModData = {}
+local ModData = {}
 
-MAX_ENV_OBJECTS = 256
-MAX_NONSTATIC_OBJECTS = 48
-SHAPE_NAMES = {}
+local MAX_ENV_OBJECTS = 256
+local MAX_NONSTATIC_OBJECTS = 48
+local SHAPE_NAMES = {}
 for name, value in pairs(SHAPE) do
     SHAPE_NAMES[value] = name
 end
@@ -124,3 +126,11 @@ function ModData.reloadObjects()
 end
 
 init() --initialize data on load
+
+-- shared with other modules
+MGE.ModData = ModData
+MGE.FLAGS = FLAGS
+MGE.SHAPE = SHAPE
+MGE.SHAPE_NAMES = SHAPE_NAMES
+MGE.MAX_ENV_OBJECTS = MAX_ENV_OBJECTS
+MGE.MAX_NONSTATIC_OBJECTS = MAX_NONSTATIC_OBJECTS

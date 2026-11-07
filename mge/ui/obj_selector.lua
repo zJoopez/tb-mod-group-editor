@@ -1,6 +1,10 @@
 local obj_selector = {}
 
-POS_SHIFT = POS_SHIFT or { 0 }
+local Main = MGE.Main
+local ModData = MGE.ModData
+local History = MGE.History
+local ScrollList = MGE.ScrollList
+
 
 ---@param view UIElement
 ---@param fullList EnvObject[]
@@ -21,7 +25,6 @@ local function createButton(parent, pos, size, label, onClick)
 end
 
 local function create(view, fullList)
-    POS_SHIFT = POS_SHIFT or { 0 }
 
     local list, page, pageCount = ScrollList.paginate(fullList, Main.page, Main.pageSize)
     Main.page = page -- clamped, e.g. after deleting objects on last page
@@ -62,6 +65,7 @@ local function create(view, fullList)
     ---@param obj EnvObject
     local function lookAt(obj)
         set_camera_mode(4)
+        MGE.cameraChanged = true -- restored on quit
         local pos = { get_obj_pos(obj.id - 1) }
         set_camera_lookat(pos[1], pos[2], pos[3])
     end
@@ -107,7 +111,7 @@ local function create(view, fullList)
 
         for i = #taberu, 1, -1 do
             local obj = taberu[i]
-            if obj.id < MAX_NONSTATIC_OBJECTS and obj.props.flag ~= "0" and not jointIds[obj.id] then
+            if obj.id < MGE.MAX_NONSTATIC_OBJECTS and obj.props.flag ~= "0" and not jointIds[obj.id] then
                 local newId = table.remove(freeStatic, 1)
                 if not newId then break end
                 table.insert(freeNonStatic, obj.id)
@@ -117,6 +121,7 @@ local function create(view, fullList)
         table.sort(taberu, function(a, b)
             return a.id < b.id
         end)
+        History.commit()
         MGE.save()
         print("reindex done")
     end

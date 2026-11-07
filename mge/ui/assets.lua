@@ -2,6 +2,14 @@ require("toriui.uielement3d") -- Utils3D.MatrixToMatrixTB
 
 local assetsView = {}
 
+local Main = MGE.Main
+local ModData = MGE.ModData
+local History = MGE.History
+local Joints = MGE.Joints
+local ScrollList = MGE.ScrollList
+local FileHandler = MGE.FileHandler
+local SHAPE = MGE.SHAPE
+
 ---@type UIElement
 local content = nil
 -- list fills the space between the save and import buttons
@@ -94,7 +102,7 @@ local function saveSelectedToAsset()
         return
     end
 
-    _G.ModSaveOverlayContext = {
+    MGE.saveOverlayContext = {
         title = "Asset Name",
         placeholder = "Enter asset name",
         defaultName = selectedAssetName or "",
@@ -141,6 +149,14 @@ local function saveSelectedToAsset()
                 assetObj.props.pos = string.format("%.2f %.2f %.2f", pos.x - centerX, pos.y - centerY, pos.z - minZ)
                 table.insert(parser.env_obj, assetObj)
             end
+            -- joints between selected objects get the same offset, ids stay as in the mod
+            for _, joint in ipairs(Joints.getLinked(Joints.idSet(selectedObjects))) do
+                local assetJoint = Joints.copy(joint, joint.id, joint.obj1, joint.obj2)
+                Joints.transformPos(assetJoint, function(x, y, z)
+                    return x - centerX, y - centerY, z - minZ
+                end)
+                table.insert(parser.env_obj_joint, assetJoint)
+            end
             if FileHandler.WriteMod(parser, path) then
                 print("asset saved: " .. path)
                 refreshAssetList()
@@ -166,9 +182,11 @@ local function importAssetFromFile(assetName)
         return
     end
 
+    -- objects linked by the asset's own joints need non static ids
+    local assetJointIds = Joints.getObjectIds(parser.env_obj_joint)
     local requiredIds = { static = 0, nonStatic = 0 }
     for _, assetObj in ipairs(parser.env_obj) do
-        if assetObj.props.flag ~= "0" and not ModData.jointIds[assetObj.id] then
+        if assetObj.props.flag ~= "0" and not assetJointIds[assetObj.id] then
             requiredIds.static = requiredIds.static + 1
         else
             requiredIds.nonStatic = requiredIds.nonStatic + 1
@@ -180,9 +198,10 @@ local function importAssetFromFile(assetName)
     end
 
     local imported = 0
+    local idMap = {} -- asset object id -> id in the mod
     for _, assetObj in ipairs(parser.env_obj) do
         local freeIds
-        if assetObj.props.flag ~= "0" and not ModData.jointIds[assetObj.id] then
+        if assetObj.props.flag ~= "0" and not assetJointIds[assetObj.id] then
             freeIds = ModData.freeIds.static
         else
             freeIds = ModData.freeIds.nonStatic
@@ -197,18 +216,21 @@ local function importAssetFromFile(assetName)
         local importedObj = { kind = "env_obj", id = newId, props = copyProps(assetObj.props) }
         table.insert(ModData.parsed.env_obj, importedObj)
         table.remove(freeIds, 1)
+        idMap[assetObj.id] = newId
         imported = imported + 1
     end
+    local importedJoints = Joints.copyLinked(parser.env_obj_joint, idMap)
 
     table.sort(ModData.parsed.env_obj, function(a, b)
         return a.id < b.id
     end)
+    History.commit()
     MGE.save()
     if Main and Main.updateWindow then
         Main.updateWindow()
         Main.resetEditor()
     end
-    print("imported " .. imported .. " objects")
+    print("imported " .. imported .. " objects, " .. importedJoints .. " joints")
 end
 
 local function filterAssets()
@@ -334,6 +356,10 @@ local function createListFrame(y, h)
         searchText = tostring(search.textfieldstr[1] or "")
         assetPage = 1
         refreshAssetList()
+    end)
+    -- keepFocusOnHide keeps the keyboard captured after the window is killed, release it on quit
+    table.insert(MGE.onQuit, function()
+        if search.menuKeyboardId then search:disableMenuKeyboard() end
     end)
 
     local rowsHolder = listView:addChild({

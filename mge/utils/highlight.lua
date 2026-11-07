@@ -1,7 +1,9 @@
 -- Draws a highlight around selected objects, based on rph's selection highlight (replayhacks_selection.lua)
 require("toriui.uielement3d") -- Utils3D.MatrixToMatrixTB
 
-Highlight = {
+local ModData = MGE.ModData
+
+local Highlight = {
     color = { 0.0, 0.333, 1.0 },
     fillAlpha = 0.25,
     errorShown = false,
@@ -44,6 +46,7 @@ local function drawObjectHighlight(id)
 end
 
 add_hook("draw3d", MGE.hookname, function()
+    local Main = MGE.Main -- created after this module loads
     if not Main or not Main.window or not Main.window.displayed then return end
     local ok, err = pcall(function()
         for _, obj in ipairs(ModData.parsed.env_obj) do

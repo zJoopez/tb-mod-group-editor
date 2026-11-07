@@ -6,7 +6,11 @@ require("toriui.uielement")
 ---@field pageSize integer
 ---@field toggleAll boolean
 ---@field activeTab "editor"|"assets"
-Main = { page = 1, pageSize = 64, toggleAll = false, activeTab = "editor" }
+local Main = { page = 1, pageSize = 64, toggleAll = false, activeTab = "editor" }
+MGE.Main = Main -- registered before UI modules load so they can alias it
+
+local ModData = MGE.ModData
+local History = MGE.History
 
 local defaultPos = { 0, 0 }
 local margin = 10
@@ -15,6 +19,7 @@ local function updateContentHeight(height)
     defaultPos[2] = defaultPos[2] + h + 10 --10 margin
 end
 
+local windowContainer
 Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
@@ -52,10 +57,25 @@ for i, tab in ipairs(tabNames) do
     tabButtons[tab.id] = btn
 end
 
+-- object count on the left, undo/redo buttons on the right
+local historyBtnW = 60
+local titleY = defaultPos[2]
 local titleObjCount = content:addChild({
-    pos = defaultPos,
-    size = { content.size.w, 30 },
+    pos = { 0, titleY },
+    size = { content.size.w - (historyBtnW + 5) * 2, 30 },
 })
+for i, btnInfo in ipairs({ { "Undo", function() History.undo() end }, { "Redo", function() History.redo() end } }) do
+    local btn = content:addChild({
+        pos = { content.size.w - (historyBtnW + 5) * (3 - i) + 5, titleY + 2 },
+        size = { historyBtnW, 26 },
+        interactive = true,
+        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
+        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+    }, true)
+    btn:addAdaptedText(btnInfo[1], nil, nil, nil, CENTERMID, 0.7, nil, nil)
+    btn:addMouseUpHandler(btnInfo[2])
+end
 updateContentHeight(titleObjCount.size.h)
 
 local obj_selector_container = content:addChild({
@@ -94,7 +114,7 @@ copyright:addAdaptedText(true, "Project Mod Group Editor by joopez", nil, nil, F
 updateContentHeight(copyright.size.h)
 
 
-dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- ScrollList, used by obj_selector and assets
+dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by obj_selector and assets
 local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
 local editor = dofile(MGE.scriptPath .. "ui/editor.lua")
 local assetsView = dofile(MGE.scriptPath .. "ui/assets.lua")
@@ -121,7 +141,7 @@ function Main.setTab(id)
 end
 
 local function setDynamicStrings()
-    titleObjCount:addAdaptedText("Objects " .. #ModData.parsed.env_obj .. "/" .. MAX_ENV_OBJECTS)
+    titleObjCount:addAdaptedText("Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS, nil, nil, nil, LEFTMID, nil, nil, nil)
 end
 
 local function createObjSelector()
@@ -157,5 +177,6 @@ createEditor()
 assetsView.create(assetsContainer)
 Main.applyTab()
 
-Main.window.killAction = MGE.quit
+-- closing the window quits the script, window is already being killed so quit skips it
+Main.window.killAction = function() MGE.quit(true) end
 return Main

@@ -1,7 +1,21 @@
-MGE_DEV_PREFIX = ""
-MGE_DEV_PREFIX = "mge/" --dev
+-- don't start a second instance, show the running one instead
+if MGE and MGE.running then
+    echo("^04[MGE] already running, F1 shows/hides the window")
+    local Main = MGE.Main
+    if Main and Main.window and not Main.window.displayed then
+        Main.window:show(false)
+        Main.updateWindow()
+    end
+    return
+end
+-- leftovers from a start that failed halfway (hooks, window)
+if MGE and MGE.quit then pcall(MGE.quit) end
 
-dofile(MGE_DEV_PREFIX .. "mge/main.lua")
+local devPrefix = ""
+devPrefix = "mge/" --dev
+
+MGE = { scriptPath = devPrefix .. "mge/" }
+dofile(MGE.scriptPath .. "main.lua")
 
 --- /ls mge/mge.lua
 --- /lm mge-modmaker.tbm

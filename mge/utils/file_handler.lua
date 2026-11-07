@@ -1,4 +1,5 @@
-FileHandler = {}
+local FileHandler = {}
+MGE.FileHandler = FileHandler
 
 ---One line inside an object block: a property (key, value in props) or a raw line kept as is (comments)
 ---@class FileParserLine

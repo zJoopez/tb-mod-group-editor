@@ -1,4 +1,4 @@
-RotatingOld = {}
+local RotatingOld = {}
 -- Function to rotate a point around the X axis
 local function rotateX(x, y, z, angle)
     local cosA, sinA = math.cos(angle), math.sin(angle)
