@@ -33,24 +33,37 @@ local function copyParsed(parsed)
     return copy
 end
 
+-- object props applyLive can set on world objects, any other prop difference needs a save
+local LIVE_KEYS = { pos = true, rot = true, sides = true, color = true, mass = true, bounce = true }
+
+---@param a table<string, string>
+---@param b table<string, string>
+---@param ignore table<string, boolean>?
+local function sameProps(a, b, ignore)
+    for key, value in pairs(a) do
+        if not (ignore and ignore[key]) and b[key] ~= value then return false end
+    end
+    for key in pairs(b) do
+        if not (ignore and ignore[key]) and a[key] == nil then return false end
+    end
+    return true
+end
+
+---True when only live-applicable changes differ, so undo can skip saving
 ---@param a FileParserResult
 ---@param b FileParserResult
 ---@return boolean
 local function sameObjects(a, b)
     if #a.env_obj ~= #b.env_obj or #a.env_obj_joint ~= #b.env_obj_joint then return false end
     for i, obj in ipairs(a.env_obj) do
-        if obj.id ~= b.env_obj[i].id then return false end
+        local other = b.env_obj[i]
+        if obj.id ~= other.id or not sameProps(obj.props, other.props, LIVE_KEYS) then return false end
     end
     -- joints can't be changed live, any difference in them needs a save
     for i, obj in ipairs(a.env_obj_joint) do
         local other = b.env_obj_joint[i]
-        if obj.id ~= other.id or obj.obj1 ~= other.obj1 or obj.obj2 ~= other.obj2 then return false end
-        for key, value in pairs(obj.props) do
-            if other.props[key] ~= value then return false end
-        end
-        for key in pairs(other.props) do
-            if obj.props[key] == nil then return false end
-        end
+        if obj.id ~= other.id or obj.obj1 ~= other.obj1 or obj.obj2 ~= other.obj2 or
+            not sameProps(obj.props, other.props) then return false end
     end
     return true
 end
@@ -63,7 +76,7 @@ local function parseNumbers(value)
     return numbers
 end
 
----Applies pos/rot/sides/color from props to the world objects, used when only live edits differ
+---Applies pos/rot/sides/color/mass/bounce from props to the world objects, used when only live edits differ
 ---@param parsed FileParserResult
 local function applyLive(parsed)
     for _, obj in ipairs(parsed.env_obj) do
@@ -91,6 +104,12 @@ local function applyLive(parsed)
             if p.color then
                 local v = parseNumbers(p.color)
                 set_obj_color(id, v[1] or 1, v[2] or 1, v[3] or 1, v[4] or 1)
+            end
+            if p.mass then
+                set_obj_mass(id, math.max(tonumber(p.mass) or 1, 0.0001)) -- zero mass breaks physics
+            end
+            if p.bounce then
+                set_obj_bounce(id, math.max(tonumber(p.bounce) or 0, 0))
             end
         end
     end

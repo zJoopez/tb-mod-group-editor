@@ -4,25 +4,7 @@ local Main = MGE.Main
 local ModData = MGE.ModData
 local History = MGE.History
 local ScrollList = MGE.ScrollList
-
-
----@param view UIElement
----@param fullList EnvObject[]
-local function createButton(parent, pos, size, label, onClick)
-    local btn = parent:addChild({
-        interactive = true,
-        pos = pos,
-        size = size,
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
-    }, true)
-    btn:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.7, nil, nil, nil)
-    if onClick then
-        btn:addMouseUpHandler(onClick)
-    end
-    return btn
-end
+local Widgets = MGE.Widgets
 
 local function create(view, fullList)
 
@@ -86,6 +68,7 @@ local function create(view, fullList)
         end)
         TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
             v.selected = value
+            Main.onSelectionChanged()
         end)
     end, toReload)
 
@@ -126,15 +109,8 @@ local function create(view, fullList)
         print("reindex done")
     end
 
-    local reindexBtn = createButton(botBar, { 0, 2 }, { view.size.w / 2 - 2, listElementHeight - 4 }, "reindex",
-        function()
-            reindexNonDynamic()
-        end)
-
-    local resetUIBtn = createButton(botBar, { view.size.w - view.size.w / 2 + 2, 2 },
-        { view.size.w / 2 - 2, listElementHeight - 4 }, "reset inputs", function()
-        Main.resetEditor()
-    end)
+    -- "Reset inputs" lives under the editor fields it clears (ui/editor.lua)
+    Widgets.barButtons(botBar, { { label = "reindex", onClick = function() reindexNonDynamic() end } })
 end
 
 obj_selector.create = create

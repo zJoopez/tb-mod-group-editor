@@ -5,12 +5,13 @@ require("toriui.uielement")
 ---@field page integer
 ---@field pageSize integer
 ---@field toggleAll boolean
----@field activeTab "editor"|"assets"
-local Main = { page = 1, pageSize = 64, toggleAll = false, activeTab = "editor" }
+---@field activeTab "transform"|"properties"|"assets"
+local Main = { page = 1, pageSize = 64, toggleAll = false, activeTab = "transform" }
 MGE.Main = Main -- registered before UI modules load so they can alias it
 
 local ModData = MGE.ModData
 local History = MGE.History
+local Widgets = dofile(MGE.scriptPath .. "ui/widgets.lua") -- MGE.Widgets, shared button helpers
 
 local defaultPos = { 0, 0 }
 local margin = 10
@@ -24,58 +25,28 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 670
+    h = 710 -- +40 for the Save/Export row
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
     size = { windowContainer.size.w - margin * 2, windowContainer.size.h - margin * 2 },
 }, true)
 
--- Tabs
-local tabRow = content:addChild({
-    pos = defaultPos,
-    size = { content.size.w, 30 },
-})
-updateContentHeight(tabRow.size.h)
-
-local tabButtons = {}
-local tabNames = { { id = "editor", label = "Editor" }, { id = "assets", label = "Assets" } }
-for i, tab in ipairs(tabNames) do
-    local tabWidth = (tabRow.size.w - margin) / #tabNames
-    local btn = tabRow:addChild({
-        pos = { (i - 1) * (tabWidth + margin), 0 },
-        size = { tabWidth, tabRow.size.h },
-        interactive = true,
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
-    }, true)
-    btn:addAdaptedText(tab.label, nil, nil, nil, CENTERMID, 0.7, nil, nil)
-    btn:addMouseUpHandler(function()
-        Main.setTab(tab.id)
-    end)
-    tabButtons[tab.id] = btn
-end
-
 -- object count on the left, undo/redo buttons on the right
-local historyBtnW = 60
+local historyW = 125 -- two 60px buttons and a 5px gap
 local titleY = defaultPos[2]
 local titleObjCount = content:addChild({
     pos = { 0, titleY },
-    size = { content.size.w - (historyBtnW + 5) * 2, 30 },
+    size = { content.size.w - historyW - margin, 30 },
 })
-for i, btnInfo in ipairs({ { "Undo", function() History.undo() end }, { "Redo", function() History.redo() end } }) do
-    local btn = content:addChild({
-        pos = { content.size.w - (historyBtnW + 5) * (3 - i) + 5, titleY + 2 },
-        size = { historyBtnW, 26 },
-        interactive = true,
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
-    }, true)
-    btn:addAdaptedText(btnInfo[1], nil, nil, nil, CENTERMID, 0.7, nil, nil)
-    btn:addMouseUpHandler(btnInfo[2])
-end
+local historyHolder = content:addChild({
+    pos = { content.size.w - historyW, titleY },
+    size = { historyW, 30 },
+})
+Widgets.buttonRow(historyHolder, 2, 26, {
+    { label = "Undo", onClick = function() History.undo() end },
+    { label = "Redo", onClick = function() History.redo() end },
+}, 5, 0.7)
 updateContentHeight(titleObjCount.size.h)
 
 local obj_selector_container = content:addChild({
@@ -84,6 +55,27 @@ local obj_selector_container = content:addChild({
     bgColor = TB_MENU_DEFAULT_DARKER_COLOR
 })
 updateContentHeight(obj_selector_container.size.h)
+
+-- Tabs, right above the area they switch (title row and object list stay the same on every tab)
+local tabRow = content:addChild({
+    pos = defaultPos,
+    size = { content.size.w, 30 },
+})
+updateContentHeight(tabRow.size.h)
+
+local tabNames = {
+    { id = "transform", label = "Transform" },
+    { id = "properties", label = "Properties" },
+    { id = "assets", label = "Assets" },
+}
+local tabItems = {}
+for i, tab in ipairs(tabNames) do
+    tabItems[i] = { label = tab.label, onClick = function() Main.setTab(tab.id) end }
+end
+local tabButtons = {}
+for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, margin, 0.7)) do
+    tabButtons[tabNames[i].id] = btn
+end
 
 -- editor and assets tabs share the same area, only one is shown at a time
 local editorContainer = content:addChild({
@@ -95,6 +87,17 @@ local assetsContainer = content:addChild({
     size = { content.size.w, 280 },
 })
 updateContentHeight(editorContainer.size.h)
+
+-- Save/Export stay available on every tab
+local fileRow = content:addChild({
+    pos = defaultPos,
+    size = { content.size.w, 30 },
+})
+Widgets.buttonRow(fileRow, 0, fileRow.size.h, {
+    { label = "Save", onClick = function() MGE.save() end },
+    { label = "Export", onClick = function() dofile(MGE.scriptPath .. "ui/save_overlay.lua") end },
+}, margin)
+updateContentHeight(fileRow.size.h)
 
 local info = content:addChild({
     pos = defaultPos,
@@ -119,21 +122,26 @@ local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
 local editor = dofile(MGE.scriptPath .. "ui/editor.lua")
 local assetsView = dofile(MGE.scriptPath .. "ui/assets.lua")
 
-local tabContainers = { editor = editorContainer, assets = assetsContainer }
+-- Transform and Properties are two panels of the editor area, Assets has its own area
+local tabContainers = { transform = editorContainer, properties = editorContainer, assets = assetsContainer }
 
----Shows the active tab and hides the rest. hide(true) keeps hidden tabs hidden when the window is re-shown (F1)
+---Shows the active tab's area (and editor panel) and hides the rest.
+---hide(true) keeps hidden areas hidden when the window is re-shown (F1)
 function Main.applyTab()
-    for id, container in pairs(tabContainers) do
-        if id == Main.activeTab then
-            container:show(true)
-        else
-            container:hide(true)
-        end
-        tabButtons[id].bgColor = id == Main.activeTab and TB_MENU_DEFAULT_LIGHTER_COLOR or TB_MENU_DEFAULT_DARKER_COLOR
+    local active = tabContainers[Main.activeTab]
+    for _, container in pairs({ editorContainer, assetsContainer }) do
+        if container ~= active then container:hide(true) end
+    end
+    active:show(true)
+    if active == editorContainer then
+        editor.applyPanel(Main.activeTab)
+    end
+    for id, btn in pairs(tabButtons) do
+        btn.bgColor = id == Main.activeTab and TB_MENU_DEFAULT_LIGHTER_COLOR or TB_MENU_DEFAULT_DARKER_COLOR
     end
 end
 
----@param id "editor"|"assets"
+---@param id "transform"|"properties"|"assets"
 function Main.setTab(id)
     if not tabContainers[id] then return end
     Main.activeTab = id
@@ -152,11 +160,17 @@ local function createEditor()
     editor.create(editorContainer)
 end
 
+---Selection changed: editor shows the new selection's current values
+function Main.onSelectionChanged()
+    editor.onSelectionChanged()
+end
+
 function Main.updateWindow()
     if not Main.window.displayed then return end
     obj_selector_container:kill(true)
     setDynamicStrings()
     createObjSelector()
+    Main.onSelectionChanged() -- called after toggle all, saves and reloads
 end
 
 function Main.resetWindow()

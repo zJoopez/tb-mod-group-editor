@@ -12,8 +12,6 @@ local SHAPE = MGE.SHAPE
 
 ---@type UIElement
 local content = nil
--- list fills the space between the save and import buttons
-local layout = { buttonH = 30, gap = 5 }
 local selectedAssetName = nil
 ---@type { row: UIElement, index: integer }?
 local selectedRow = nil
@@ -255,7 +253,7 @@ local function filterAssets()
 end
 
 ---@class AssetListElements
----@field topBar UIElement pager is rebuilt in here
+---@field pagerHolder UIElement right half of the top bar, pager is rebuilt in here
 ---@field rowsHolder UIElement rows are rebuilt in here
 ---@field toReload UIElement bars redrawn over rows that scroll past the list edges
 local list = nil
@@ -267,10 +265,10 @@ local function buildAssetList()
     assetPage = page
 
     -- kill(true) keeps the holders, kill() would leave destroyed elements in the parent's child list
-    list.topBar:kill(true)
+    list.pagerHolder:kill(true)
     list.rowsHolder:kill(true)
 
-    ScrollList.createPager(list.topBar, { x = 0, y = 0, w = list.topBar.size.w, h = list.topBar.size.h },
+    ScrollList.createPager(list.pagerHolder, { x = 0, y = 0, w = list.pagerHolder.size.w, h = list.pagerHolder.size.h },
         assetPage, pageCount, function(newPage)
             assetPage = newPage
             refreshAssetList()
@@ -306,28 +304,17 @@ refreshAssetList = function()
     if Main and Main.applyTab then Main.applyTab() end
 end
 
-local function createButton(y, label, onClick)
-    local btn = content:addChild({
-        pos = { 0, y },
-        size = { content.size.w, layout.buttonH },
-        interactive = true,
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
-    }, true)
-    btn:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.7, nil, nil)
-    btn:addMouseUpHandler(onClick)
-    return btn
-end
 
 ---Creates the list frame once: pager bar on top, rows, search field in the bottom bar
 ---@param y number
 ---@param h number
-local function createListFrame(y, h)
+---Creates the list frame once: search + pager on top, rows, export/import buttons on the bottom
+local function createListFrame()
     local barHeight = ScrollList.rowHeight
+    local bottomH = barHeight -- same height as the object list's bars
     local listView = content:addChild({
-        pos = { 0, y },
-        size = { content.size.w, h },
+        pos = { 0, 0 },
+        size = { content.size.w, content.size.h },
     }, true)
 
     local toReload = listView:addChild({
@@ -339,17 +326,39 @@ local function createListFrame(y, h)
         size = { listView.size.w, barHeight },
         bgColor = TB_MENU_DEFAULT_BG_COLOR,
     }, true)
+    -- bars live in toReload so they are redrawn over rows that scroll past the list edges
     local bottomBar = toReload:addChild({
-        pos = { 0, -barHeight },
-        size = { listView.size.w, barHeight },
+        pos = { 0, -bottomH },
+        size = { listView.size.w, bottomH },
         bgColor = TB_MENU_DEFAULT_BG_COLOR,
     }, true)
+    MGE.Widgets.barButtons(bottomBar, {
+        { label = "Export selected", onClick = saveSelectedToAsset },
+        { label = "Import asset", onClick = function()
+            if selectedAssetName then
+                importAssetFromFile(selectedAssetName)
+            else
+                print("Select an asset from the list")
+            end
+        end },
+    })
 
-    -- created once so typing doesn't rebuild the text field, only the list.
+    -- top bar: search on the left half, pager on the right half (same split as the object list)
+    local halfW = topBar.size.w / 2
+    local searchHolder = topBar:addChild({
+        pos = { 0, 0 },
+        size = { halfW, barHeight },
+    })
+    local pagerHolder = topBar:addChild({
+        pos = { halfW, 0 },
+        size = { topBar.size.w - halfW, barHeight },
+    })
+
+    -- created once so typing doesn't rebuild the text field, only the pager and rows.
     -- keepFocusOnHide keeps focus when toReload is hidden/shown on scroll
-    local search = TBMenu:spawnTextField2(bottomBar, {
-        x = 0, y = 0,
-        w = bottomBar.size.w, h = bottomBar.size.h
+    local search = TBMenu:spawnTextField2(searchHolder, {
+        x = 2, y = 2,
+        w = searchHolder.size.w - 4, h = searchHolder.size.h - 4
     }, nil, "Search assets", {
         fontId = 4,
         textScale = 0.65,
@@ -371,31 +380,18 @@ local function createListFrame(y, h)
 
     local rowsHolder = listView:addChild({
         pos = { 0, barHeight },
-        size = { listView.size.w, listView.size.h - barHeight * 2 },
+        size = { listView.size.w, listView.size.h - barHeight - bottomH },
     })
 
-    list = { topBar = topBar, rowsHolder = rowsHolder, toReload = toReload }
+    list = { pagerHolder = pagerHolder, rowsHolder = rowsHolder, toReload = toReload }
 end
 
----Layout top to bottom: save button, list (pager, rows, search), import button
+---Layout: list frame fills the area (search + pager, rows, export/import)
 ---@param container UIElement
 function assetsView.create(container)
     content = container
     selectedRow = nil
-
-    local importY = content.size.h - layout.buttonH
-    local listY = layout.buttonH + layout.gap
-
-    createButton(0, "Export as asset", saveSelectedToAsset)
-    createListFrame(listY, importY - layout.gap - listY)
-    createButton(importY, "Import asset", function()
-        if selectedAssetName then
-            importAssetFromFile(selectedAssetName)
-        else
-            print("Select an asset from the list")
-        end
-    end)
-
+    createListFrame()
     buildAssetList()
 end
 

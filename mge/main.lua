@@ -34,6 +34,7 @@
 ---@field MAX_NONSTATIC_OBJECTS integer
 ---@field MIN_SIDE number smallest object side written, zero sides crash physics
 ---@field saveOverlay UIElement? open name prompt (ui/save_overlay.lua)
+---@field confirmOverlay UIElement? open confirmation popup (TBMenu:showConfirmationWindow)
 ---@field saveOverlayContext table? options for the next name prompt
 MGE = MGE or { scriptPath = "mge/" }
 MGE.hookname = "mge"
@@ -100,9 +101,10 @@ function MGE.quit(fromWindow)
     for _, callback in ipairs(MGE.onQuit or {}) do
         pcall(callback)
     end
-    local overlay = MGE.saveOverlay
-    if overlay and not overlay.destroyed then
-        pcall(function() overlay:kill() end)
+    for _, overlay in ipairs({ MGE.saveOverlay, MGE.confirmOverlay }) do
+        if overlay and not overlay.destroyed then
+            pcall(function() overlay:kill() end)
+        end
     end
     local window = MGE.Main and MGE.Main.window
     if not fromWindow and window and not window.destroyed then
@@ -137,12 +139,14 @@ add_hook("match_begin", MGE.hookname, function()
     MGE.keptSelection = nil
 end)
 
+-- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game)
 add_hook("key_down", MGE.hookname, function(key)
-    if TB_MENU_INPUT_ISACTIVE or get_keyboard_ctrl() == 0 then return end -- skip while typing in a text field
+    if TB_MENU_INPUT_ISACTIVE then return end -- typing in a text field
+    if get_keyboard_shift() == 0 or get_keyboard_ctrl() ~= 0 or get_keyboard_alt() ~= 0 then return end
     if not MGE.Main.window.displayed then return end
     if key == string.byte("z") then
         History.undo()
-        return 1 -- consume, ctrl+z would also reset joint states
+        return 1 -- consume so the game doesn't also handle the key
     elseif key == string.byte("y") then
         History.redo()
         return 1

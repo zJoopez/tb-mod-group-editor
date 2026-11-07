@@ -6,6 +6,7 @@ local ModData = MGE.ModData
 local History = MGE.History
 local Joints = MGE.Joints
 local Mat3 = MGE.Mat3
+local Widgets = MGE.Widgets
 
 local totalHeight = 0
 local margin = 10
@@ -278,26 +279,82 @@ local function scaleSelected()
     if #linked > 0 then MGE.save() end
 end
 
+-- Rebuilds the Properties tab so its placeholders show the selection's current values
+local refreshProperties
+
+-- Simple per-object properties edited with absolute values. Friction has no live setter,
+-- it's stored in props and applied by saving (the mod reloads with the new value).
+local PROPERTIES = {
+    mass = { min = 0.0001, setter = function(id, v) set_obj_mass(id, v) end, getter = function(id) return get_obj_mass(id) end }, -- zero mass breaks physics
+    friction = { min = 0 },
+    bounce = { min = 0, setter = function(id, v) set_obj_bounce(id, v) end, getter = function(id) return get_obj_bounce(id) end },
+}
+
+---Sets a property on all selected objects from an input field, empty input does nothing
+---@param key "mass"|"friction"|"bounce"
+---@param input UIElement
+local function setProperty(key, input)
+    local value = tonumber(input.textfieldstr[1])
+    if not value then return end
+    local selectedObjects = getSelectedObjects()
+    if #selectedObjects == 0 then return end
+
+    local property = PROPERTIES[key]
+    value = math.max(value, property.min)
+    for _, v in ipairs(selectedObjects) do
+        v.props[key] = MGE.FileHandler.formatNumber(value)
+        if property.setter then property.setter(v.id - 1, value) end
+    end
+    History.commit()
+    if property.setter then
+        refreshProperties()
+    else
+        MGE.save() -- reload rebuilds the editor with the new value
+    end
+end
+
+---Sets color on selected objects, empty fields keep each object's current component (values 0-255)
 local function adjustColor()
     local selectedObjects = getSelectedObjects()
     if #selectedObjects == 0 then return end
 
-    local color = {}
+    local typed = {}
     for i, input in ipairs(inwuts.color) do
-        local n = tonumber(input.textfieldstr[1]) or 0
-        n = math.max(0, math.min(500, n))
-        color[i] = n / 255
+        local n = tonumber(input.textfieldstr[1])
+        typed[i] = n and math.max(0, math.min(500, n)) / 255 or nil
     end
     for _, v in ipairs(selectedObjects) do
+        local current = get_obj_color(v.id - 1) or { 1, 1, 1, 1 }
+        local color = {}
+        for i = 1, 4 do color[i] = typed[i] or current[i] or 1 end
         set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
         writeVectorProperty(v, "color", color)
     end
     History.commit()
+    refreshProperties()
 end
 
-local function createInput(container, onInputFunc)
+---Value shared by all selected objects as text, "mixed" when they differ, nil when nothing is selected
+---@param read fun(obj: FileParserEnvObj): number?
+---@return string?
+local function sharedValue(read)
+    local value
+    for _, obj in ipairs(getSelectedObjects()) do
+        local v = read(obj)
+        local text = v and MGE.FileHandler.formatNumber(v) or "-"
+        if value == nil then
+            value = text
+        elseif value ~= text then
+            return "mixed"
+        end
+    end
+    return value
+end
+
+---@param placeholder string? text shown while empty, defaults to "0"
+local function createInput(container, onInputFunc, placeholder)
     local input = TBMenu:spawnTextField2(container, nil, "",
-        "0.00",
+        placeholder or "0",
         {
             inputType = 2,
             textfield = true,
@@ -306,6 +363,8 @@ local function createInput(container, onInputFunc)
             allowDecimal = true,
             allowNegative = true,
             textAlign = CENTER,
+            fontId = FONTS.LMEDIUM,
+            textScale = 0.65, -- smaller than the default, matches the labels
         })
     input:addKeyboardHandlers(nil, function(key)
         if key ~= 13 then return end --enter
@@ -314,78 +373,68 @@ local function createInput(container, onInputFunc)
     return input
 end
 
----@param container UIElement
----@param inputCount integer
----@param defaultValue string[]?
-local function createInputRow(label, container, inputCount, func, defaultValue) --todo margin as param?
-    local width = 0
-    local row = container:addChild({
+---Label column followed by equally sized inputs and an optional "?" help icon at the end
+---@param label string
+---@param parent UIElement
+---@param func fun(inputs: UIElement[], index: integer) called on enter
+---@param placeholders string[] one per input
+---@param help string? explanation shown when hovering the "?" icon
+---@return UIElement[]
+local function createInputRow(label, parent, func, placeholders, help)
+    local row = parent:addChild({
         pos = { 0, totalHeight },
-        size = { container.size.w, 30 },
+        size = { parent.size.w, 30 },
         interactive = true,
     }, true)
 
-    local columnCount = inputCount
-    if label then columnCount = columnCount + 1 end
-    local columnSize = row.size.w / columnCount
+    local labelW = 80
+    local helpSize = 22
+    local helpW = help and helpSize + 8 or 0 -- space reserved at the end of the row for the "?" icon
+    local columnSize = (row.size.w - labelW - helpW) / #placeholders
+    local labelContainer = row:addChild({
+        pos = { 0, 0 },
+        size = { labelW, row.size.h },
+    }, true)
+    labelContainer:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.7, nil, nil)
+
     local inputs = {}
-
-    if label then
-        local labelContainer = row:addChild({
-            pos = { width, 0 },
-            size = { columnSize, row.size.h },
-        }, true)
-        labelContainer:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.8, nil, nil)
-        width = width + columnSize
-    end
-
-    for i = 1, inputCount, 1 do
+    for i, placeholder in ipairs(placeholders) do
         local inputContainer = row:addChild({
-            pos = { width, 0 },
+            pos = { labelW + (i - 1) * columnSize, 0 },
             size = { columnSize, row.size.h },
             interactive = true,
         }, true)
-        inputs[i] = createInput(inputContainer, func)
-        if defaultValue then inputs[i].textfieldstr[1] = defaultValue[i] end
-        width = width + columnSize
+        inputs[i] = createInput(inputContainer, function() func(inputs, i) end, placeholder)
     end
+
+    if help then
+        -- round "?" that shows a short explanation on hover, same style as the game's mods menu
+        local helpHolder = row:addChild({
+            pos = { -helpSize - 2, (row.size.h - helpSize) / 2 },
+            size = { helpSize, helpSize },
+            bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+            hoverColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+            pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+            interactive = true,
+            shapeType = ROUNDED,
+            rounded = helpSize,
+        })
+        local popup = TBMenu:displayHelpPopup(helpHolder, help)
+        if popup then
+            popup:moveTo(helpSize + 5, (helpSize - popup.size.h) / 2, true) -- right of the icon, outside the window
+        end
+    end
+
     updateContentHeight(row.size.h)
     return inputs
 end
 
----comment
----@param container UIElement
----@param funcs function[]
----@param names string[]
----@return table
-local function createButtonRow(container, funcs, names)
-    local row = container:addChild({
-        pos = { 0, totalHeight },
-        size = { container.size.w, 30 },
-        interactive = true,
-    }, true)
-
-    local columnSize = row.size.w / #funcs
-    local width = 0
-    local btns = {}
-
-    for i, value in ipairs(funcs) do
-        local btn = row:addChild({
-            pos = { width, 0 },
-            size = { columnSize - margin, row.size.h },
-            interactive = true,
-            bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-            hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-            pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
-        }, true)
-        btn:addMouseUpHandler(value)
-        btn:addAdaptedText(names[i] or "")
-        btns[i] = btn
-        width = width + columnSize
-    end
-
-    updateContentHeight(row.size.h + margin)
-    return btns
+---Full width row of equal buttons at the current height
+---@param parent UIElement
+---@param buttons { label: string|fun(): string, onClick: function }[]
+local function createButtonRow(parent, buttons)
+    Widgets.buttonRow(parent, totalHeight, 30, buttons, margin)
+    updateContentHeight(30 + margin)
 end
 
 local function shallowCopy(t)
@@ -449,23 +498,143 @@ local function delete()
     MGE.save()
 end
 
-local function export()
-    dofile(MGE.scriptPath .. "ui/save_overlay.lua")
+---Asks for confirmation with Toribash's own popup (TBMenu:showConfirmationWindow) before deleting
+local function onDeleteClick()
+    local count = #getSelectedObjects()
+    if count == 0 or (MGE.confirmOverlay and not MGE.confirmOverlay.destroyed) then return end
+    local message = "Delete " .. count .. " selected object" .. (count == 1 and "" or "s") .. "?\nUndo can bring them back."
+    -- stored so MGE.quit can close it, cleared by either button
+    MGE.confirmOverlay = TBMenu:showConfirmationWindow(message, function()
+        MGE.confirmOverlay = nil
+        delete()
+    end, function()
+        MGE.confirmOverlay = nil
+    end)
 end
 
-function container.create(container)
+-- Two panels sharing the editor area: Transform (move/rotate/scale) and Properties (color, mass,
+-- friction, bounce). The window's tab row picks one through Main.applyTab -> container.applyPanel.
+---@type table<string, UIElement>
+local panels = {}
+---@type UIElement
+local propertiesPanel = nil
+
+---Shows one editor panel, called by Main.applyTab
+---@param id string "transform"|"properties"
+function container.applyPanel(id)
+    for panelId, panel in pairs(panels) do
+        if not panel.destroyed then
+            if panelId == id then panel:show(true) else panel:hide(true) end
+        end
+    end
+end
+
+---Rebuilt children are visible by default, let the window re-apply which tab/panel is shown
+local function reapplyTabs()
+    if MGE.Main and MGE.Main.applyTab then MGE.Main.applyTab() end
+end
+
+local function buildTransformPanel(panel)
     totalHeight = 0
-    inwuts.pos = createInputRow("Pos", container, 3, moveSelected)
-    inwuts.rot = createInputRow("Rot", container, 3, rotSelected)
-    inwuts.scale = createInputRow("Scale", container, 3, scaleSelected)
-    updateContentHeight(margin)
+    local zeros = { "0.00", "0.00", "0.00" }
+    inwuts.pos = createInputRow("Move", panel, function() moveSelected() end, zeros,
+        "Moves selected objects by X Y Z.\nEmpty fields count as 0.")
+    inwuts.rot = createInputRow("Rotate", panel, function() rotSelected() end, zeros,
+        "Rotates selected objects around their center\nby X Y Z degrees.")
+    inwuts.scale = createInputRow("Scale", panel, function() scaleSelected() end, zeros,
+        "Multiplies size and spacing of selected objects\nalong the group's X Y Z. Empty or 0 means no change.")
+end
 
-    createInputRow("Color", container, 0, nil)
-    inwuts.color = createInputRow(nil, container, 4, adjustColor, { "", "", "", "255" })
-    updateContentHeight(margin)
+local function buildPropertiesPanel(panel)
+    totalHeight = 0
+    -- placeholders show the selection's current value ("mixed" if objects differ),
+    -- or the expected input type without a selection
+    local colorHints = {}
+    for i = 1, 4 do
+        colorHints[i] = sharedValue(function(obj)
+            local c = get_obj_color(obj.id - 1)
+            return c and c[i] and math.floor(c[i] * 255 + 0.5)
+        end) or "0"
+        if colorHints[i] == "mixed" or colorHints[i] == "-" then colorHints[i] = "0" end -- 4 narrow fields, "mixed" doesn't fit
+    end
+    inwuts.color = createInputRow("Color", panel, function() adjustColor() end, colorHints,
+        "Red, green, blue and alpha (0-255).\nEmpty fields keep each object's current value.")
 
-    createButtonRow(container, { duplicate, delete }, { "Duplicate", "Delete" })
-    createButtonRow(container, { MGE.save, export }, { "Save", "Export" })
+    local helpTexts = {
+        mass = "Sets mass of selected objects.\nShows the current value, \"mixed\" if they differ.",
+        friction = "Sets friction of selected objects.\nApplied by saving, the game can't change it live.",
+        bounce = "Sets bounciness of selected objects.\nShows the current value, \"mixed\" if they differ.",
+    }
+    inwuts.properties = {} -- mass, friction, bounce inputs, cleared by "Reset inputs"
+    for _, entry in ipairs({ { "Mass", "mass" }, { "Friction", "friction" }, { "Bounce", "bounce" } }) do
+        local label, key = entry[1], entry[2]
+        local property = PROPERTIES[key]
+        local hint = sharedValue(function(obj)
+            if property.getter then return property.getter(obj.id - 1) end
+            return tonumber(obj.props[key])
+        end) or "0.00"
+        if hint == "-" then hint = "0.00" end -- selected objects without the property in the file
+        local inputs = createInputRow(label, panel, function(inputs) setProperty(key, inputs[1]) end, { hint }, helpTexts[key])
+        table.insert(inwuts.properties, inputs[1])
+    end
+end
+
+---Empties all transform and property fields, placeholders show again
+local function clearInputs()
+    for _, key in ipairs({ "pos", "rot", "scale", "color", "properties" }) do
+        for _, input in ipairs(inwuts[key] or {}) do
+            if not input.destroyed then input:clearTextfield() end
+        end
+    end
+end
+
+refreshProperties = function()
+    if not propertiesPanel or propertiesPanel.destroyed then return end
+    propertiesPanel:kill(true)
+    buildPropertiesPanel(propertiesPanel)
+    reapplyTabs()
+end
+
+---Called when the selection changes: refresh current values
+function container.onSelectionChanged()
+    refreshProperties()
+end
+
+---@param parent UIElement editor container from ui/main.lua
+function container.create(parent)
+    -- both panels share the top of the editor area, Properties has 4 rows so it sets the height
+    local panelY = 0
+    local panelH = 30 * 4
+    panels = {}
+    for _, id in ipairs({ "transform", "properties" }) do
+        panels[id] = parent:addChild({
+            pos = { 0, panelY },
+            size = { parent.size.w, panelH },
+        })
+    end
+    buildTransformPanel(panels.transform)
+    propertiesPanel = panels.properties
+    buildPropertiesPanel(propertiesPanel)
+
+    -- bottom of the input panels: hint on the left, reset button on the right (it only affects these fields)
+    totalHeight = panelY + panelH + 4
+    local footerH = 22
+    local resetW = 110
+    local hint = parent:addChild({
+        pos = { 0, totalHeight },
+        size = { parent.size.w - resetW - margin, footerH },
+    })
+    hint:addAdaptedText(true, "Enter applies the value to selected objects", nil, nil, FONTS.SMALL, LEFTMID, 0.6)
+    Widgets.button(parent, { x = parent.size.w - resetW, y = totalHeight, w = resetW, h = footerH },
+        "Reset inputs", clearInputs, 0.6)
+    updateContentHeight(footerH + 8)
+
+    createButtonRow(parent, {
+        { label = "Duplicate", onClick = duplicate },
+        { label = "Delete", onClick = onDeleteClick },
+    })
+    -- Save/Export live in the main window below the tab area so every tab has them (ui/main.lua)
+    -- visibility is applied by Main.applyTab after create (initial build and Main.resetEditor)
 end
 
 return container
