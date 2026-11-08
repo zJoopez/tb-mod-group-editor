@@ -6,7 +6,7 @@ require("toriui.uielement")
 ---@field pageSize integer
 ---@field toggleAll boolean
 ---@field activeTab "core"|"advanced"|"assets"
-local Main = { page = 1, pageSize = 64, toggleAll = false, activeTab = "core" }
+local Main = { page = 1, pageSize = 120, toggleAll = false, activeTab = "core" }
 MGE.Main = Main -- registered before UI modules load so they can alias it
 
 local ModData = MGE.ModData
@@ -87,7 +87,9 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Shift + Z: undo\n" ..
     "Shift + Y: redo\n" ..
     "Enter: apply the value typed in an input field\n" ..
+    "Click Pos / Angle / Size: switch to Move / Rotate / Scale offsets and back\n" ..
     "Click an object in the world: select / deselect it\n" ..
+    "Click an id in the list: select / deselect, double click: look at it\n" ..
     "Drag / mouse wheel: orbit / zoom the camera after looking at objects\n" ..
     "Camera button: camera follows the selection when moving (highlighted when on)")
 updateContentHeight(menuH)

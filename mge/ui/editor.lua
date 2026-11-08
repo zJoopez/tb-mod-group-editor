@@ -504,8 +504,9 @@ end
 ---@param label string
 ---@param parent UIElement
 ---@param help string? explanation shown when hovering the "?" icon
+---@param onLabelClick function? makes the label a button (switches a transform row's mode)
 ---@return UIElement row, number contentX, number contentW
-local function createRow(label, parent, help)
+local function createRow(label, parent, help, onLabelClick)
     local row = parent:addChild({
         pos = { 0, totalHeight },
         size = { parent.size.w, 30 },
@@ -515,11 +516,16 @@ local function createRow(label, parent, help)
     local labelW = 80
     local helpSize = 22
     local helpW = help and helpSize + 8 or 0 -- space reserved at the end of the row for the "?" icon
-    local labelContainer = row:addChild({
-        pos = { 0, 0 },
-        size = { labelW, row.size.h },
-    }, true)
-    labelContainer:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.7, nil, nil)
+    if onLabelClick then
+        Widgets.button(row, { x = 2, y = 2, w = labelW - 4, h = row.size.h - 4 }, label, onLabelClick, nil,
+            Widgets.PANEL_STYLE)
+    else
+        local labelContainer = row:addChild({
+            pos = { 0, 0 },
+            size = { labelW, row.size.h },
+        }, true)
+        labelContainer:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.7, nil, nil)
+    end
 
     if help then
         -- "?" at the row's end, the explanation opens right of it, outside the window
@@ -536,9 +542,10 @@ end
 ---@param func fun(inputs: UIElement[], index: integer) called on enter
 ---@param placeholders string[] one per input
 ---@param help string? explanation shown when hovering the "?" icon
----@return UIElement[]
-local function createInputRow(label, parent, func, placeholders, help)
-    local row, contentX, contentW = createRow(label, parent, help)
+---@param onLabelClick function? see createRow
+---@return UIElement[] inputs, UIElement row
+local function createInputRow(label, parent, func, placeholders, help, onLabelClick)
+    local row, contentX, contentW = createRow(label, parent, help, onLabelClick)
     local columnSize = contentW / #placeholders
     local inputs = {}
     for i, placeholder in ipairs(placeholders) do
@@ -549,7 +556,7 @@ local function createInputRow(label, parent, func, placeholders, help)
         }, true)
         inputs[i] = createInput(inputContainer, function() func(inputs, i) end, placeholder)
     end
-    return inputs
+    return inputs, row
 end
 
 ---Label column followed by buttons for a fixed set of values, the current one is highlighted
@@ -807,8 +814,8 @@ local function setStatic(static)
 end
 
 -- Two panels sharing the editor area, picked by the window's tab row (Main.applyTab -> editor.applyPanel):
---   core:     whole group and look: Pos, Angle, Size, Color, Mass, Shape, Visible
---   advanced: offsets and physics: Move, Rotate, Scale, Friction, Bounce, Flags
+--   core:     transforms and look: Pos/Move, Angle/Rotate, Size/Scale, Color, Mass, Shape, Visible
+--   advanced: physics: Friction, Bounce, Flags
 -- Both have input fields, the reset button is shown under either.
 -- Every block of rows has its own holder. Move/Rotate/Scale are built once (typed values stay), the
 -- other blocks are rebuilt when the selection or the objects change, so their placeholders /
@@ -816,7 +823,7 @@ end
 local ROW_H = 30
 local PANELS = {
     core = { rows = 7 },
-    advanced = { rows = 6 },
+    advanced = { rows = 3 },
 }
 ---@type table<string, UIElement>
 local panels = {}
@@ -824,6 +831,43 @@ local panels = {}
 local blocks = {}
 ---@type UIElement? reset button, shown under the shown panel
 local inputFooter = nil
+
+-- Each transform row has two modes, switched by clicking the row's name. Both rows exist in the same
+-- slot (offset rows built once, absolute rows rebuilt with the measured values), one is hidden:
+--   absolute: Pos / Angle / Size, the group ends up at the typed values
+--   offset:   Move / Rotate / Scale, the typed values are added (Scale multiplies)
+---@alias TransformMode "absolute"|"offset"
+local TRANSFORMS = { "move", "rotate", "scale" }
+---@type table<string, TransformMode> kept while the script runs, also over editor rebuilds
+local transformModes = { move = "absolute", rotate = "absolute", scale = "absolute" }
+---@type table<string, table<TransformMode, UIElement>>
+local transformRows = { move = {}, rotate = {}, scale = {} }
+
+---Shows each transform row in its current mode and hides the other one. hide(true) keeps the hidden
+---row hidden when the panel is shown again (tab switch, F1). The shown row only needs showing while
+---the core panel is visible, otherwise the panel shows it when it comes back
+local function applyTransformModes()
+    local coreShown = panels.core and not panels.core.destroyed and panels.core.displayed
+    for _, key in ipairs(TRANSFORMS) do
+        for mode, row in pairs(transformRows[key]) do
+            if not row.destroyed then
+                if mode ~= transformModes[key] then
+                    row:hide(true)
+                elseif coreShown then
+                    row:show(true)
+                else
+                    row.noreload = nil -- hidden with the panel, comes back with it
+                end
+            end
+        end
+    end
+end
+
+---@param key "move"|"rotate"|"scale"
+local function toggleTransformMode(key)
+    transformModes[key] = transformModes[key] == "absolute" and "offset" or "absolute"
+    applyTransformModes()
+end
 
 ---Shows one editor panel, called by Main.applyTab
 ---@param id string "core"|"advanced"
@@ -835,6 +879,7 @@ function editor.applyPanel(id)
             if panelId == id then element:show(true) else element:hide(true) end
         end
     end
+    applyTransformModes() -- after the panel, rebuilt rows start visible
     if inputFooter and not inputFooter.destroyed then
         inputFooter:show(true)
         inputFooter:moveTo(nil, panel.rows * ROW_H + 8)
@@ -846,18 +891,24 @@ local function reapplyTabs()
     if MGE.Main and MGE.Main.applyTab then MGE.Main.applyTab() end
 end
 
----Move/Rotate/Scale rows (offsets, advanced panel), built once so typed values stay when the selection changes
+local SWITCH_HELP = "\nClick the name to switch to "
+
+---Move/Rotate/Scale rows (offset mode, core panel), built once so typed values stay when the selection changes
 ---@param holder UIElement
 local function buildTransformRows(holder)
     totalHeight = 0
     local zeros = { "0.00", "0.00", "0.00" }
+    local function switch(key) return function() toggleTransformMode(key) end end
     -- Enter applies only the field it's pressed in (index i), the row's other fields are ignored
-    inwuts.pos = createInputRow("Move", holder, function(_, i) moveSelected(i) end, zeros,
-        "Moves selected objects along X, Y or Z.\nEnter applies the field you typed in.")
-    inwuts.rot = createInputRow("Rotate", holder, function(_, i) rotSelected(i) end, zeros,
-        "Rotates selected objects around their center\nby X, Y or Z degrees. Enter applies the field you typed in.")
-    inwuts.scale = createInputRow("Scale", holder, function(_, i) scaleSelected(i) end, zeros,
-        "Multiplies size and spacing of selected objects\nalong the group's X, Y or Z. 0 means no change.\nEnter applies the field you typed in.")
+    inwuts.pos, transformRows.move.offset = createInputRow("Move", holder, function(_, i) moveSelected(i) end, zeros,
+        "Moves selected objects by X, Y or Z.\nEnter applies the field you typed in." ..
+        SWITCH_HELP .. "Pos (move to a position).", switch("move"))
+    inwuts.rot, transformRows.rotate.offset = createInputRow("Rotate", holder, function(_, i) rotSelected(i) end, zeros,
+        "Rotates selected objects around their center\nby X, Y or Z degrees. Enter applies the field you typed in." ..
+        SWITCH_HELP .. "Angle (turn to an angle).", switch("rotate"))
+    inwuts.scale, transformRows.scale.offset = createInputRow("Scale", holder, function(_, i) scaleSelected(i) end, zeros,
+        "Multiplies size and spacing of selected objects\nalong the group's X, Y or Z. 0 means no change.\nEnter applies the field you typed in." ..
+        SWITCH_HELP .. "Size (set the overall size).", switch("scale"))
 end
 
 ---@param values number[]
@@ -876,16 +927,20 @@ local function buildMeasuredRows(holder, selected)
     totalHeight = 0
     local zeros = { "0.00", "0.00", "0.00" }
     local any = #selected > 0
-    inwuts.position = createInputRow("Pos", holder, function(_, i) positionSelected(i) end,
+    local function switch(key) return function() toggleTransformMode(key) end end
+    inwuts.position, transformRows.move.absolute = createInputRow("Pos", holder, function(_, i) positionSelected(i) end,
         any and formatHints({ getSelectionPivot(selected) }) or zeros,
-        "Moves selected objects so their center is at X, Y or Z.\nShows the current center. Enter applies the field you typed in.")
+        "Moves selected objects so their center is at X, Y or Z.\nShows the current center. Enter applies the field you typed in." ..
+        SWITCH_HELP .. "Move (move by an offset).", switch("move"))
     local angles = any and groupAngles(selected) or { 0, 0, 0 }
     for i = 1, 3 do angles[i] = math.deg(angles[i]) end
-    inwuts.angle = createInputRow("Angle", holder, function(_, i) angleSelected(i) end, formatHints(angles),
-        "Turns selected objects as a group to X, Y or Z degrees.\nShows the group's current angles. Only rotations done\nin MGE are known, others count as 0. Enter applies the field you typed in.")
-    inwuts.size = createInputRow("Size", holder, function(_, i) sizeSelected(i) end,
+    inwuts.angle, transformRows.rotate.absolute = createInputRow("Angle", holder, function(_, i) angleSelected(i) end, formatHints(angles),
+        "Turns selected objects as a group to X, Y or Z degrees.\nShows the group's current angles. Only rotations done\nin MGE are known, others count as 0. Enter applies the field you typed in." ..
+        SWITCH_HELP .. "Rotate (turn by degrees).", switch("rotate"))
+    inwuts.size, transformRows.scale.absolute = createInputRow("Size", holder, function(_, i) sizeSelected(i) end,
         any and formatHints(groupExtents(selected)) or zeros,
-        "Scales selected objects so the group is X, Y or Z long\n(along the group's axes, like Scale). Shows the current size.\nEnter applies the field you typed in.")
+        "Scales selected objects so the group is X, Y or Z long\n(along the group's axes, like Scale). Shows the current size.\nEnter applies the field you typed in." ..
+        SWITCH_HELP .. "Scale (multiply the size).", switch("scale"))
 end
 
 local PROPERTY_HELP = {
@@ -990,8 +1045,8 @@ local BLOCKS = {
     measured = { build = buildMeasuredRows, panel = "core", row = 0, rows = 3 },
     coreProps = { build = buildCoreProps, panel = "core", row = 3, rows = 2 },
     looks = { build = buildLooks, panel = "core", row = 5, rows = 2 },
-    advancedProps = { build = buildAdvancedProps, panel = "advanced", row = 3, rows = 2 },
-    flags = { build = buildFlags, panel = "advanced", row = 5, rows = 1 },
+    advancedProps = { build = buildAdvancedProps, panel = "advanced", row = 0, rows = 2 },
+    flags = { build = buildFlags, panel = "advanced", row = 2, rows = 1 },
 }
 -- fixed build order (pairs() order isn't defined)
 local BLOCK_ORDER = { "measured", "coreProps", "looks", "advancedProps", "flags" }
@@ -1045,6 +1100,7 @@ local function rebuildBlocks(names)
     end
     restoreTypedProperties(typed)
     reapplyTabs()
+    applyTransformModes() -- also when the editor isn't the shown tab (applyPanel isn't called then)
 end
 
 -- after a move / rotate / scale only the measured values change
@@ -1071,7 +1127,9 @@ function editor.create(parent)
             size = { parent.size.w, panel.rows * ROW_H },
         })
     end
-    buildTransformRows(panels.advanced:addChild({
+    -- offset rows sit in the same slot as the measured (absolute) rows, applyTransformModes shows one
+    transformRows = { move = {}, rotate = {}, scale = {} }
+    buildTransformRows(panels.core:addChild({
         pos = { 0, 0 },
         size = { parent.size.w, 3 * ROW_H },
     }))
