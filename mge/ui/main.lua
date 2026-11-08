@@ -25,31 +25,44 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 625
+    h = 709
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
     size = { windowContainer.size.w - margin * 2, windowContainer.size.h - margin * 2 },
 }, true)
 
--- top menu: file and history actions, shortcuts to the game's own mod list and gamerules menus,
--- shortcut help at the end. Same bar style as the list bars
+-- top menu, same bar style as the list bars:
+--   left:  shortcuts to the game's own mod list and gamerules menus
+--   right: save / undo / redo icons, then the shortcut help
 local menuH = 25
 local helpSize = menuH - 4
+local iconSize = menuH - 4 -- bar buttons have 2px padding top and bottom
+local iconGap = 4
 local menuBar = content:addChild({
     pos = defaultPos,
     size = { content.size.w, menuH },
     bgColor = TB_MENU_DEFAULT_BG_COLOR,
 })
-local menuButtons = menuBar:addChild({
-    pos = { 0, 0 },
-    size = { menuBar.size.w - helpSize - 6, menuH },
+local iconsW = iconSize * 3 + iconGap * 2
+local iconsX = menuBar.size.w - (helpSize + 4) - iconGap - iconsW
+local iconButtons = menuBar:addChild({
+    pos = { iconsX, 0 },
+    size = { iconsW, menuH },
 })
-Widgets.barButtons(menuButtons, {
-    -- named copy of the mod, Ctrl+S saves the working file (see shortcut help)
-    { label = "Save as", onClick = function() dofile(MGE.scriptPath .. "ui/save_overlay.lua") end },
-    { label = "Undo", onClick = function() History.undo() end },
-    { label = "Redo", onClick = function() History.redo() end },
+Widgets.barButtons(iconButtons, {
+    -- working file (same as Ctrl+S), game's save icon
+    { label = "Save", icon = "../textures/menu/general/buttons/savewhite.tga", onClick = function() MGE.save() end },
+    -- game's undo icon, redo is the same icon mirrored (mge/textures/redo.tga)
+    { label = "Undo", icon = "../textures/menu/general/buttons/undo.tga", onClick = function() History.undo() end },
+    { label = "Redo", icon = MGE.scriptPath .. "textures/redo.tga", onClick = function() History.redo() end },
+})
+local menuTextW = 80 -- fixed width, leaves open space between the text and icon groups
+local textButtons = menuBar:addChild({
+    pos = { 0, 0 },
+    size = { menuTextW * 2 + iconGap, menuH },
+})
+Widgets.barButtons(textButtons, {
     { label = "Mods", onClick = function() dofile("system/mods.lua") end },           -- game's mod list
     { label = "Rules", onClick = function() dofile("system/gamerules.lua") end },     -- game's gamerules menu
 })
@@ -65,6 +78,13 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Drag / mouse wheel: orbit / zoom the camera after looking at objects")
 updateContentHeight(menuH)
 
+-- header for the object list: what it lists and how full the mod is, set by setDynamicStrings
+local listHeader = content:addChild({
+    pos = defaultPos,
+    size = { content.size.w, 26 },
+})
+updateContentHeight(listHeader.size.h - 4) -- close to the list it describes
+
 local obj_selector_container = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 200 },
@@ -72,12 +92,17 @@ local obj_selector_container = content:addChild({
 })
 updateContentHeight(obj_selector_container.size.h)
 
--- Tabs, right above the area they switch (title row and object list stay the same on every tab)
+-- Tabs, right above the area they switch (title row and object list stay the same on every tab).
+-- The area has its own panel color and the active tab uses the same color and touches the panel,
+-- so it reads as one shape. Inactive tabs keep the normal button look.
+local TAB_PANEL_COLOR = { 0, 0, 0, 0.15 } -- darkens the window, buttons inside (DARKER) stay visible
+local TAB_GAP = 4
+local TAB_PADDING = 6
 local tabRow = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 30 },
 })
-updateContentHeight(tabRow.size.h)
+updateContentHeight(tabRow.size.h - margin) -- no gap, the panel starts right under the tabs
 
 local tabNames = {
     { id = "values", label = "Values" },
@@ -89,23 +114,39 @@ for i, tab in ipairs(tabNames) do
     tabItems[i] = { label = tab.label, onClick = function() Main.setTab(tab.id) end }
 end
 local tabButtons = {}
-for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, margin)) do
+for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, TAB_GAP)) do
     tabButtons[tabNames[i].id] = btn
 end
 
--- editor and assets tabs share the same area, only one is shown at a time
--- (240 fits the 7 input rows of the Values panel with the reset button under them)
-local editorContainer = content:addChild({
+-- editor and assets tabs share the same area inside the tab panel, only one is shown at a time
+-- (250 fits the 7 input rows of the Values panel with the reset button under them)
+local areaH = 250
+local tabPanel = content:addChild({
     pos = defaultPos,
-    size = { content.size.w, 240 },
+    size = { content.size.w, areaH + TAB_PADDING * 2 },
+    bgColor = TAB_PANEL_COLOR,
 })
-local assetsContainer = content:addChild({
-    pos = defaultPos,
-    size = { content.size.w, 240 },
+local editorContainer = tabPanel:addChild({
+    pos = { TAB_PADDING, TAB_PADDING },
+    size = { tabPanel.size.w - TAB_PADDING * 2, areaH },
 })
-updateContentHeight(editorContainer.size.h)
+local assetsContainer = tabPanel:addChild({
+    pos = { TAB_PADDING, TAB_PADDING },
+    size = { tabPanel.size.w - TAB_PADDING * 2, areaH },
+})
+updateContentHeight(tabPanel.size.h)
 
 -- Duplicate/Delete/Reindex are in the object list's bottom bar (ui/obj_selector.lua)
+
+-- named copy of the mod, under the editor/assets area on every tab
+local saveAsRow = content:addChild({
+    pos = defaultPos,
+    size = { content.size.w, 30 },
+})
+Widgets.buttonRow(saveAsRow, 0, saveAsRow.size.h, {
+    { label = "Save as", onClick = function() dofile(MGE.scriptPath .. "ui/save_overlay.lua") end },
+}, margin)
+updateContentHeight(saveAsRow.size.h)
 
 -- footer: small centered info rows stacked without gaps
 ---@param text string?
@@ -120,7 +161,7 @@ local function addFooterRow(text)
     updateContentHeight(row.size.h - margin)
     return row
 end
-local limitsRow = addFooterRow() -- object, dynamic id and joint usage, set by setDynamicStrings
+local limitsRow = addFooterRow() -- dynamic id and joint usage, set by setDynamicStrings
 addFooterRow("Project Mod Group Editor by joopez")
 
 
@@ -144,7 +185,14 @@ function Main.applyTab()
         editor.applyPanel(Main.activeTab)
     end
     for id, btn in pairs(tabButtons) do
-        btn.bgColor = id == Main.activeTab and TB_MENU_DEFAULT_LIGHTER_COLOR or TB_MENU_DEFAULT_DARKER_COLOR
+        if id == Main.activeTab then
+            -- part of the panel: same color, no hover/press change
+            btn.bgColor, btn.hoverColor, btn.pressedColor = TAB_PANEL_COLOR, TAB_PANEL_COLOR, TAB_PANEL_COLOR
+        else
+            btn.bgColor = TB_MENU_DEFAULT_DARKER_COLOR
+            btn.hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR
+            btn.pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
+        end
     end
 end
 
@@ -156,8 +204,9 @@ function Main.setTab(id)
 end
 
 local function setDynamicStrings()
-    Widgets.infoText(limitsRow, "Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS ..
-        "    Dynamic " .. ModData.countDynamic() .. "/" .. MGE.MAX_NONSTATIC_OBJECTS ..
+    listHeader:addAdaptedText("Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS,
+        nil, nil, nil, CENTERMID, nil, nil, nil)
+    Widgets.infoText(limitsRow, "Dynamic " .. ModData.countDynamic() .. "/" .. MGE.MAX_NONSTATIC_OBJECTS ..
         "    Joints " .. #ModData.parsed.env_obj_joint .. "/" .. MGE.MAX_ENV_JOINTS)
 end
 

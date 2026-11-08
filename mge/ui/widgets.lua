@@ -12,49 +12,103 @@ local Widgets = {}
 -- one text size for every button (tabs, bars, editor rows), adapted text only shrinks it to fit
 Widgets.TEXT_SCALE = 0.7
 
+---@class WidgetStyle
+---@field bg number[]
+---@field hover number[]
+---@field pressed number[]
+
+---Button colors on the window background (toolbar, list bars, tabs)
+---@type WidgetStyle
+Widgets.STYLE = {
+    bg = TB_MENU_DEFAULT_DARKER_COLOR,
+    hover = TB_MENU_DEFAULT_LIGHTER_COLOR,
+    pressed = TB_MENU_DEFAULT_DARKEST_COLOR,
+}
+---Button colors inside the darker tab panel (ui/main.lua), the default colors blend into it
+---@type WidgetStyle
+Widgets.PANEL_STYLE = {
+    bg = TB_MENU_DEFAULT_BG_COLOR,
+    hover = TB_MENU_DEFAULT_LIGHTER_COLOR,
+    pressed = TB_MENU_DEFAULT_DARKER_COLOR,
+}
+
 ---Standard MGE button
 ---@param parent UIElement
 ---@param rect WidgetRect position relative to parent
 ---@param label string|fun(): string function labels are re-read every frame
 ---@param onClick function?
 ---@param textScale number? defaults to Widgets.TEXT_SCALE
+---@param style WidgetStyle? defaults to Widgets.STYLE
 ---@return UIElement
-function Widgets.button(parent, rect, label, onClick, textScale)
+function Widgets.button(parent, rect, label, onClick, textScale, style)
     textScale = textScale or Widgets.TEXT_SCALE
+    style = style or Widgets.STYLE
     local btn = parent:addChild({
         pos = { rect.x, rect.y },
         size = { rect.w, rect.h },
         interactive = true,
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+        bgColor = style.bg,
+        hoverColor = style.hover,
+        pressedColor = style.pressed,
     }, true)
     if type(label) == "function" then
         btn:addCustomDisplay(false, function()
             btn:uiText(label(), nil, nil, nil, CENTERMID, textScale, nil, nil, nil)
         end)
-    else
+    elseif label ~= "" then -- "" for icon buttons
         btn:addAdaptedText(label, nil, nil, nil, CENTERMID, textScale, nil, nil)
     end
     if onClick then btn:addMouseUpHandler(onClick) end
     return btn
 end
 
----Equal width buttons filling the parent's width exactly: n buttons and n - 1 gaps between them
+---Standard MGE button showing an image instead of text, the image is a square centered in the button
+---@param parent UIElement
+---@param rect WidgetRect position relative to parent
+---@param image string texture path, "../textures/..." for game textures or relative to data/script
+---@param onClick function?
+---@param style WidgetStyle?
+---@return UIElement
+function Widgets.iconButton(parent, rect, image, onClick, style)
+    local btn = Widgets.button(parent, rect, "", onClick, nil, style)
+    local size = math.min(rect.w, rect.h) - 6
+    btn:addChild({
+        pos = { (rect.w - size) / 2, (rect.h - size) / 2 },
+        size = { size, size },
+        bgImage = image,
+    })
+    return btn
+end
+
+---Buttons filling the parent's width exactly: n buttons and n - 1 gaps between them.
+---Entries with `icon` show that image instead of the label and are square (h wide), text buttons
+---share the rest of the width equally
 ---@param parent UIElement
 ---@param y number
 ---@param h number
----@param buttons { label: string|fun(): string, onClick: function? }[]
+---@param buttons { label: string|fun(): string, icon: string?, onClick: function? }[]
 ---@param gap number space between buttons
 ---@param textScale number?
+---@param style WidgetStyle?
 ---@return UIElement[]
-function Widgets.buttonRow(parent, y, h, buttons, gap, textScale)
-    local count = #buttons
-    local w = (parent.size.w - gap * (count - 1)) / count
+function Widgets.buttonRow(parent, y, h, buttons, gap, textScale, style)
+    local iconCount = 0
+    for _, info in ipairs(buttons) do
+        if info.icon then iconCount = iconCount + 1 end
+    end
+    local textCount = #buttons - iconCount
+    local textW = textCount > 0 and (parent.size.w - gap * (#buttons - 1) - iconCount * h) / textCount or 0
     local created = {}
+    local x = 0
     for i, info in ipairs(buttons) do
-        created[i] = Widgets.button(parent, { x = (i - 1) * (w + gap), y = y, w = w, h = h },
-            info.label, info.onClick, textScale)
+        local w = info.icon and h or textW
+        local rect = { x = x, y = y, w = w, h = h }
+        if info.icon then
+            created[i] = Widgets.iconButton(parent, rect, info.icon, info.onClick, style)
+        else
+            created[i] = Widgets.button(parent, rect, info.label, info.onClick, textScale, style)
+        end
+        x = x + w + gap
     end
     return created
 end
@@ -65,10 +119,11 @@ local BAR_GAP = 4
 
 ---Buttons filling a list bar with the shared bar padding (e.g. reindex, export/import)
 ---@param bar UIElement
----@param buttons { label: string|fun(): string, onClick: function? }[]
+---@param buttons { label: string|fun(): string, icon: string?, onClick: function? }[]
+---@param style WidgetStyle?
 ---@return UIElement[]
-function Widgets.barButtons(bar, buttons)
-    return Widgets.buttonRow(bar, BAR_PADDING, bar.size.h - BAR_PADDING * 2, buttons, BAR_GAP)
+function Widgets.barButtons(bar, buttons, style)
+    return Widgets.buttonRow(bar, BAR_PADDING, bar.size.h - BAR_PADDING * 2, buttons, BAR_GAP, nil, style)
 end
 
 ---Removes an element and its descendants from toriui's keyboard handler list (UIKeyboardHandler).
@@ -110,12 +165,14 @@ end
 ---@param size number
 ---@param message string
 ---@param mark string? icon text, defaults to "?"
+---@param style WidgetStyle? bg color from the style, defaults to Widgets.STYLE
 ---@return UIElement
-function Widgets.helpIcon(parent, x, y, size, message, mark)
+function Widgets.helpIcon(parent, x, y, size, message, mark, style)
+    style = style or Widgets.STYLE
     local icon = parent:addChild({
         pos = { x, y },
         size = { size, size },
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+        bgColor = style.bg,
         hoverColor = TB_MENU_DEFAULT_DARKEST_COLOR,
         pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
         interactive = true,

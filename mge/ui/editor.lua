@@ -359,6 +359,7 @@ local function createInput(container, onInputFunc, placeholder)
             allowNegative = true,
             textAlign = CENTER,
             fontId = FONTS.LMEDIUM,
+            darkerMode = true, -- base window color, matches the panel buttons (Widgets.PANEL_STYLE)
             textScale = 0.65, -- smaller than the default, matches the labels
         })
     input:addKeyboardHandlers(nil, function(key)
@@ -392,7 +393,7 @@ local function createRow(label, parent, help)
 
     if help then
         -- "?" at the row's end, the explanation opens right of it, outside the window
-        Widgets.helpIcon(row, -helpSize - 2, (row.size.h - helpSize) / 2, helpSize, help)
+        Widgets.helpIcon(row, -helpSize - 2, (row.size.h - helpSize) / 2, helpSize, help, nil, Widgets.PANEL_STYLE)
     end
 
     updateContentHeight(row.size.h)
@@ -438,7 +439,7 @@ local function createChoiceRow(label, parent, choices, current, onPick, help)
     for i, choice in ipairs(choices) do
         items[i] = { label = choice.label, onClick = function() onPick(choice.value) end }
     end
-    for i, btn in ipairs(Widgets.buttonRow(holder, 0, holder.size.h, items, 4)) do
+    for i, btn in ipairs(Widgets.buttonRow(holder, 0, holder.size.h, items, 4, nil, Widgets.PANEL_STYLE)) do
         if choices[i].value == current then btn.bgColor = TB_MENU_DEFAULT_LIGHTER_COLOR end
     end
 end
@@ -455,7 +456,7 @@ local function createToggleButtonRow(label, parent, toggles, help)
         pos = { contentX + 2, 2 },
         size = { contentW - 4, row.size.h - 4 },
     }, true)
-    for i, btn in ipairs(Widgets.buttonRow(holder, 0, holder.size.h, toggles, 4)) do
+    for i, btn in ipairs(Widgets.buttonRow(holder, 0, holder.size.h, toggles, 4, nil, Widgets.PANEL_STYLE)) do
         if toggles[i].active then btn.bgColor = TB_MENU_DEFAULT_LIGHTER_COLOR end
     end
 end
@@ -704,7 +705,7 @@ function editor.applyPanel(id)
     if inputFooter and not inputFooter.destroyed then
         if panel.inputs then
             inputFooter:show(true)
-            inputFooter:moveTo(nil, panel.rows * ROW_H + 4)
+            inputFooter:moveTo(nil, panel.rows * ROW_H + 8)
         else
             inputFooter:hide(true)
         end
@@ -856,16 +857,13 @@ function editor.create(parent)
     buildPropertyInputs(propertyInputs, selected)
     buildOptions(panels.options, selected)
 
-    -- reset button centered under the input fields (it only clears inputs). The Enter shortcut is
-    -- explained in the window's shortcut help (ui/main.lua)
-    local resetH = 22
-    local resetW = 110
+    -- full width reset button under the input fields (it only clears inputs), same size as the
+    -- window's Save as row. The Enter shortcut is explained in the window's shortcut help (ui/main.lua)
     inputFooter = parent:addChild({
         pos = { 0, 0 },
-        size = { parent.size.w, resetH },
+        size = { parent.size.w, ROW_H },
     })
-    Widgets.button(inputFooter, { x = (inputFooter.size.w - resetW) / 2, y = 0, w = resetW, h = resetH },
-        "Reset inputs", clearInputs)
+    Widgets.buttonRow(inputFooter, 0, ROW_H, { { label = "Reset inputs", onClick = clearInputs } }, 0, nil, Widgets.PANEL_STYLE)
     -- Duplicate/Delete are in the object list's bottom bar (ui/obj_selector.lua), Save as in the top
     -- menu (ui/main.lua). Positions and visibility are applied by Main.applyTab after create
 end
