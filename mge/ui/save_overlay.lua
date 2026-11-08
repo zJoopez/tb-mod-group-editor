@@ -112,7 +112,7 @@ local function save(newname)
         return
     end
     FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. name .. ".tbm")
-    print("export complete")
+    print("saved as " .. name .. ".tbm")
     closeOverlay()
 end
 

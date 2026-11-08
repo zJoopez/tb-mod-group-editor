@@ -292,7 +292,7 @@ local function createListFrame()
     }, true)
     MGE.Widgets.barButtons(bottomBar, {
         { label = "Export selected", onClick = saveSelectedToAsset },
-        { label = "Import asset", onClick = function()
+        { label = "Import", onClick = function()
             if selectedAssetName then
                 importAssetFromFile(selectedAssetName)
             else

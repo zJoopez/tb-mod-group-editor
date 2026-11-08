@@ -21,6 +21,10 @@
 ---@field keptSelection table<integer, boolean>? selected object ids restored after our own save
 ---@field onQuit function[] cleanup callbacks registered by modules, run on quit
 ---@field Main Main main window, set by ui/main.lua
+---@field Editor table editor panels and duplicate/delete, set by ui/editor.lua
+---@field Widgets Widgets shared button helpers, ui/widgets.lua
+---@field WorldSelect WorldSelect click objects in the world to select them, utils/world_select.lua
+---@field Camera Camera frames objects on screen, utils/camera.lua
 ---@field FileHandler table utils/file_handler.lua
 ---@field ModData ModData utils/mod_export.lua
 ---@field History History utils/history.lua
@@ -56,6 +60,8 @@ loadModule("utils/mod_export.lua")
 loadModule("utils/history.lua")
 loadModule("utils/joints.lua")
 loadModule("utils/highlight.lua")
+loadModule("utils/world_select.lua")
+loadModule("utils/camera.lua")
 
 local FileHandler = MGE.FileHandler
 local ModData = MGE.ModData
@@ -141,16 +147,25 @@ add_hook("match_begin", MGE.hookname, function()
     MGE.keptSelection = nil
 end)
 
--- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game)
+-- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game), Ctrl+S saves the working file,
+-- Ctrl+A selects / deselects all objects
 add_hook("key_down", MGE.hookname, function(key)
     if TB_MENU_INPUT_ISACTIVE then return end -- typing in a text field
-    if get_keyboard_shift() == 0 or get_keyboard_ctrl() ~= 0 or get_keyboard_alt() ~= 0 then return end
-    if not MGE.Main.window.displayed then return end
-    if key == string.byte("z") then
-        History.undo()
-        return 1 -- consume so the game doesn't also handle the key
-    elseif key == string.byte("y") then
-        History.redo()
+    if get_keyboard_alt() ~= 0 or not MGE.Main.window.displayed then return end
+    local shift, ctrl = get_keyboard_shift() ~= 0, get_keyboard_ctrl() ~= 0
+    if shift and not ctrl then
+        if key == string.byte("z") then
+            History.undo()
+            return 1 -- consume so the game doesn't also handle the key
+        elseif key == string.byte("y") then
+            History.redo()
+            return 1
+        end
+    elseif ctrl and not shift and key == string.byte("s") then
+        MGE.save() -- writes live edits to the working file and reloads it
+        return 1
+    elseif ctrl and not shift and key == string.byte("a") then
+        MGE.Main.toggleSelectAll() -- same as the list's "Toggle All"
         return 1
     end
 end)

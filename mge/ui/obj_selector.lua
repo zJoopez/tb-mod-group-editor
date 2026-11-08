@@ -44,12 +44,10 @@ local function create(view, fullList)
         interactive = true
     })
 
-    ---@param obj EnvObject
+    ---Frames the object: same viewing direction, far enough away that it fits on screen
+    ---@param obj FileParserEnvObj
     local function lookAt(obj)
-        set_camera_mode(4)
-        MGE.cameraChanged = true -- restored on quit
-        local pos = { get_obj_pos(obj.id - 1) }
-        set_camera_lookat(pos[1], pos[2], pos[3])
+        MGE.Camera.focus({ obj })
     end
 
     -- list area between top and bottom bars
@@ -74,11 +72,7 @@ local function create(view, fullList)
 
     topBar_l:addAdaptedText("Toggle All", topBar_l.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
     TBMenu:spawnToggle2(topBar_l, toggleRect, Main.toggleAll, function(value)
-        Main.toggleAll = value
-        for _, obj in ipairs(fullList) do
-            obj.selected = value
-        end
-        Main.updateWindow()
+        Main.toggleSelectAll(value)
     end)
     ScrollList.createPager(topBar_r, { x = 0, y = 0, w = topBar_r.size.w, h = topBar_r.size.h }, page, pageCount,
         function(newPage)
@@ -99,8 +93,13 @@ local function create(view, fullList)
         print("reindex moved " .. moved .. " objects")
     end
 
-    -- dynamic/joint counters are in the window footer (ui/main.lua)
-    Widgets.barButtons(botBar, { { label = "reindex", onClick = function() reindexNonDynamic() end } })
+    -- Duplicate/Delete act on selected objects, Reindex on all of them. In the list's bar so they're
+    -- there on every tab. MGE.Editor loads after this module, so it's looked up on click
+    Widgets.barButtons(botBar, {
+        { label = "Duplicate", onClick = function() MGE.Editor.duplicate() end },
+        { label = "Reindex", onClick = function() reindexNonDynamic() end },
+        { label = "Delete", onClick = function() MGE.Editor.deleteSelected() end }, -- asks first
+    })
 end
 
 obj_selector.create = create

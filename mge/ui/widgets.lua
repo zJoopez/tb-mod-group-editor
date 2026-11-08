@@ -102,7 +102,57 @@ function Widgets.clearChildren(element)
     element:kill(true)
 end
 
--- small centered info lines (Enter hint, window footer)
+---Round icon that shows a short explanation on hover (TBMenu:displayHelpPopup), same style as
+---the game's mods menu. The popup opens on the right side of the icon
+---@param parent UIElement
+---@param x number negative values count from the parent's right edge
+---@param y number
+---@param size number
+---@param message string
+---@param mark string? icon text, defaults to "?"
+---@return UIElement
+function Widgets.helpIcon(parent, x, y, size, message, mark)
+    local icon = parent:addChild({
+        pos = { x, y },
+        size = { size, size },
+        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+        hoverColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+        interactive = true,
+        shapeType = ROUNDED,
+        rounded = size,
+    })
+    icon:addChild({}):addAdaptedText(true, mark or "?", nil, nil, nil, nil, 0.7)
+    local popup = TBMenu:displayHelpPopup(icon, message, nil, true) -- true: our own mark above
+    if popup then
+        popup:moveTo(size + 5, (size - popup.size.h) / 2, true)
+    end
+    return icon
+end
+
+---True when the screen position is on MGE's window or any other interactive UI, used to keep
+---world clicks and camera zoom from reacting to clicks/scrolls meant for menus
+---@param x number
+---@param y number
+---@return boolean
+function Widgets.isMouseOverUI(x, y)
+    local window = MGE.Main and MGE.Main.window
+    if window and window.displayed and x >= window.pos.x and x <= window.pos.x + window.size.w
+        and y >= window.pos.y and y <= window.pos.y + window.size.h then
+        return true
+    end
+    -- same test toriui uses for its buttons (UIElement.handleMouseDn), covers popups and other menus
+    for _, element in ipairs(UIMouseHandler or {}) do
+        if not element.clickThrough and element:shouldReceiveInput()
+            and x > element.pos.x and x < element.pos.x + element.size.w
+            and y > element.pos.y and y < element.pos.y + element.size.h then
+            return true
+        end
+    end
+    return false
+end
+
+-- small centered info lines (window footer)
 Widgets.INFO_HEIGHT = 18
 local INFO_MAX_SCALE = 0.7 -- adapted text shrinks below this only if the line doesn't fit
 

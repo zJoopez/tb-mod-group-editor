@@ -31,8 +31,17 @@ local function copyParsed(parsed)
     return copy
 end
 
--- object props applyLive can set on world objects, any other prop difference needs a save
-local LIVE_KEYS = { pos = true, rot = true, sides = true, color = true, mass = true, bounce = true }
+-- object props applyLive can set on world objects, any other prop difference needs a save.
+-- flag is live except for the static bit (see sameObjects)
+local LIVE_KEYS = {
+    pos = true, rot = true, sides = true, color = true, mass = true, bounce = true, flag = true, visible = true,
+}
+
+---@param props table<string, string>
+---@return boolean
+local function isStaticFlag(props)
+    return bit.band(tonumber(props.flag) or 0, MGE.FLAGS.STATIC) ~= 0
+end
 
 ---Same keys, and same values except for keys in `live` (those can be set on world objects).
 ---A live key that exists on one side only still counts as a difference: applyLive can only set
@@ -61,6 +70,8 @@ local function sameObjects(a, b)
     for i, obj in ipairs(a.env_obj) do
         local other = b.env_obj[i]
         if obj.id ~= other.id or not sameProps(obj.props, other.props, LIVE_KEYS) then return false end
+        -- static/dynamic is decided when the mod loads, it can't be switched live
+        if isStaticFlag(obj.props) ~= isStaticFlag(other.props) then return false end
     end
     -- joints can't be changed live, any difference in them needs a save
     for i, obj in ipairs(a.env_obj_joint) do
@@ -79,7 +90,8 @@ local function parseNumbers(value)
     return numbers
 end
 
----Applies pos/rot/sides/color/mass/bounce from props to the world objects, used when only live edits differ
+---Applies pos/rot/sides/color/mass/bounce/flag/visible from props to the world objects, used when only
+---live edits differ
 ---@param parsed FileParserResult
 local function applyLive(parsed)
     for _, obj in ipairs(parsed.env_obj) do
@@ -113,6 +125,12 @@ local function applyLive(parsed)
             end
             if p.bounce then
                 set_obj_bounce(id, math.max(tonumber(p.bounce) or 0, 0))
+            end
+            if p.flag then
+                set_obj_flag(id, tonumber(p.flag) or 0)
+            end
+            if p.visible then
+                set_obj_vis(id, tonumber(p.visible) or 1)
             end
         end
     end

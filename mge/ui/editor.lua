@@ -12,7 +12,6 @@ local SHAPE = MGE.SHAPE
 local getSelected = ModData.getSelected
 
 local totalHeight = 0
-local margin = 10
 
 ---@type table<string, UIElement[]>
 local inwuts = {}
@@ -34,8 +33,11 @@ local function readInputs(inputs, only)
     return values
 end
 
+---@param values number[]
 local function writeVectorProperty(obj, key, values)
-    obj.props[key] = FileHandler.formatNumbers(table.unpack(values))
+    local parts = {}
+    for i, v in ipairs(values) do parts[i] = FileHandler.formatNumber(v) end
+    obj.props[key] = table.concat(parts, " ")
 end
 
 ---Applies fn to the anchor (and axis) of joints linked between the selected objects, then commits.
@@ -85,9 +87,8 @@ local function moveSelected(only)
         writeVectorProperty(v, "pos", pos)
     end
 
-    set_camera_mode(4)
-    MGE.cameraChanged = true -- restored on quit
-    set_camera_lookat(getSelectionPivot(selectedObjects))
+    -- camera follows the selection, backing off only if it no longer fits on screen
+    MGE.Camera.focus(selectedObjects, true)
     finishTransform(selectedObjects, move)
 end
 
@@ -390,21 +391,8 @@ local function createRow(label, parent, help)
     labelContainer:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.7, nil, nil)
 
     if help then
-        -- round "?" that shows a short explanation on hover, same style as the game's mods menu
-        local helpHolder = row:addChild({
-            pos = { -helpSize - 2, (row.size.h - helpSize) / 2 },
-            size = { helpSize, helpSize },
-            bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-            hoverColor = TB_MENU_DEFAULT_DARKEST_COLOR,
-            pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
-            interactive = true,
-            shapeType = ROUNDED,
-            rounded = helpSize,
-        })
-        local popup = TBMenu:displayHelpPopup(helpHolder, help)
-        if popup then
-            popup:moveTo(helpSize + 5, (helpSize - popup.size.h) / 2, true) -- right of the icon, outside the window
-        end
+        -- "?" at the row's end, the explanation opens right of it, outside the window
+        Widgets.helpIcon(row, -helpSize - 2, (row.size.h - helpSize) / 2, helpSize, help)
     end
 
     updateContentHeight(row.size.h)
@@ -455,12 +443,21 @@ local function createChoiceRow(label, parent, choices, current, onPick, help)
     end
 end
 
----Full width row of equal buttons at the current height
+---Label column followed by on/off buttons (any number can be on), active ones are highlighted
+---like the current choice in createChoiceRow
+---@param label string
 ---@param parent UIElement
----@param buttons { label: string|fun(): string, onClick: function }[]
-local function createButtonRow(parent, buttons)
-    Widgets.buttonRow(parent, totalHeight, 30, buttons, margin)
-    updateContentHeight(30 + margin)
+---@param toggles { label: string, active: boolean, onClick: function }[]
+---@param help string?
+local function createToggleButtonRow(label, parent, toggles, help)
+    local row, contentX, contentW = createRow(label, parent, help)
+    local holder = row:addChild({
+        pos = { contentX + 2, 2 },
+        size = { contentW - 4, row.size.h - 4 },
+    }, true)
+    for i, btn in ipairs(Widgets.buttonRow(holder, 0, holder.size.h, toggles, 4)) do
+        if toggles[i].active then btn.bgColor = TB_MENU_DEFAULT_LIGHTER_COLOR end
+    end
 end
 
 local function duplicate()
@@ -569,6 +566,65 @@ local function setSelectedProp(key, value)
     MGE.save()
 end
 
+-- flag is a bit mask (MGE.FLAGS), objects without a flag line use the game's value
+---@param obj FileParserEnvObj loaded object
+---@return integer
+local function getFlag(obj)
+    return tonumber(obj.props.flag) or get_obj_flag(obj.id - 1) or 0
+end
+
+---@param flag integer
+---@param bits integer
+---@return boolean all bits set
+local function hasBits(flag, bits)
+    return bit.band(flag, bits) == bits
+end
+
+---@param flag integer
+---@param bits integer
+---@param on boolean
+---@return integer flag with bits set or cleared, other bits kept
+local function withBits(flag, bits, on)
+    return on and bit.bor(flag, bits) or flag - bit.band(flag, bits)
+end
+
+---Sets or clears flag bits on selected objects, applied live (set_obj_flag) and saved with the
+---next save. Not for the static bit, that one can move ids (setStatic)
+---@param bits integer
+---@param on boolean
+local function setFlagBits(bits, on)
+    local changed = false
+    for _, v in ipairs(getSelected()) do
+        local flag = getFlag(v)
+        local newFlag = withBits(flag, bits, on)
+        if newFlag ~= flag or v.props.flag == nil then
+            v.props.flag = tostring(newFlag)
+            set_obj_flag(v.id - 1, newFlag)
+            changed = true
+        end
+    end
+    if not changed then return end
+    History.commit()
+    refreshProperties()
+end
+
+---Shows or hides selected objects, applied live (set_obj_vis) and saved with the next save
+---@param visible boolean
+local function setVisible(visible)
+    local value = visible and "1" or "0"
+    local changed = false
+    for _, v in ipairs(getSelected()) do
+        if v.props.visible ~= value then
+            v.props.visible = value
+            set_obj_vis(v.id - 1, visible and 1 or 0)
+            changed = true
+        end
+    end
+    if not changed then return end
+    History.commit()
+    refreshProperties()
+end
+
 ---Makes selected objects static or dynamic. Dynamic objects need ids 1-48: objects above that get a
 ---free low id, static objects are moved off low ids if there aren't enough (ModData.freeDynamicIds).
 ---New static objects move above 48 when a free id exists, so they don't hold a dynamic id.
@@ -601,13 +657,7 @@ local function setStatic(static)
         v.id = newId
     end
     for _, v in ipairs(toChange) do
-        local flag = tonumber(v.props.flag) or get_obj_flag(v.id - 1) or 0
-        if static then
-            flag = bit.bor(flag, MGE.FLAGS.STATIC)
-        else
-            flag = flag - bit.band(flag, MGE.FLAGS.STATIC) -- keeps the other flags (ungrippable...)
-        end
-        v.props.flag = tostring(flag)
+        v.props.flag = tostring(withBits(getFlag(v), MGE.FLAGS.STATIC, static)) -- other flags are kept
         if not static and v.id > MAX then
             moveTo(v, freeIds.nonStatic, freeIds.static)
         elseif static and v.id <= MAX and #freeIds.static > 0 and not ModData.jointIds[v.id] then
@@ -625,28 +675,39 @@ local function setStatic(static)
     MGE.save()
 end
 
--- Two panels sharing the editor area: Transform (move/rotate/scale) and Properties (color, mass,
--- friction, bounce, shape, type, visibility). The window's tab row picks one through
--- Main.applyTab -> editor.applyPanel.
+-- Two panels sharing the editor area, picked by the window's tab row (Main.applyTab -> editor.applyPanel):
+--   values:  every input field (move, rotate, scale, color, mass, friction, bounce), with the Enter
+--            hint and the reset button under them
+--   options: click-to-set rows (shape, flags, visibility), applied right away
 local ROW_H = 30
-local PANEL_ROWS = { transform = 3, properties = 7 }
+local PANELS = {
+    values = { rows = 7, inputs = true },
+    options = { rows = 3 },
+}
 ---@type table<string, UIElement>
 local panels = {}
----@type UIElement
-local propertiesPanel = nil
----@type UIElement? reset/duplicate/delete, moved under the shown panel
-local bottom = nil
+---@type UIElement? color/mass/friction/bounce rows, rebuilt with the selection's current values
+local propertyInputs = nil
+---@type UIElement? reset button, only shown under the values panel
+local inputFooter = nil
 
 ---Shows one editor panel, called by Main.applyTab
----@param id string "transform"|"properties"
+---@param id string "values"|"options"
 function editor.applyPanel(id)
-    for panelId, panel in pairs(panels) do
-        if not panel.destroyed then
-            if panelId == id then panel:show(true) else panel:hide(true) end
+    local panel = PANELS[id]
+    if not panel then return end
+    for panelId, element in pairs(panels) do
+        if not element.destroyed then
+            if panelId == id then element:show(true) else element:hide(true) end
         end
     end
-    if bottom and not bottom.destroyed and PANEL_ROWS[id] then
-        bottom:moveTo(nil, PANEL_ROWS[id] * ROW_H + 4)
+    if inputFooter and not inputFooter.destroyed then
+        if panel.inputs then
+            inputFooter:show(true)
+            inputFooter:moveTo(nil, panel.rows * ROW_H + 4)
+        else
+            inputFooter:hide(true)
+        end
     end
 end
 
@@ -655,23 +716,25 @@ local function reapplyTabs()
     if MGE.Main and MGE.Main.applyTab then MGE.Main.applyTab() end
 end
 
-local function buildTransformPanel(panel)
+---Move/rotate/scale rows, built once so typed values stay when the selection changes
+local function buildTransformRows(holder)
     totalHeight = 0
     local zeros = { "0.00", "0.00", "0.00" }
     -- Enter applies only the field it's pressed in (index i), the row's other fields are ignored
-    inwuts.pos = createInputRow("Move", panel, function(_, i) moveSelected(i) end, zeros,
+    inwuts.pos = createInputRow("Move", holder, function(_, i) moveSelected(i) end, zeros,
         "Moves selected objects along X, Y or Z.\nEnter applies the field you typed in.")
-    inwuts.rot = createInputRow("Rotate", panel, function(_, i) rotSelected(i) end, zeros,
+    inwuts.rot = createInputRow("Rotate", holder, function(_, i) rotSelected(i) end, zeros,
         "Rotates selected objects around their center\nby X, Y or Z degrees. Enter applies the field you typed in.")
-    inwuts.scale = createInputRow("Scale", panel, function(_, i) scaleSelected(i) end, zeros,
+    inwuts.scale = createInputRow("Scale", holder, function(_, i) scaleSelected(i) end, zeros,
         "Multiplies size and spacing of selected objects\nalong the group's X, Y or Z. 0 means no change.\nEnter applies the field you typed in.")
 end
 
-local function buildPropertiesPanel(panel)
+---Color/mass/friction/bounce rows, placeholders show the selection's current value
+---("mixed" if objects differ) or the expected input type without a selection
+---@param holder UIElement
+---@param selected FileParserEnvObj[]
+local function buildPropertyInputs(holder, selected)
     totalHeight = 0
-    -- placeholders show the selection's current value ("mixed" if objects differ),
-    -- or the expected input type without a selection
-    local selected = getSelected() -- read once, every row below shows values of the same objects
     local colors = {}
     for _, obj in ipairs(selected) do colors[obj] = get_obj_color(obj.id - 1) or {} end
     local colorHints = {}
@@ -682,7 +745,7 @@ local function buildPropertiesPanel(panel)
         end) or "0"
         if colorHints[i] == "mixed" or colorHints[i] == "-" then colorHints[i] = "0" end -- 4 narrow fields, "mixed" doesn't fit
     end
-    inwuts.color = createInputRow("Color", panel, function(_, i) adjustColor(i) end, colorHints,
+    inwuts.color = createInputRow("Color", holder, function(_, i) adjustColor(i) end, colorHints,
         "Red, green, blue and alpha (0-255, up to 500 for brighter colors).\nEnter sets the channel you typed in,\nothers keep each object's current value.")
 
     local helpTexts = {
@@ -699,31 +762,54 @@ local function buildPropertiesPanel(panel)
             return tonumber(obj.props[key])
         end) or "0.00"
         if hint == "-" then hint = "0.00" end -- selected objects without the property in the file
-        local inputs = createInputRow(label, panel, function(inputs) setProperty(key, inputs[1]) end, { hint }, helpTexts[key])
+        local inputs = createInputRow(label, holder, function(inputs) setProperty(key, inputs[1]) end, { hint }, helpTexts[key])
         table.insert(inwuts.properties, inputs[1])
     end
+end
 
-    -- buttons for fixed values, the selection's current one is highlighted
-    createChoiceRow("Shape", panel, {
+---Shape, flags and visibility, the selection's current values are highlighted / checked
+---@param holder UIElement
+---@param selected FileParserEnvObj[]
+local function buildOptions(holder, selected)
+    totalHeight = 0
+    createChoiceRow("Shape", holder, {
         { label = "Box", value = "box" },
         { label = "Sphere", value = "sphere" },
         { label = "Cylinder", value = "cylinder" },
     }, sharedChoice(selected, getShape), function(shape) setSelectedProp("shape", shape) end,
         "Shape of selected objects.\nSides are kept, so the size may look different.")
-    createChoiceRow("Type", panel, {
-        { label = "Dynamic", value = false },
-        { label = "Static", value = true },
-    }, sharedChoice(selected, function(obj) return ModData.isStatic(obj, true) end), setStatic,
-        "Static objects stay in place, dynamic ones fall and can be moved.\nDynamic objects need ids 1-" ..
-        MGE.MAX_NONSTATIC_OBJECTS .. ", higher ids get a free low id.")
-    createChoiceRow("Visible", panel, {
+    -- highlighted when every selected object has the flag. A click clears it if they all have it,
+    -- otherwise sets it on all of them (decided on click, from the selection at that moment)
+    local FLAGS = MGE.FLAGS
+    local function allHave(objects, bits)
+        return sharedChoice(objects, function(obj) return hasBits(getFlag(obj), bits) end) == true
+    end
+    local function flagButton(label, bits, apply)
+        return {
+            label = label,
+            active = allHave(selected, bits),
+            onClick = function()
+                local current = getSelected()
+                if #current > 0 then apply(not allHave(current, bits)) end
+            end,
+        }
+    end
+    createToggleButtonRow("Flags", holder, {
+        flagButton("Static", FLAGS.STATIC, setStatic),
+        flagButton("Weapon", FLAGS.WEAPON, function(on) setFlagBits(FLAGS.WEAPON, on) end),
+        flagButton("Nogrip", FLAGS.UNGRIPPABLE, function(on) setFlagBits(FLAGS.UNGRIPPABLE, on) end),
+    }, "Click to turn a flag on or off for selected objects,\nhighlighted when all of them have it.\n" ..
+        "Static: stays in place, otherwise the object is dynamic. Dynamic objects\nneed ids 1-" ..
+        MGE.MAX_NONSTATIC_OBJECTS .. ", higher ids get a free low id.\nWeapon: the object acts as a weapon.\n" ..
+        "Nogrip: players can't grab the object.")
+    createChoiceRow("Visible", holder, {
         { label = "Shown", value = true },
         { label = "Hidden", value = false },
-    }, sharedChoice(selected, isVisible), function(visible) setSelectedProp("visible", visible and "1" or "0") end,
+    }, sharedChoice(selected, isVisible), setVisible,
         "Hidden objects aren't drawn but still collide.")
 end
 
----Empties all transform and property fields, placeholders show again
+---Empties all input fields, placeholders show again
 local function clearInputs()
     for _, key in ipairs({ "pos", "rot", "scale", "color", "properties" }) do
         for _, input in ipairs(inwuts[key] or {}) do
@@ -733,9 +819,12 @@ local function clearInputs()
 end
 
 refreshProperties = function()
-    if not propertiesPanel or propertiesPanel.destroyed then return end
-    Widgets.clearChildren(propertiesPanel)
-    buildPropertiesPanel(propertiesPanel)
+    if not propertyInputs or propertyInputs.destroyed then return end
+    local selected = getSelected() -- read once, every row shows values of the same objects
+    Widgets.clearChildren(propertyInputs)
+    buildPropertyInputs(propertyInputs, selected)
+    Widgets.clearChildren(panels.options)
+    buildOptions(panels.options, selected)
     reapplyTabs()
 end
 
@@ -748,43 +837,42 @@ end
 function editor.create(parent)
     -- both panels start at the top of the editor area, each as tall as its rows
     panels = {}
-    for _, id in ipairs({ "transform", "properties" }) do
+    for id, panel in pairs(PANELS) do
         panels[id] = parent:addChild({
             pos = { 0, 0 },
-            size = { parent.size.w, PANEL_ROWS[id] * ROW_H },
+            size = { parent.size.w, panel.rows * ROW_H },
         })
     end
-    buildTransformPanel(panels.transform)
-    propertiesPanel = panels.properties
-    buildPropertiesPanel(propertiesPanel)
+    local transformRows = panels.values:addChild({
+        pos = { 0, 0 },
+        size = { parent.size.w, 3 * ROW_H },
+    })
+    buildTransformRows(transformRows)
+    propertyInputs = panels.values:addChild({
+        pos = { 0, 3 * ROW_H },
+        size = { parent.size.w, 4 * ROW_H },
+    })
+    local selected = getSelected()
+    buildPropertyInputs(propertyInputs, selected)
+    buildOptions(panels.options, selected)
 
-    -- under the shown panel (applyPanel moves it): centered Enter hint, reset button under it
-    -- (it only affects these fields), then duplicate/delete
-    local hintH = Widgets.INFO_HEIGHT
+    -- reset button centered under the input fields (it only clears inputs). The Enter shortcut is
+    -- explained in the window's shortcut help (ui/main.lua)
     local resetH = 22
     local resetW = 110
-    local bottomH = hintH + 2 + resetH + 8 + ROW_H
-    bottom = parent:addChild({
-        pos = { 0, PANEL_ROWS.transform * ROW_H + 4 },
-        size = { parent.size.w, bottomH },
+    inputFooter = parent:addChild({
+        pos = { 0, 0 },
+        size = { parent.size.w, resetH },
     })
-    totalHeight = 0
-    local hint = bottom:addChild({
-        pos = { 0, totalHeight },
-        size = { bottom.size.w, hintH },
-    })
-    Widgets.infoText(hint, "Enter applies the value to selected objects")
-    updateContentHeight(hintH + 2)
-    Widgets.button(bottom, { x = (bottom.size.w - resetW) / 2, y = totalHeight, w = resetW, h = resetH },
+    Widgets.button(inputFooter, { x = (inputFooter.size.w - resetW) / 2, y = 0, w = resetW, h = resetH },
         "Reset inputs", clearInputs)
-    updateContentHeight(resetH + 8)
-
-    createButtonRow(bottom, {
-        { label = "Duplicate", onClick = duplicate },
-        { label = "Delete", onClick = onDeleteClick },
-    })
-    -- Save/Export live in the main window below the tab area so every tab has them (ui/main.lua)
-    -- visibility is applied by Main.applyTab after create (initial build and Main.resetEditor)
+    -- Duplicate/Delete are in the object list's bottom bar (ui/obj_selector.lua), Save as in the top
+    -- menu (ui/main.lua). Positions and visibility are applied by Main.applyTab after create
 end
 
+-- used by the object list's Duplicate/Delete buttons
+editor.duplicate = duplicate
+editor.deleteSelected = onDeleteClick -- asks for confirmation first
+
+MGE.Editor = editor
 return editor
