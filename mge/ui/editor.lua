@@ -61,25 +61,26 @@ local function getSelectionPivot(selectedObjects)
     local total = #selectedObjects
     if total == 0 then return 0, 0, 0 end
 
-    local sumX, sumY, sumZ = 0, 0, 0
+    local sumX, sumY, sumZ, count = 0, 0, 0, 0
     for _, obj in ipairs(selectedObjects) do
-        local pos = { get_obj_pos(obj.id - 1) }
-        sumX = sumX + pos[1]
-        sumY = sumY + pos[2]
-        sumZ = sumZ + pos[3]
+        local x, y, z = get_obj_pos(obj.id - 1)
+        if x then -- objects not in the world (yet) don't count
+            sumX, sumY, sumZ, count = sumX + x, sumY + y, sumZ + z, count + 1
+        end
     end
+    if count == 0 then return 0, 0, 0 end
 
-    return sumX / total, sumY / total, sumZ / total
+    return sumX / count, sumY / count, sumZ / count
 end
 
----@param only integer? axis input Enter was pressed in, nil applies all
-local function moveSelected(only)
-    local typed = readInputs(inwuts.pos, only)
-    local offsets = { typed[1] or 0, typed[2] or 0, typed[3] or 0 }
+-- Rebuilds the Pos/Angle/Size rows so their placeholders show the selection's current center,
+-- orientation and size (defined with the panels)
+local refreshMeasured
 
-    local selectedObjects = getSelected()
-    if #selectedObjects == 0 then return end
-
+---Moves the objects (and joints linked between them) by offsets
+---@param selectedObjects FileParserEnvObj[]
+---@param offsets number[] x y z
+local function moveBy(selectedObjects, offsets)
     local function move(x, y, z) return x + offsets[1], y + offsets[2], z + offsets[3] end
     for _, v in ipairs(selectedObjects) do
         local pos = { move(get_obj_pos(v.id - 1)) }
@@ -88,21 +89,39 @@ local function moveSelected(only)
     end
 
     -- camera follows the selection, backing off only if it no longer fits on screen
-    MGE.Camera.focus(selectedObjects, true)
+    -- (can be turned off with the camera button in the top menu)
+    if MGE.Camera.followMoves then MGE.Camera.focus(selectedObjects, true) end
     finishTransform(selectedObjects, move)
+    refreshMeasured()
 end
 
+---Move row: moves selected objects by the typed offsets
 ---@param only integer? axis input Enter was pressed in, nil applies all
-local function rotSelected(only)
+local function moveSelected(only)
     local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
+    local typed = readInputs(inwuts.pos, only)
+    moveBy(selectedObjects, { typed[1] or 0, typed[2] or 0, typed[3] or 0 })
+end
 
+---Pos row: moves selected objects so their center (same pivot as rotate) lands on the typed
+---coordinates. Axes left empty don't move
+---@param only integer? axis input Enter was pressed in, nil applies all
+local function positionSelected(only)
+    local selectedObjects = getSelected()
+    if #selectedObjects == 0 then return end
+    local typed = readInputs(inwuts.position, only)
     local pivot = { getSelectionPivot(selectedObjects) }
-    local typed = readInputs(inwuts.rot, only)
     local offsets = {}
-    for i = 1, 3 do
-        offsets[i] = math.rad(typed[i] or 0)
-    end
+    for i = 1, 3 do offsets[i] = typed[i] and typed[i] - pivot[i] or 0 end
+    moveBy(selectedObjects, offsets)
+end
+
+---Rotates the objects around their center by offsets (radians, applied z, then y, then x)
+---@param selectedObjects FileParserEnvObj[]
+---@param offsets number[] x y z
+local function rotBy(selectedObjects, offsets)
+    local pivot = { getSelectionPivot(selectedObjects) }
 
     for _, v in ipairs(selectedObjects) do
         local rotValue = v.props.rot or "0 0 0"
@@ -140,6 +159,16 @@ local function rotSelected(only)
         local a = RotatingOld.SetRotPos(x, y, z, 0, 0, 0, offsets[1], offsets[2], offsets[3])
         return a[1], a[2], a[3]
     end)
+    refreshMeasured()
+end
+
+---Rotate row: rotates selected objects by the typed degrees
+---@param only integer? axis input Enter was pressed in, nil applies all
+local function rotSelected(only)
+    local selectedObjects = getSelected()
+    if #selectedObjects == 0 then return end
+    local typed = readInputs(inwuts.rot, only)
+    rotBy(selectedObjects, { math.rad(typed[1] or 0), math.rad(typed[2] or 0), math.rad(typed[3] or 0) })
 end
 
 ---World directions of an object's local x, y, z axes.
@@ -230,18 +259,11 @@ local function pickGroupFrame(objects)
     return best and best.frame or Mat3.IDENTITY
 end
 
----@param only integer? axis input Enter was pressed in, nil applies all
-local function scaleSelected(only)
-    local selectedObjects = getSelected()
-    if #selectedObjects == 0 then return end
-
+---Scales the objects (sides and spacing) around their center by factors along the group's axes
+---@param selectedObjects FileParserEnvObj[]
+---@param scale number[] x y z factors
+local function scaleBy(selectedObjects, scale)
     local pivot = { getSelectionPivot(selectedObjects) }
-    local typed = readInputs(inwuts.scale, only)
-    local scale = {}
-    for i = 1, 3 do
-        local value = typed[i] or 0
-        scale[i] = (value == 0 or value == -1) and 1 or value -- 0 and -1 mean no change
-    end
 
     -- scale along the group's own axes (world axes if never rotated by MGE), as if scaled before rotating
     local map = groupScaleMatrix(pickGroupFrame(selectedObjects), scale)
@@ -261,6 +283,114 @@ local function scaleSelected(only)
         writeVectorProperty(v, "sides", outSides)
     end
     finishTransform(selectedObjects, scalePos)
+    refreshMeasured()
+end
+
+---Scale row: multiplies size and spacing of selected objects by the typed factors
+---@param only integer? axis input Enter was pressed in, nil applies all
+local function scaleSelected(only)
+    local selectedObjects = getSelected()
+    if #selectedObjects == 0 then return end
+    local typed = readInputs(inwuts.scale, only)
+    local scale = {}
+    for i = 1, 3 do
+        local value = typed[i] or 0
+        scale[i] = (value == 0 or value == -1) and 1 or value -- 0 and -1 mean no change
+    end
+    scaleBy(selectedObjects, scale)
+end
+
+---Group axes (columns of the group frame) as vectors
+---@param frame number[][]
+---@return number[][]
+local function frameAxes(frame)
+    return {
+        { frame[1][1], frame[2][1], frame[3][1] },
+        { frame[1][2], frame[2][2], frame[3][2] },
+        { frame[1][3], frame[2][3], frame[3][3] },
+    }
+end
+
+---Overall size of the selection along the group's axes (what Scale scales along), objects' own
+---size and rotation included
+---@param selectedObjects FileParserEnvObj[]
+---@return number[] extents x y z, 0 when nothing is in the world
+local function groupExtents(selectedObjects)
+    local axes = frameAxes(pickGroupFrame(selectedObjects))
+    local min, max = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
+    for _, v in ipairs(selectedObjects) do
+        local id = v.id - 1
+        local x, y, z = get_obj_pos(id)
+        if x then
+            local sx, sy, sz = get_obj_sides(id)
+            local shape = get_obj_shape(id)
+            local localAxes = getLocalAxes(id)
+            for i, a in ipairs(axes) do
+                local function along(k) return math.abs(localAxes[k][1] * a[1] + localAxes[k][2] * a[2] + localAxes[k][3] * a[3]) end
+                local half
+                if shape == SHAPE.SPHERE then
+                    half = sx
+                elseif shape == SHAPE.CAPSULE then -- x radius, y length along local z
+                    half = sx + along(3) * sy / 2
+                else
+                    half = (along(1) * sx + along(2) * sy + along(3) * sz) / 2
+                end
+                local c = x * a[1] + y * a[2] + z * a[3]
+                min[i] = math.min(min[i], c - half)
+                max[i] = math.max(max[i], c + half)
+            end
+        end
+    end
+    local extents = {}
+    for i = 1, 3 do extents[i] = max[i] > min[i] and max[i] - min[i] or 0 end
+    return extents
+end
+
+---Size row: scales the selection so its overall size along the group's X, Y or Z becomes the typed
+---value. Axes left empty (or 0 and below) don't change
+---@param only integer? axis input Enter was pressed in, nil applies all
+local function sizeSelected(only)
+    local selectedObjects = getSelected()
+    if #selectedObjects == 0 then return end
+    local typed = readInputs(inwuts.size, only)
+    local extents = groupExtents(selectedObjects)
+    local scale, changed = {}, false
+    for i = 1, 3 do
+        if typed[i] and typed[i] > 0 and extents[i] > 1e-9 then
+            scale[i], changed = typed[i] / extents[i], true
+        else
+            scale[i] = 1
+        end
+    end
+    if changed then scaleBy(selectedObjects, scale) end
+end
+
+---Group orientation as angles (radians) in the rotate tool's order. Only rotations MGE applied are
+---known (stored per object as #mge_frame), objects never rotated by MGE count as 0 0 0
+---@param selectedObjects FileParserEnvObj[]
+---@return number[]
+local function groupAngles(selectedObjects)
+    return { Mat3.toEulerXYZ(pickGroupFrame(selectedObjects)) }
+end
+
+---Angle row: rotates the selection so the group's orientation becomes the typed degrees on the
+---entered axis, the other axes keep their current angle
+---@param only integer? axis input Enter was pressed in, nil applies all
+local function angleSelected(only)
+    local selectedObjects = getSelected()
+    if #selectedObjects == 0 then return end
+    local typed = readInputs(inwuts.angle, only)
+    local frame = pickGroupFrame(selectedObjects)
+    local target = { Mat3.toEulerXYZ(frame) }
+    local changed = false
+    for i = 1, 3 do
+        if typed[i] then target[i], changed = math.rad(typed[i]), true end
+    end
+    if not changed then return end
+    local wanted = Mat3.mul(Mat3.rotX(target[1]), Mat3.mul(Mat3.rotY(target[2]), Mat3.rotZ(target[3])))
+    -- rotation that turns the current orientation into the wanted one, applied like a Rotate
+    local delta = Mat3.mul(wanted, Mat3.transpose(frame))
+    rotBy(selectedObjects, { Mat3.toEulerXYZ(delta) })
 end
 
 -- Rebuilds the Properties tab so its placeholders show the selection's current values
@@ -297,26 +427,26 @@ local function setProperty(key, input)
     end
 end
 
----Sets color on selected objects, empty fields keep each object's current component (values 0-255)
----@param only integer? channel input Enter was pressed in, nil applies all
-local function adjustColor(only)
+-- empty color fields count as these (0-255), shown as the fields' placeholders
+local COLOR_DEFAULTS = { 0, 0, 0, 255 }
+
+---Sets the color typed in all four fields (r g b a, 0-255) on selected objects. Empty fields use
+---COLOR_DEFAULTS, so what the fields show is exactly what's applied
+local function adjustColor()
     local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
 
-    local typed = readInputs(inwuts.color, only)
+    local typed = readInputs(inwuts.color)
+    local color = {}
     for i = 1, 4 do
         -- 255 is the official max, the game accepts up to 500 and draws those brighter
-        typed[i] = typed[i] and math.max(0, math.min(500, typed[i])) / 255 or nil
+        color[i] = math.max(0, math.min(500, typed[i] or COLOR_DEFAULTS[i])) / 255
     end
     for _, v in ipairs(selectedObjects) do
-        local current = get_obj_color(v.id - 1) or { 1, 1, 1, 1 }
-        local color = {}
-        for i = 1, 4 do color[i] = typed[i] or current[i] or 1 end
         set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
-        writeVectorProperty(v, "color", color)
+        writeVectorProperty(v, "color", { color[1], color[2], color[3], color[4] })
     end
-    History.commit()
-    refreshProperties()
+    History.commit() -- no panel refresh needed, color placeholders don't depend on the selection
 end
 
 ---Value shared by the objects, "mixed" when they differ, nil for no objects
@@ -677,23 +807,26 @@ local function setStatic(static)
 end
 
 -- Two panels sharing the editor area, picked by the window's tab row (Main.applyTab -> editor.applyPanel):
---   values:  every input field (move, rotate, scale, color, mass, friction, bounce), with the Enter
---            hint and the reset button under them
---   options: click-to-set rows (shape, flags, visibility), applied right away
+--   core:     whole group and look: Pos, Angle, Size, Color, Mass, Shape, Visible
+--   advanced: offsets and physics: Move, Rotate, Scale, Friction, Bounce, Flags
+-- Both have input fields, the reset button is shown under either.
+-- Every block of rows has its own holder. Move/Rotate/Scale are built once (typed values stay), the
+-- other blocks are rebuilt when the selection or the objects change, so their placeholders /
+-- highlights show current values (typed text is carried over the rebuild).
 local ROW_H = 30
 local PANELS = {
-    values = { rows = 7, inputs = true },
-    options = { rows = 3 },
+    core = { rows = 7 },
+    advanced = { rows = 6 },
 }
 ---@type table<string, UIElement>
 local panels = {}
----@type UIElement? color/mass/friction/bounce rows, rebuilt with the selection's current values
-local propertyInputs = nil
----@type UIElement? reset button, only shown under the values panel
+---@type table<string, UIElement> rebuilt blocks: measured, coreProps, looks, advancedProps, flags
+local blocks = {}
+---@type UIElement? reset button, shown under the shown panel
 local inputFooter = nil
 
 ---Shows one editor panel, called by Main.applyTab
----@param id string "values"|"options"
+---@param id string "core"|"advanced"
 function editor.applyPanel(id)
     local panel = PANELS[id]
     if not panel then return end
@@ -703,12 +836,8 @@ function editor.applyPanel(id)
         end
     end
     if inputFooter and not inputFooter.destroyed then
-        if panel.inputs then
-            inputFooter:show(true)
-            inputFooter:moveTo(nil, panel.rows * ROW_H + 8)
-        else
-            inputFooter:hide(true)
-        end
+        inputFooter:show(true)
+        inputFooter:moveTo(nil, panel.rows * ROW_H + 8)
     end
 end
 
@@ -717,7 +846,8 @@ local function reapplyTabs()
     if MGE.Main and MGE.Main.applyTab then MGE.Main.applyTab() end
 end
 
----Move/rotate/scale rows, built once so typed values stay when the selection changes
+---Move/Rotate/Scale rows (offsets, advanced panel), built once so typed values stay when the selection changes
+---@param holder UIElement
 local function buildTransformRows(holder)
     totalHeight = 0
     local zeros = { "0.00", "0.00", "0.00" }
@@ -730,32 +860,48 @@ local function buildTransformRows(holder)
         "Multiplies size and spacing of selected objects\nalong the group's X, Y or Z. 0 means no change.\nEnter applies the field you typed in.")
 end
 
----Color/mass/friction/bounce rows, placeholders show the selection's current value
----("mixed" if objects differ) or the expected input type without a selection
+---@param values number[]
+---@return string[]
+local function formatHints(values)
+    local hints = {}
+    for i = 1, 3 do hints[i] = string.format("%.2f", values[i]) end
+    return hints
+end
+
+---Pos / Angle / Size rows, the whole-group versions of Move / Rotate / Scale. Placeholders show the
+---selection's current center, orientation (degrees) and size ("0.00" without a selection)
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
-local function buildPropertyInputs(holder, selected)
+local function buildMeasuredRows(holder, selected)
     totalHeight = 0
-    local colors = {}
-    for _, obj in ipairs(selected) do colors[obj] = get_obj_color(obj.id - 1) or {} end
-    local colorHints = {}
-    for i = 1, 4 do
-        colorHints[i] = sharedValue(selected, function(obj)
-            local c = colors[obj][i]
-            return c and math.floor(c * 255 + 0.5)
-        end) or "0"
-        if colorHints[i] == "mixed" or colorHints[i] == "-" then colorHints[i] = "0" end -- 4 narrow fields, "mixed" doesn't fit
-    end
-    inwuts.color = createInputRow("Color", holder, function(_, i) adjustColor(i) end, colorHints,
-        "Red, green, blue and alpha (0-255, up to 500 for brighter colors).\nEnter sets the channel you typed in,\nothers keep each object's current value.")
+    local zeros = { "0.00", "0.00", "0.00" }
+    local any = #selected > 0
+    inwuts.position = createInputRow("Pos", holder, function(_, i) positionSelected(i) end,
+        any and formatHints({ getSelectionPivot(selected) }) or zeros,
+        "Moves selected objects so their center is at X, Y or Z.\nShows the current center. Enter applies the field you typed in.")
+    local angles = any and groupAngles(selected) or { 0, 0, 0 }
+    for i = 1, 3 do angles[i] = math.deg(angles[i]) end
+    inwuts.angle = createInputRow("Angle", holder, function(_, i) angleSelected(i) end, formatHints(angles),
+        "Turns selected objects as a group to X, Y or Z degrees.\nShows the group's current angles. Only rotations done\nin MGE are known, others count as 0. Enter applies the field you typed in.")
+    inwuts.size = createInputRow("Size", holder, function(_, i) sizeSelected(i) end,
+        any and formatHints(groupExtents(selected)) or zeros,
+        "Scales selected objects so the group is X, Y or Z long\n(along the group's axes, like Scale). Shows the current size.\nEnter applies the field you typed in.")
+end
 
-    local helpTexts = {
-        mass = "Sets mass of selected objects.\nShows the current value, \"mixed\" if they differ.",
-        friction = "Sets friction of selected objects.\nApplied by saving, the game can't change it live.",
-        bounce = "Sets bounciness of selected objects.\nShows the current value, \"mixed\" if they differ.",
-    }
-    inwuts.properties = {} -- mass, friction, bounce inputs, cleared by "Reset inputs"
-    for _, entry in ipairs({ { "Mass", "mass" }, { "Friction", "friction" }, { "Bounce", "bounce" } }) do
+local PROPERTY_HELP = {
+    mass = "Sets mass of selected objects.\nShows the current value, \"mixed\" if they differ.",
+    friction = "Sets friction of selected objects.\nApplied by saving, the game can't change it live.",
+    bounce = "Sets bounciness of selected objects.\nShows the current value, \"mixed\" if they differ.",
+}
+
+---Single value rows (mass, friction, bounce), placeholders show the selection's current value
+---@param holder UIElement
+---@param selected FileParserEnvObj[]
+---@param entries string[][] { label, key } pairs
+---@return UIElement[] inputs
+local function buildPropertyRows(holder, selected, entries)
+    local inputs = {}
+    for _, entry in ipairs(entries) do
         local label, key = entry[1], entry[2]
         local property = PROPERTIES[key]
         local hint = sharedValue(selected, function(obj)
@@ -763,15 +909,37 @@ local function buildPropertyInputs(holder, selected)
             return tonumber(obj.props[key])
         end) or "0.00"
         if hint == "-" then hint = "0.00" end -- selected objects without the property in the file
-        local inputs = createInputRow(label, holder, function(inputs) setProperty(key, inputs[1]) end, { hint }, helpTexts[key])
-        table.insert(inwuts.properties, inputs[1])
+        local row = createInputRow(label, holder, function(rowInputs) setProperty(key, rowInputs[1]) end,
+            { hint }, PROPERTY_HELP[key])
+        table.insert(inputs, row[1])
     end
+    return inputs
 end
 
----Shape, flags and visibility, the selection's current values are highlighted / checked
+---Color and mass rows (core panel). Color placeholders show the defaults empty fields use
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
-local function buildOptions(holder, selected)
+local function buildCoreProps(holder, selected)
+    totalHeight = 0
+    local colorHints = {}
+    for i = 1, 4 do colorHints[i] = tostring(COLOR_DEFAULTS[i]) end
+    inwuts.color = createInputRow("Color", holder, function() adjustColor() end, colorHints,
+        "Red, green, blue and alpha (0-255, up to 500 for brighter colors).\nEnter in any field applies all four,\nempty fields count as 0 0 0 255.")
+    inwuts.coreProps = buildPropertyRows(holder, selected, { { "Mass", "mass" } })
+end
+
+---Friction and bounce rows (advanced panel)
+---@param holder UIElement
+---@param selected FileParserEnvObj[]
+local function buildAdvancedProps(holder, selected)
+    totalHeight = 0
+    inwuts.advancedProps = buildPropertyRows(holder, selected, { { "Friction", "friction" }, { "Bounce", "bounce" } })
+end
+
+---Shape and visibility rows (core panel), the selection's current values are highlighted
+---@param holder UIElement
+---@param selected FileParserEnvObj[]
+local function buildLooks(holder, selected)
     totalHeight = 0
     createChoiceRow("Shape", holder, {
         { label = "Box", value = "box" },
@@ -779,6 +947,18 @@ local function buildOptions(holder, selected)
         { label = "Cylinder", value = "cylinder" },
     }, sharedChoice(selected, getShape), function(shape) setSelectedProp("shape", shape) end,
         "Shape of selected objects.\nSides are kept, so the size may look different.")
+    createChoiceRow("Visible", holder, {
+        { label = "Shown", value = true },
+        { label = "Hidden", value = false },
+    }, sharedChoice(selected, isVisible), setVisible,
+        "Hidden objects aren't drawn but still collide.")
+end
+
+---Flags row (advanced panel)
+---@param holder UIElement
+---@param selected FileParserEnvObj[]
+local function buildFlags(holder, selected)
+    totalHeight = 0
     -- highlighted when every selected object has the flag. A click clears it if they all have it,
     -- otherwise sets it on all of them (decided on click, from the selection at that moment)
     local FLAGS = MGE.FLAGS
@@ -803,30 +983,77 @@ local function buildOptions(holder, selected)
         "Static: stays in place, otherwise the object is dynamic. Dynamic objects\nneed ids 1-" ..
         MGE.MAX_NONSTATIC_OBJECTS .. ", higher ids get a free low id.\nWeapon: the object acts as a weapon.\n" ..
         "Nogrip: players can't grab the object.")
-    createChoiceRow("Visible", holder, {
-        { label = "Shown", value = true },
-        { label = "Hidden", value = false },
-    }, sharedChoice(selected, isVisible), setVisible,
-        "Hidden objects aren't drawn but still collide.")
 end
+
+-- rebuilt blocks: builder and where they sit { panel, first row, rows }
+local BLOCKS = {
+    measured = { build = buildMeasuredRows, panel = "core", row = 0, rows = 3 },
+    coreProps = { build = buildCoreProps, panel = "core", row = 3, rows = 2 },
+    looks = { build = buildLooks, panel = "core", row = 5, rows = 2 },
+    advancedProps = { build = buildAdvancedProps, panel = "advanced", row = 3, rows = 2 },
+    flags = { build = buildFlags, panel = "advanced", row = 5, rows = 1 },
+}
+-- fixed build order (pairs() order isn't defined)
+local BLOCK_ORDER = { "measured", "coreProps", "looks", "advancedProps", "flags" }
+
+-- input lists in inwuts: all of them are cleared by "Reset inputs", the rebuilt ones keep typed text
+local ALL_INPUTS = { "pos", "rot", "scale", "position", "angle", "size", "color", "coreProps", "advancedProps" }
+local REBUILT_INPUTS = { "position", "angle", "size", "color", "coreProps", "advancedProps" }
 
 ---Empties all input fields, placeholders show again
 local function clearInputs()
-    for _, key in ipairs({ "pos", "rot", "scale", "color", "properties" }) do
+    for _, key in ipairs(ALL_INPUTS) do
         for _, input in ipairs(inwuts[key] or {}) do
             if not input.destroyed then input:clearTextfield() end
         end
     end
 end
 
-refreshProperties = function()
-    if not propertyInputs or propertyInputs.destroyed then return end
+---Text typed in the rebuilt input rows, kept over a rebuild
+---@return table<string, string[]>
+local function saveTypedProperties()
+    local saved = {}
+    for _, key in ipairs(REBUILT_INPUTS) do
+        saved[key] = {}
+        for i, input in ipairs(inwuts[key] or {}) do saved[key][i] = input.textfieldstr[1] end
+    end
+    return saved
+end
+
+---@param saved table<string, string[]>
+local function restoreTypedProperties(saved)
+    for key, texts in pairs(saved) do
+        for i, input in ipairs(inwuts[key] or {}) do
+            local text = texts[i]
+            if text and text ~= "" then
+                input.textfieldstr[1] = text
+                input.textfieldindex = #text -- cursor at the end
+            end
+        end
+    end
+end
+
+---Rebuilds the named blocks with the current selection, typed text is kept
+---@param names string[]
+local function rebuildBlocks(names)
+    if not blocks.measured or blocks.measured.destroyed then return end
     local selected = getSelected() -- read once, every row shows values of the same objects
-    Widgets.clearChildren(propertyInputs)
-    buildPropertyInputs(propertyInputs, selected)
-    Widgets.clearChildren(panels.options)
-    buildOptions(panels.options, selected)
+    local typed = saveTypedProperties()
+    for _, name in ipairs(names) do
+        Widgets.clearChildren(blocks[name])
+        BLOCKS[name].build(blocks[name], selected)
+    end
+    restoreTypedProperties(typed)
     reapplyTabs()
+end
+
+-- after a move / rotate / scale only the measured values change
+refreshMeasured = function()
+    rebuildBlocks({ "measured" })
+end
+
+refreshProperties = function()
+    rebuildBlocks(BLOCK_ORDER)
 end
 
 ---Called when the selection changes: refresh current values
@@ -844,18 +1071,20 @@ function editor.create(parent)
             size = { parent.size.w, panel.rows * ROW_H },
         })
     end
-    local transformRows = panels.values:addChild({
+    buildTransformRows(panels.advanced:addChild({
         pos = { 0, 0 },
         size = { parent.size.w, 3 * ROW_H },
-    })
-    buildTransformRows(transformRows)
-    propertyInputs = panels.values:addChild({
-        pos = { 0, 3 * ROW_H },
-        size = { parent.size.w, 4 * ROW_H },
-    })
+    }))
+    blocks = {}
     local selected = getSelected()
-    buildPropertyInputs(propertyInputs, selected)
-    buildOptions(panels.options, selected)
+    for _, name in ipairs(BLOCK_ORDER) do
+        local block = BLOCKS[name]
+        blocks[name] = panels[block.panel]:addChild({
+            pos = { 0, block.row * ROW_H },
+            size = { parent.size.w, block.rows * ROW_H },
+        })
+        block.build(blocks[name], selected)
+    end
 
     -- full width reset button under the input fields (it only clears inputs), same size as the
     -- window's Save as row. The Enter shortcut is explained in the window's shortcut help (ui/main.lua)
@@ -864,8 +1093,8 @@ function editor.create(parent)
         size = { parent.size.w, ROW_H },
     })
     Widgets.buttonRow(inputFooter, 0, ROW_H, { { label = "Reset inputs", onClick = clearInputs } }, 0, nil, Widgets.PANEL_STYLE)
-    -- Duplicate/Delete are in the object list's bottom bar (ui/obj_selector.lua), Save as in the top
-    -- menu (ui/main.lua). Positions and visibility are applied by Main.applyTab after create
+    -- Duplicate/Delete are in the object list's bottom bar (ui/obj_selector.lua), Save as in the
+    -- bottom row (ui/main.lua). Positions and visibility are applied by Main.applyTab after create
 end
 
 -- used by the object list's Duplicate/Delete buttons

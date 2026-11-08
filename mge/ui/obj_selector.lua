@@ -70,7 +70,7 @@ local function create(view, fullList)
         end)
     end, toReload)
 
-    topBar_l:addAdaptedText("Toggle All", topBar_l.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
+    topBar_l:addAdaptedText("Select All", topBar_l.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
     TBMenu:spawnToggle2(topBar_l, toggleRect, Main.toggleAll, function(value)
         Main.toggleSelectAll(value)
     end)

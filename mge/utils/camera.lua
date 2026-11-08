@@ -28,6 +28,7 @@ local Camera = {
     dragThreshold = 4,   -- pixels before a left press turns into an orbit drag (shorter clicks select objects)
     ---@type number? distance MGE keeps the camera at, nil when the game controls the camera
     distance = nil,
+    followMoves = true,  -- Move points the camera at the selection (camera button in the top menu)
     ---@type number[]? look-at point
     target = nil,
     yaw = 0,             -- direction from the target to the camera

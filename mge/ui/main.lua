@@ -5,8 +5,8 @@ require("toriui.uielement")
 ---@field page integer
 ---@field pageSize integer
 ---@field toggleAll boolean
----@field activeTab "values"|"options"|"assets"
-local Main = { page = 1, pageSize = 64, toggleAll = false, activeTab = "values" }
+---@field activeTab "core"|"advanced"|"assets"
+local Main = { page = 1, pageSize = 64, toggleAll = false, activeTab = "core" }
 MGE.Main = Main -- registered before UI modules load so they can alias it
 
 local ModData = MGE.ModData
@@ -44,19 +44,32 @@ local menuBar = content:addChild({
     size = { content.size.w, menuH },
     bgColor = TB_MENU_DEFAULT_BG_COLOR,
 })
-local iconsW = iconSize * 3 + iconGap * 2
+local iconsW = iconSize * 4 + iconGap * 3
 local iconsX = menuBar.size.w - (helpSize + 4) - iconGap - iconsW
 local iconButtons = menuBar:addChild({
     pos = { iconsX, 0 },
     size = { iconsW, menuH },
 })
-Widgets.barButtons(iconButtons, {
+local cameraButton
+---Camera button is highlighted while Move makes the camera follow the selection
+local function updateCameraButton()
+    local on = MGE.Camera.followMoves
+    cameraButton.bgColor = on and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
+end
+local icons = Widgets.barButtons(iconButtons, {
     -- working file (same as Ctrl+S), game's save icon
     { label = "Save", icon = "../textures/menu/general/buttons/savewhite.tga", onClick = function() MGE.save() end },
+    -- camera follows the selection on Move, toggled here (game's camera icon)
+    { label = "Camera", icon = "../textures/menu/general/buttons/camera.tga", onClick = function()
+        MGE.Camera.followMoves = not MGE.Camera.followMoves
+        updateCameraButton()
+    end },
     -- game's undo icon, redo is the same icon mirrored (mge/textures/redo.tga)
     { label = "Undo", icon = "../textures/menu/general/buttons/undo.tga", onClick = function() History.undo() end },
     { label = "Redo", icon = MGE.scriptPath .. "textures/redo.tga", onClick = function() History.redo() end },
 })
+cameraButton = icons[2]
+updateCameraButton()
 local menuTextW = 80 -- fixed width, leaves open space between the text and icon groups
 local textButtons = menuBar:addChild({
     pos = { 0, 0 },
@@ -75,7 +88,8 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Shift + Y: redo\n" ..
     "Enter: apply the value typed in an input field\n" ..
     "Click an object in the world: select / deselect it\n" ..
-    "Drag / mouse wheel: orbit / zoom the camera after looking at objects")
+    "Drag / mouse wheel: orbit / zoom the camera after looking at objects\n" ..
+    "Camera button: camera follows the selection when moving (highlighted when on)")
 updateContentHeight(menuH)
 
 -- header for the object list: what it lists and how full the mod is, set by setDynamicStrings
@@ -105,8 +119,8 @@ local tabRow = content:addChild({
 updateContentHeight(tabRow.size.h - margin) -- no gap, the panel starts right under the tabs
 
 local tabNames = {
-    { id = "values", label = "Values" },
-    { id = "options", label = "Options" },
+    { id = "core", label = "Core" },
+    { id = "advanced", label = "Advanced" },
     { id = "assets", label = "Assets" },
 }
 local tabItems = {}
@@ -119,7 +133,7 @@ for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, TAB_G
 end
 
 -- editor and assets tabs share the same area inside the tab panel, only one is shown at a time
--- (250 fits the 7 input rows of the Values panel with the reset button under them)
+-- (250 fits the 7 rows of the Core panel with the reset button under them)
 local areaH = 250
 local tabPanel = content:addChild({
     pos = defaultPos,
@@ -170,8 +184,8 @@ local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
 local editor = dofile(MGE.scriptPath .. "ui/editor.lua")
 local assetsView = dofile(MGE.scriptPath .. "ui/assets.lua")
 
--- Values and Options are two panels of the editor area, Assets has its own area
-local tabContainers = { values = editorContainer, options = editorContainer, assets = assetsContainer }
+-- Core and Advanced are two panels of the editor area, Assets has its own area
+local tabContainers = { core = editorContainer, advanced = editorContainer, assets = assetsContainer }
 
 ---Shows the active tab's area (and editor panel) and hides the rest.
 ---hide(true) keeps hidden areas hidden when the window is re-shown (F1)
@@ -196,7 +210,7 @@ function Main.applyTab()
     end
 end
 
----@param id "values"|"options"|"assets"
+---@param id "core"|"advanced"|"assets"
 function Main.setTab(id)
     if not tabContainers[id] then return end
     Main.activeTab = id
@@ -228,10 +242,10 @@ function Main.updateWindow()
     Widgets.clearChildren(obj_selector_container)
     setDynamicStrings()
     createObjSelector()
-    Main.onSelectionChanged() -- called after toggle all, saves and reloads
+    Main.onSelectionChanged() -- called after select all, saves and reloads
 end
 
----Selects or deselects every object ("Toggle All" checkbox, Ctrl+A)
+---Selects or deselects every object ("Select All" checkbox, Ctrl+A)
 ---@param value boolean? nil selects all, or deselects all when everything is already selected
 function Main.toggleSelectAll(value)
     local objects = ModData.parsed.env_obj

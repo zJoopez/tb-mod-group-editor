@@ -58,4 +58,19 @@ function Mat3.rotZ(t)
     return { { c, -s, 0 }, { s, c, 0 }, { 0, 0, 1 } }
 end
 
+---Angles x, y, z (radians) with m = rotX(x) * rotY(y) * rotZ(z), the order MGE's rotate tool
+---applies rotations in (RotatingOld.SetRotPos: z, then y, then x)
+---@param m number[][]
+---@return number x, number y, number z
+function Mat3.toEulerXYZ(m)
+    local sy = math.max(-1, math.min(1, m[1][3]))
+    local y = math.asin(sy)
+    local atan2 = math.atan2 or math.atan -- game Lua has atan2, newer Lua takes two args in atan
+    if math.abs(sy) < 0.999999 then
+        return atan2(-m[2][3], m[3][3]), y, atan2(-m[1][2], m[1][1])
+    end
+    -- y = +-90 degrees: x and z turn around the same axis, put it all in x
+    return atan2(m[3][2], m[2][2]), y, 0
+end
+
 MGE.Mat3 = Mat3

@@ -165,7 +165,7 @@ add_hook("key_down", MGE.hookname, function(key)
         MGE.save() -- writes live edits to the working file and reloads it
         return 1
     elseif ctrl and not shift and key == string.byte("a") then
-        MGE.Main.toggleSelectAll() -- same as the list's "Toggle All"
+        MGE.Main.toggleSelectAll() -- same as the list's "Select All"
         return 1
     end
 end)
