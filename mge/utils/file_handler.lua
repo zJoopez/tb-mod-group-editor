@@ -1,12 +1,17 @@
 local FileHandler = {}
 MGE.FileHandler = FileHandler
 
----Formats a number for mod files: up to 6 decimals, trailing zeros removed.
+-- decimals written for numbers MGE computes. The game reads long decimals fine (mods ship values with
+-- 16+ decimals, its modmaker writes 8). 10 keeps small sides precise and stops rounding from adding
+-- up when edits go through several save / reload rounds. Never an exponent: "%f", not "%g"
+local DECIMALS = 10
+
+---Formats a number for mod files: up to DECIMALS decimals, trailing zeros removed.
 ---Keeps small values like 0.0001 that a fixed 2 decimal format would round to 0.
 ---@param value number
 ---@return string
 function FileHandler.formatNumber(value)
-    local s = string.format("%.6f", value):gsub("0+$", ""):gsub("%.$", "")
+    local s = string.format("%." .. DECIMALS .. "f", value):gsub("0+$", ""):gsub("%.$", "")
     if s == "-0" then s = "0" end
     return s
 end
@@ -88,7 +93,7 @@ local function formatFrame(frame)
         for j = 1, 3 do
             local v = frame[i][j]
             if math.abs(v - (i == j and 1 or 0)) > 1e-6 then identity = false end
-            table.insert(parts, string.format("%.6f", v))
+            table.insert(parts, string.format("%." .. DECIMALS .. "f", v))
         end
     end
     if identity then return nil end

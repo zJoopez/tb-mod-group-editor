@@ -183,10 +183,6 @@ local function getLocalAxes(id)
     return { { m.r0, m.r4, m.r8 }, { m.r1, m.r5, m.r9 }, { m.r2, m.r6, m.r10 } }
 end
 
-local function vecLength(v)
-    return math.sqrt(v[1] * v[1] + v[2] * v[2] + v[3] * v[3])
-end
-
 ---Linear map that scales along the group frame axes: G * diag(scale) * G^T
 ---@param frame number[][] 3x3, columns are the group axes in world space
 ---@param scale number[]
@@ -195,24 +191,38 @@ local function groupScaleMatrix(frame, scale)
     return Mat3.mul(Mat3.mul(frame, { { scale[1], 0, 0 }, { 0, scale[2], 0 }, { 0, 0, scale[3] } }), Mat3.transpose(frame))
 end
 
----New sides for an object scaled by the group map. Each local axis is scaled by how much the map
----stretches it; exact for objects aligned with the group, closest box fit for tilted ones.
+---New sides for an object scaled along the group frame's axes. An object tilted against the group
+---can't stretch along the group's axes and stay a box, so each local axis gets a weighted geometric
+---mean of the factors: weight = how much that axis points along each group axis (squared, they add
+---up to 1). Exact for objects aligned with the group, and reversible: scaling by s and then by 1/s
+---gives the original sides back (the old "how much the map stretches the axis" fit didn't, tilted
+---objects drifted on every scale)
 ---@param id integer 0-based object id
 ---@param sides number[]
----@param map number[][]
+---@param frame number[][] group frame, columns are the group axes
+---@param scale number[] factors along the group axes
 ---@return number[]
-local function scaleSides(id, sides, map)
+local function scaleSides(id, sides, frame, scale)
     local axes = getLocalAxes(id)
+    local logScale = {}
+    for j = 1, 3 do logScale[j] = math.log(math.max(math.abs(scale[j]), 1e-9)) end -- mirroring keeps sizes
     local f = {}
-    for i = 1, 3 do f[i] = vecLength(Mat3.apply(map, axes[i])) end
+    for i = 1, 3 do
+        local a, sum = axes[i], 0
+        for j = 1, 3 do
+            local along = a[1] * frame[1][j] + a[2] * frame[2][j] + a[3] * frame[3][j]
+            sum = sum + along * along * logScale[j]
+        end
+        f[i] = math.exp(sum)
+    end
 
     local out
     local shape = get_obj_shape(id)
-    if shape == SHAPE.SPHERE then -- x radius
-        local r = sides[1] * (f[1] + f[2] + f[3]) / 3
+    if shape == SHAPE.SPHERE then -- x radius, stays round: geometric mean of all axes
+        local r = sides[1] * (f[1] * f[2] * f[3]) ^ (1 / 3)
         out = { r, r, r }
-    elseif shape == SHAPE.CAPSULE then -- x radius, y length along local z
-        out = { sides[1] * (f[1] + f[2]) / 2, sides[2] * f[3], sides[3] }
+    elseif shape == SHAPE.CAPSULE then -- x radius (round across local x and y), y length along local z
+        out = { sides[1] * math.sqrt(f[1] * f[2]), sides[2] * f[3], sides[3] }
     else
         out = { sides[1] * f[1], sides[2] * f[2], sides[3] * f[3] }
     end
@@ -259,28 +269,47 @@ local function pickGroupFrame(objects)
     return best and best.frame or Mat3.IDENTITY
 end
 
----Scales the objects (sides and spacing) around their center by factors along the group's axes
----@param selectedObjects FileParserEnvObj[]
+---Where scaling by factors along the group's axes puts each object, without changing anything
+---(scaleBy applies it, Scale predicts with it)
+---@param selectedObjects FileParserEnvObj[] objects in the world
 ---@param scale number[] x y z factors
-local function scaleBy(selectedObjects, scale)
+---@return { obj: FileParserEnvObj, pos: number[], sides: number[] }[] planned
+---@return fun(x: number, y: number, z: number): number, number, number scalePos
+local function planScale(selectedObjects, scale)
     local pivot = { getSelectionPivot(selectedObjects) }
 
     -- scale along the group's own axes (world axes if never rotated by MGE), as if scaled before rotating
-    local map = groupScaleMatrix(pickGroupFrame(selectedObjects), scale)
+    local frame = pickGroupFrame(selectedObjects)
+    local map = groupScaleMatrix(frame, scale)
     local function scalePos(x, y, z)
         local rel = Mat3.apply(map, { x - pivot[1], y - pivot[2], z - pivot[3] })
         return pivot[1] + rel[1], pivot[2] + rel[2], pivot[3] + rel[3]
     end
 
+    local planned = {}
     for _, v in ipairs(selectedObjects) do
-        local outPos = { scalePos(get_obj_pos(v.id - 1)) }
-        local outSides = scaleSides(v.id - 1, { get_obj_sides(v.id - 1) }, map)
+        if get_obj_pos(v.id - 1) ~= nil then
+            table.insert(planned, {
+                obj = v,
+                pos = { scalePos(get_obj_pos(v.id - 1)) },
+                sides = scaleSides(v.id - 1, { get_obj_sides(v.id - 1) }, frame, scale),
+            })
+        end
+    end
+    return planned, scalePos
+end
 
-        set_obj_pos(v.id - 1, outPos[1], outPos[2], outPos[3])
-        set_obj_sides(v.id - 1, outSides[1], outSides[2], outSides[3])
-
-        writeVectorProperty(v, "pos", outPos)
-        writeVectorProperty(v, "sides", outSides)
+---Scales the objects (sides and spacing) around their center by factors along the group's axes
+---@param selectedObjects FileParserEnvObj[]
+---@param scale number[] x y z factors
+local function scaleBy(selectedObjects, scale)
+    local planned, scalePos = planScale(selectedObjects, scale)
+    for _, p in ipairs(planned) do
+        local id = p.obj.id - 1
+        set_obj_pos(id, p.pos[1], p.pos[2], p.pos[3])
+        set_obj_sides(id, p.sides[1], p.sides[2], p.sides[3])
+        writeVectorProperty(p.obj, "pos", p.pos)
+        writeVectorProperty(p.obj, "sides", p.sides)
     end
     finishTransform(selectedObjects, scalePos)
     refreshMeasured()
@@ -314,15 +343,25 @@ end
 ---Overall size of the selection along the group's axes (what Scale scales along), objects' own
 ---size and rotation included
 ---@param selectedObjects FileParserEnvObj[]
+---@param scale number[]? size after scaling by these factors (planScale), nil for the current size
 ---@return number[] extents x y z, 0 when nothing is in the world
-local function groupExtents(selectedObjects)
+local function groupExtents(selectedObjects, scale)
     local axes = frameAxes(pickGroupFrame(selectedObjects))
+    local placed = {} -- obj id -> planned pos and sides
+    if scale then
+        for _, p in ipairs((planScale(selectedObjects, scale))) do placed[p.obj.id] = p end
+    end
     local min, max = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
     for _, v in ipairs(selectedObjects) do
         local id = v.id - 1
         local x, y, z = get_obj_pos(id)
+        local sx, sy, sz = get_obj_sides(id)
+        local p = placed[v.id]
+        if p then
+            x, y, z = p.pos[1], p.pos[2], p.pos[3]
+            sx, sy, sz = p.sides[1], p.sides[2], p.sides[3]
+        end
         if x then
-            local sx, sy, sz = get_obj_sides(id)
             local shape = get_obj_shape(id)
             local localAxes = getLocalAxes(id)
             for i, a in ipairs(axes) do
@@ -346,23 +385,41 @@ local function groupExtents(selectedObjects)
     return extents
 end
 
----Size row: scales the selection so its overall size along the group's X, Y or Z becomes the typed
----value. Axes left empty (or 0 and below) don't change
+---Scale row: scales the selection so its overall size along the group's X, Y or Z becomes the typed
+---value. Axes left empty (or 0 and below) don't change.
+---Size doesn't follow the factor one to one: pill caps keep their radius when the length scales,
+---spheres stay round (their radius takes the average factor) and rotated objects only partly stretch.
+---So the factors are found by predicting the result (planScale) and correcting until it matches
 ---@param only integer? axis input Enter was pressed in, nil applies all
 local function sizeSelected(only)
     local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
     local typed = readInputs(inwuts.size, only)
-    local extents = groupExtents(selectedObjects)
-    local scale, changed = {}, false
+    local current = groupExtents(selectedObjects)
+    local targets, changed = {}, false
     for i = 1, 3 do
-        if typed[i] and typed[i] > 0 and extents[i] > 1e-9 then
-            scale[i], changed = typed[i] / extents[i], true
-        else
-            scale[i] = 1
+        if typed[i] and typed[i] > 0 and current[i] > 1e-9 then
+            targets[i], changed = typed[i], true
         end
     end
-    if changed then scaleBy(selectedObjects, scale) end
+    if not changed then return end
+
+    local scale = { 1, 1, 1 }
+    for _ = 1, 100 do
+        local extents = groupExtents(selectedObjects, scale)
+        local done = true
+        for i = 1, 3 do
+            if targets[i] and extents[i] > 1e-9 then
+                local ratio = targets[i] / extents[i]
+                if math.abs(ratio - 1) > 1e-10 then
+                    done = false
+                    scale[i] = math.min(math.max(scale[i] * ratio, 1e-4), 1e4)
+                end
+            end
+        end
+        if done then break end
+    end
+    scaleBy(selectedObjects, scale)
 end
 
 ---Group orientation as angles (radians) in the rotate tool's order. Only rotations MGE applied are

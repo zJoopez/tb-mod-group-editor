@@ -29,18 +29,25 @@ local function eulerToQuaternion(x, y, z)
     }
 end
 
+-- |sin(pitch)| above this is treated as pitch +-90 (gimbal lock), see quaternionToEuler
+local GIMBAL_LIMIT = 1 - 1e-7
+
 local function quaternionToEuler(q)
+    local sinp = 2 * (q.w * q.y - q.z * q.x)
+    if math.abs(sinp) >= GIMBAL_LIMIT then
+        -- gimbal lock: at pitch +-90 roll and yaw turn around the same axis, only their difference
+        -- (pitch +90) or sum (pitch -90) is defined and the roll / yaw formulas below divide noise by
+        -- noise (y 90 objects came back with random x and z). Keep roll 0 and put the turn into yaw
+        local sign = sinp < 0 and -1 or 1
+        local yaw = -2 * sign * math.atan2(q.x, q.w)
+        return { 0, math.deg(sign * math.pi / 2), math.deg(yaw) }
+    end
+
     local sinr_cosp = 2 * (q.w * q.x + q.y * q.z)
     local cosr_cosp = 1 - 2 * (q.x * q.x + q.y * q.y)
     local roll = math.atan2(sinr_cosp, cosr_cosp)
 
-    local sinp = 2 * (q.w * q.y - q.z * q.x)
-    local pitch
-    if math.abs(sinp) >= 1 then
-        pitch = math.pi / 2 * (sinp < 0 and -1 or 1) -- Clamp
-    else
-        pitch = math.asin(sinp)
-    end
+    local pitch = math.asin(sinp)
 
     local siny_cosp = 2 * (q.w * q.z + q.x * q.y)
     local cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
