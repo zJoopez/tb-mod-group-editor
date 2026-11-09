@@ -32,6 +32,8 @@ local function toMatrixTB(m)
     })
 end
 
+Highlight.toMatrixTB = toMatrixTB -- also used by the gizmo
+
 ---Translucent box with an outline, for boxes that aren't objects
 ---@param box HighlightBox
 local function drawPreviewBox(box)

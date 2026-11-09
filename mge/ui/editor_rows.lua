@@ -202,10 +202,11 @@ local function createToggleButtonRow(label, parent, toggles, help)
     end
 end
 
--- Simple per-object properties edited with absolute values. Friction has no live setter,
--- it's stored in props and applied by saving (the mod reloads with the new value).
+-- Simple per-object properties edited with absolute values. Friction and hardness have no live
+-- setter, they're stored in props and applied by saving (the mod reloads with the new value).
 -- default: the game's value for objects without the line. decimals: what the game's modmaker writes
--- (friction 10000.00, bounce 0.100000, mass 0.1000), used for the file and the placeholders.
+-- (friction 10000.00, bounce 0.100000, hardness 0.000000, mass 0.1000), used for the file and the
+-- placeholders.
 ---@class EditorProperty
 ---@field min number
 ---@field default number
@@ -220,6 +221,9 @@ local PROPERTIES = {
     friction = { min = 0, default = 10000, decimals = 2 },
     bounce = { min = 0, default = 0.1, decimals = 6,
         setter = function(id, v) set_obj_bounce(id, v) end, getter = function(id) return get_obj_bounce(id) end },
+    -- points multiplier on contact with a player, no get_obj / set_obj for it. Without the line the
+    -- game uses 0 (older docs say 1)
+    hardness = { min = 0, default = 0, decimals = 6 },
 }
 
 ---Value as the game writes it for the property, e.g. 0.1 -> "0.1000" for mass
@@ -231,7 +235,7 @@ local function formatProperty(property, value)
 end
 
 ---Sets a property on all selected objects from an input field, empty input does nothing
----@param key "mass"|"friction"|"bounce"
+---@param key "mass"|"friction"|"bounce"|"hardness"
 ---@param input UIElement
 local function setProperty(key, input)
     local value = tonumber(input.textfieldstr[1])
@@ -257,9 +261,10 @@ local PROPERTY_HELP = {
     mass = "Applies mass\n\"mixed\": the selected objects differ.",
     friction = "Applied by saving, the game can't change it live.",
     bounce = "Bounciness. \"mixed\": the selected objects differ.",
+    hardness = "Points multiplier when it touches a player.\n0 (default): no points, still damages. 0.5: half,\n1: full, 2: double. Applied by saving.",
 }
 
----Single value rows (mass, friction, bounce), placeholders show the selection's current value
+---Single value rows (mass, friction, bounce, hardness), placeholders show the selection's current value
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
 ---@param entries string[][] { label, key } pairs

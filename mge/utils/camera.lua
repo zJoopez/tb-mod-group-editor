@@ -8,35 +8,47 @@
 --   * returning 1 from the camera hook skips the game's camera update: the position holds, but the
 --     game's own orbiting stops too
 -- So while MGE controls the camera it owns it completely: the camera hook places it every frame and
--- returns 1, and MGE handles orbiting (left mouse drag) and zoom (mouse wheel) itself. Control goes back
--- to the game when the MGE window is hidden, the camera mode changes or MGE quits.
+-- returns 1, and MGE handles orbiting (left mouse drag) and zoom (mouse wheel) itself. Control
+-- goes back to the game when the MGE window is hidden, the camera mode changes or MGE quits.
+-- A left press on a gizmo handle drags the gizmo instead (utils/gizmo.lua), the camera stays put.
 
 local SHAPE = MGE.SHAPE
 local HOOK_SET = MGE.hookname .. "_camera"
 local atan2 = math.atan2 or math.atan -- the game's Lua has atan2, newer Lua takes two arguments in atan
 
 ---@class Camera
+---@field followMoves boolean
 local Camera = {
     fitFactor = 2.5,     -- camera distance per unit of selection radius (covers the game's field of view)
     margin = 1,          -- extra distance so objects don't touch the screen edges
     minDistance = 2.5,   -- closest framing distance
     zoomStep = 1.15,     -- distance factor per mouse wheel step
     zoomMin = 0.5,
-    zoomMax = 250,
+    zoomMax = 200,
     orbitSpeed = 0.008,  -- radians per dragged pixel
     maxPitch = math.rad(85),
-    dragThreshold = 4,   -- pixels before a left press turns into an orbit drag (shorter clicks select objects)
+    dragThreshold = 4,   -- pixels before a press turns into an orbit drag (shorter left clicks select objects)
+    -- mouse buttons that orbit when dragged. Only the left button's presses reach Lua: for right and
+    -- middle the game only passes the release on (mge/debug_mouse.lua, tested in game), so their drags
+    -- can't be seen. Using the game's own right drag orbit doesn't work either, the camera hook has to
+    -- skip the game's camera update (see above), which stops its orbit. A left press on a gizmo handle
+    -- drags the gizmo, anywhere else it orbits (or selects, when it's a click)
+    orbitButtons = { [1] = true },
     ---@type number? distance MGE keeps the camera at, nil when the game controls the camera
     distance = nil,
-    followMoves = true,  -- Move points the camera at the selection (camera button in the top menu)
+    followMoves = true,  -- selecting and moving point the camera at the selection (Camera button in the top menu)
     ---@type number[]? look-at point
     target = nil,
     yaw = 0,             -- direction from the target to the camera
     pitch = 0,
 }
 
----@type { x: number, y: number, dragging: boolean }?
+---@type { x: number, y: number, dragging: boolean, button: integer }?
 local drag = nil
+
+local function gizmoBusy()
+    return MGE.Gizmo ~= nil and MGE.Gizmo.isDragging()
+end
 
 ---Distance from an object's center to its furthest point
 ---@param id integer 0-based object id
@@ -121,13 +133,18 @@ local function takeControl()
         if button == 4 or button == 5 then -- wheel: 4 up = closer
             local factor = button == 4 and 1 / Camera.zoomStep or Camera.zoomStep
             Camera.distance = math.min(math.max(Camera.distance * factor, Camera.zoomMin), Camera.zoomMax)
-        elseif button == 1 then -- left drag orbits, a short click still selects (world_select.lua)
-            -- (the right button doesn't reach Lua mouse hooks, tested in game)
-            drag = { x = x, y = y, dragging = false }
+        elseif Camera.orbitButtons[button] and not gizmoBusy() then
+            -- dragging orbits, a short left click still selects (world_select.lua)
+            drag = { x = x, y = y, dragging = false, button = button }
         end
     end)
     add_hook("mouse_move", HOOK_SET, function(x, y)
         if not drag then return end
+        -- the press grabbed a gizmo handle (its hook may run after this one): the gizmo gets the drag
+        if gizmoBusy() then
+            drag = nil
+            return
+        end
         local dx, dy = x - drag.x, y - drag.y
         if not drag.dragging then
             if math.abs(dx) <= Camera.dragThreshold and math.abs(dy) <= Camera.dragThreshold then return end
@@ -137,8 +154,8 @@ local function takeControl()
         Camera.pitch = math.min(math.max(Camera.pitch + dy * Camera.orbitSpeed, -Camera.maxPitch), Camera.maxPitch)
         drag.x, drag.y = x, y
     end)
-    add_hook("mouse_button_up", HOOK_SET, function()
-        drag = nil
+    add_hook("mouse_button_up", HOOK_SET, function(button)
+        if drag and drag.button == button then drag = nil end
     end)
 end
 
@@ -169,6 +186,15 @@ function Camera.focus(objects, keepDistance)
     Camera.distance = distance
     takeControl()
     place()
+end
+
+---After a select (object list, click in the world, Select All / Ctrl + A): looks at the whole
+---selection when the Camera button is on, so it and its gizmo are in view. Call it only when something
+---got selected, deselecting leaves the camera where it is
+function Camera.followSelection()
+    if not Camera.followMoves then return end
+    local selected = MGE.ModData.getSelected()
+    if #selected > 0 then Camera.focus(selected) end
 end
 
 table.insert(MGE.onQuit, Camera.release)

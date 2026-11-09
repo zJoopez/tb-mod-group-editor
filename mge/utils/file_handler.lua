@@ -66,7 +66,7 @@ local SECTION_WORDS = {
 -- write order for properties that aren't in an object's original lines (new objects, added props)
 local KEY_ORDER = {
     "shape", "pos", "rot", "sides", "color", "flag", "material", "mass", "bounce", "friction",
-    "force", "visible", "thrust", "model_name", "use_model",
+    "force", "hardness", "visible", "thrust", "model_name", "use_model",
 }
 local KEY_RANK = {}
 for i, key in ipairs(KEY_ORDER) do KEY_RANK[key] = i end

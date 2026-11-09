@@ -136,6 +136,43 @@ local function moveBy(selectedObjects, offsets)
     Transforms.onChanged()
 end
 
+---Live world only, the mod data is untouched: shows the objects moved by offset from where the file
+---has them (gizmo drag). moveBy with the same offset makes it real, restoreLive takes it back
+---@param selectedObjects FileParserEnvObj[]
+---@param offset number[]
+function Transforms.previewMove(selectedObjects, offset)
+    for _, v in ipairs(selectedObjects) do
+        if inWorld(v) then
+            local p = positionOf(v)
+            set_obj_pos(v.id - 1, p[1] + offset[1], p[2] + offset[2], p[3] + offset[3])
+            applyFileRotation(v)
+        end
+    end
+end
+
+---Live world only: puts the objects back where the file has them (cancelled gizmo drag)
+---@param selectedObjects FileParserEnvObj[]
+---@param baseSides table<integer, number[]>? sizes to put back too (after previewScale), by object id
+function Transforms.restoreLive(selectedObjects, baseSides)
+    Transforms.previewMove(selectedObjects, { 0, 0, 0 })
+    for _, v in ipairs(selectedObjects) do
+        local s = baseSides and baseSides[v.id]
+        if s and inWorld(v) then set_obj_sides(v.id - 1, s[1], s[2], s[3]) end
+    end
+end
+
+---Live sizes of the objects, by object id. A scale preview changes them, and scaling reads sizes from
+---the world (get_obj_sides), so a gizmo scale drag keeps these to plan every frame from the start
+---@param selectedObjects FileParserEnvObj[]
+---@return table<integer, number[]>
+function Transforms.liveSides(selectedObjects)
+    local out = {}
+    for _, v in ipairs(selectedObjects) do
+        if inWorld(v) then out[v.id] = { get_obj_sides(v.id - 1) } end
+    end
+    return out
+end
+
 ---Move row: moves selected objects by the typed offsets
 ---@param typed (number?)[] x y z, nil axes don't move
 function Transforms.move(typed)
@@ -391,13 +428,12 @@ local function frameAxes(frame)
     }
 end
 
----Overall size of the selection along the group's axes (what Scale scales along), objects' own
----size and rotation included
+---Where the selection starts and ends along three axes, objects' own size and rotation included
 ---@param selectedObjects FileParserEnvObj[]
----@param scale number[]? size after scaling by these factors (planScale), nil for the current size
----@return number[] extents x y z, 0 when nothing is in the world
-local function groupExtents(selectedObjects, scale)
-    local axes = frameAxes(pickGroupFrame(selectedObjects))
+---@param axes number[][] unit axes to measure along
+---@param scale number[]? after scaling by these factors (planScale), nil for now
+---@return number[] min, number[] max along each axis (math.huge / -math.huge when nothing is in the world)
+local function groupBounds(selectedObjects, axes, scale)
     local placed = {} -- obj id -> planned pos and sides
     if scale then
         for _, p in ipairs((planScale(selectedObjects, scale))) do placed[p.obj.id] = p end
@@ -435,6 +471,16 @@ local function groupExtents(selectedObjects, scale)
             end
         end
     end
+    return min, max
+end
+
+---Overall size of the selection along the group's axes (what Scale scales along), objects' own
+---size and rotation included
+---@param selectedObjects FileParserEnvObj[]
+---@param scale number[]? size after scaling by these factors (planScale), nil for the current size
+---@return number[] extents x y z, 0 when nothing is in the world
+local function groupExtents(selectedObjects, scale)
+    local min, max = groupBounds(selectedObjects, frameAxes(pickGroupFrame(selectedObjects)), scale)
     local extents = {}
     for i = 1, 3 do extents[i] = max[i] > min[i] and max[i] - min[i] or 0 end
     return extents
@@ -521,6 +567,53 @@ end
 Transforms.writeVector = writeVectorProperty
 Transforms.getSelectionPivot = getSelectionPivot
 Transforms.positionOf = positionOf
+Transforms.moveBy = moveBy -- gizmo drag commit
+Transforms.groupFrame = function(selectedObjects) return pickGroupFrame(selectedObjects) end
+
+---Live world only, the mod data is untouched: shows the objects turned by a rotation matrix around
+---their center (gizmo ring drag). rotateByMatrix with the same matrix makes it real
+---@param selectedObjects FileParserEnvObj[]
+---@param rotation number[][]
+function Transforms.previewRotate(selectedObjects, rotation)
+    local pivot = { getSelectionPivot(selectedObjects) }
+    for _, v in ipairs(selectedObjects) do
+        if inWorld(v) then
+            local p = positionOf(v)
+            local rel = Mat3.apply(rotation, { p[1] - pivot[1], p[2] - pivot[2], p[3] - pivot[3] })
+            set_obj_pos(v.id - 1, pivot[1] + rel[1], pivot[2] + rel[2], pivot[3] + rel[3])
+            -- rot line angles of the turned orientation: it's Rx(-x) Ry(-y) Rz(-z), see orientationOf
+            local x, y, z = Mat3.toEulerXYZ(Mat3.mul(rotation, orientationOf(v)))
+            set_obj_rot(v.id - 1, -x, -y, -z)
+        end
+    end
+end
+
+---Turns the objects by a rotation matrix around their center, like the Rotate row (file and world,
+---undo step, joints follow)
+---@param selectedObjects FileParserEnvObj[]
+---@param rotation number[][]
+function Transforms.rotateByMatrix(selectedObjects, rotation)
+    rotBy(selectedObjects, { Mat3.toEulerXYZ(rotation) }) -- rotBy's offsets: rotX(x) rotY(y) rotZ(z)
+end
+
+---Live world only, the mod data is untouched: shows the objects scaled by factors along the group's
+---axes like Resize would (gizmo scale drag). Planned from baseSides (the sizes at the grab), not the
+---already previewed ones. Put baseSides back (restoreLive) before scaleBy makes it real
+---@param selectedObjects FileParserEnvObj[]
+---@param scale number[]
+---@param baseSides table<integer, number[]> Transforms.liveSides at the grab
+function Transforms.previewScale(selectedObjects, scale, baseSides)
+    for _, v in ipairs(selectedObjects) do
+        local s = baseSides[v.id]
+        if s and inWorld(v) then set_obj_sides(v.id - 1, s[1], s[2], s[3]) end
+    end
+    for _, p in ipairs((planScale(selectedObjects, scale))) do
+        local id = p.obj.id - 1
+        set_obj_pos(id, p.pos[1], p.pos[2], p.pos[3])
+        set_obj_sides(id, p.sides[1], p.sides[2], p.sides[3])
+        applyFileRotation(p.obj)
+    end
+end
 Transforms.orientationOf = orientationOf
 Transforms.groupExtents = groupExtents
 Transforms.rotBy = rotBy

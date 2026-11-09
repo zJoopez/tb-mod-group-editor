@@ -34,6 +34,9 @@
 ---@field Mat3 Mat3 utils/mat3.lua
 ---@field Transforms table move / rotate / scale for the selection, utils/transforms.lua
 ---@field ShapeGen table Generate tab geometry, utils/shape_gen.lua
+---@field Gizmo Gizmo drag handles in the world, utils/gizmo.lua
+---@field GizmoMath GizmoMath utils/gizmo_math.lua
+---@field Highlight table selection highlight and generate preview, utils/highlight.lua
 ---@field EditorRows EditorRows shared editor row widgets, ui/editor_rows.lua
 ---@field POS_ORIGIN number[] dojo center, set by utils/mod_export.lua
 ---@field ScrollList ScrollList ui/scroll_list.lua
@@ -73,6 +76,8 @@ loadModule("utils/world_select.lua")
 loadModule("utils/camera.lua")
 loadModule("utils/transforms.lua")
 loadModule("utils/shape_gen.lua")
+loadModule("utils/gizmo_math.lua")
+loadModule("utils/gizmo.lua") -- after world_select, highlight and transforms
 
 local FileHandler = MGE.FileHandler
 local ModData = MGE.ModData
@@ -185,10 +190,7 @@ add_hook("match_begin", MGE.hookname, function()
         end
         MGE.Main.updateWindow()
         -- e.g. an asset import: the new objects are selected and only exist in the world now
-        if MGE.focusAfterReload and MGE.Camera.followMoves then
-            local selected = ModData.getSelected()
-            if #selected > 0 then MGE.Camera.focus(selected) end
-        end
+        if MGE.focusAfterReload then MGE.Camera.followSelection() end
     else
         -- other reloads (new mod, game restart) re-read the file, older states no longer match
         History.reset()

@@ -42,11 +42,23 @@ local function normalize(a)
     return scale(a, 1 / l)
 end
 
----Camera ray through a screen position. Must be called from draw3d (uses get_screen_pos)
----@param x number
----@param y number
----@return number[]? origin, number[]? direction normalized
-function WorldSelect.cameraRay(x, y)
+---@class CameraProjection
+---@field eye number[]
+---@field forward number[]
+---@field right number[]
+---@field up number[]
+---@field cx number screen position of the look-at point
+---@field cy number
+---@field m11 number screen offset = M * (sideways / depth)
+---@field m12 number
+---@field m21 number
+---@field m22 number
+---@field det number
+
+---Measures the camera's projection. Must be called from draw3d (uses get_screen_pos), the result
+---stays valid while the camera doesn't move, so mouse events can use the one from the last frame
+---@return CameraProjection?
+function WorldSelect.measureProjection()
     local info = get_camera_info()
     local eye = { info.pos.x, info.pos.y, info.pos.z }
     local target = { info.lookat.x, info.lookat.y, info.lookat.z }
@@ -69,11 +81,43 @@ function WorldSelect.cameraRay(x, y)
     local m12, m22 = (ux - cx) * k, (uy - cy) * k
     local det = m11 * m22 - m12 * m21
     if math.abs(det) < 1e-9 then return nil end
+    return { eye = eye, forward = forward, right = right, up = up, cx = cx, cy = cy,
+        m11 = m11, m12 = m12, m21 = m21, m22 = m22, det = det }
+end
 
-    local ox, oy = x - cx, y - cy
-    local a = (ox * m22 - m12 * oy) / det
-    local b = (m11 * oy - m21 * ox) / det
-    return eye, normalize(add(forward, add(scale(right, a), scale(up, b))))
+---Camera ray through a screen position, for a measured projection (works outside draw3d)
+---@param p CameraProjection
+---@param x number
+---@param y number
+---@return number[] origin, number[]? direction normalized
+function WorldSelect.rayFrom(p, x, y)
+    local ox, oy = x - p.cx, y - p.cy
+    local a = (ox * p.m22 - p.m12 * oy) / p.det
+    local b = (p.m11 * oy - p.m21 * ox) / p.det
+    return p.eye, normalize(add(p.forward, add(scale(p.right, a), scale(p.up, b))))
+end
+
+---Screen position of a world point for a measured projection, the inverse of rayFrom. Works off
+---screen too (get_screen_pos gives unusable values there) and outside draw3d (the gizmo draws in draw2d)
+---@param p CameraProjection
+---@param point number[]
+---@return number? x, number? y nil when the point is behind the camera
+function WorldSelect.project(p, point)
+    local rel = sub(point, p.eye)
+    local depth = dot(rel, p.forward)
+    if depth < 1e-6 then return nil end
+    local a, b = dot(rel, p.right) / depth, dot(rel, p.up) / depth
+    return p.cx + p.m11 * a + p.m12 * b, p.cy + p.m21 * a + p.m22 * b
+end
+
+---Camera ray through a screen position. Must be called from draw3d (uses get_screen_pos)
+---@param x number
+---@param y number
+---@return number[]? origin, number[]? direction normalized
+function WorldSelect.cameraRay(x, y)
+    local p = WorldSelect.measureProjection()
+    if not p then return nil end
+    return WorldSelect.rayFrom(p, x, y)
 end
 
 ---World directions of an object's local axes. get_obj_rot is row-major, the axes are its columns
@@ -141,6 +185,9 @@ local function hitCapsule(origin, dir, a, b, radius)
     return best
 end
 
+-- ray hits, also used by the gizmo's handles (utils/gizmo.lua)
+WorldSelect.hitSphere, WorldSelect.hitBox, WorldSelect.hitCapsule = hitSphere, hitBox, hitCapsule
+
 ---Distance along the ray to a world object, nil when missed
 ---@param id integer 0-based object id
 ---@return number?
@@ -161,7 +208,7 @@ function WorldSelect.hitObject(origin, dir, id)
     return hitBox(origin, dir, center, axes, { sx / 2, sy / 2, sz / 2 }) -- box, full sizes
 end
 
----Mod object under the screen position, nearest along the camera ray. Must be called from draw3d
+---Mod object under the screen position, nearest along the camera ray. Must be called from draw3d.
 ---@param x number
 ---@param y number
 ---@return FileParserEnvObj?
@@ -189,16 +236,30 @@ end
 ---@param enabled boolean
 function WorldSelect.setEnabled(enabled)
     WorldSelect.enabled = enabled
-    if not enabled then pressed, pendingClick = nil, nil end
+    if not enabled then
+        pressed, pendingClick = nil, nil
+        if MGE.Gizmo then MGE.Gizmo.cancel() end -- the gizmo is part of world clicking
+    end
 end
 
+-- The gizmo (utils/gizmo.lua, loads after this module) gets the mouse first: a press on one of its
+-- handles starts a drag instead of a select, and returning 1 keeps the game from turning it into a
+-- camera drag
 add_hook("mouse_button_down", HOOK_SET, function(button, x, y)
+    local Gizmo = MGE.Gizmo
+    if Gizmo and Gizmo.isDragging() then return 1 end -- other buttons do nothing mid drag
     pressed = nil
     if button ~= 1 or not isActive() or isOverUI(x, y) then return end
+    if Gizmo and Gizmo.press(x, y) then return 1 end
     pressed = { x = x, y = y }
 end)
 
 add_hook("mouse_button_up", HOOK_SET, function(button, x, y)
+    local Gizmo = MGE.Gizmo
+    if button == 1 and Gizmo and Gizmo.release(x, y) then
+        pressed = nil
+        return 1
+    end
     local start = pressed
     pressed = nil
     if button ~= 1 or not start or not isActive() then return end
@@ -217,8 +278,9 @@ add_hook("draw3d", HOOK_SET, function()
         return
     end
     if not obj then return end
-    ModData.clickSelect(obj, click.additive)
+    local selected = ModData.clickSelect(obj, click.additive)
     MGE.Main.updateWindow() -- list checkboxes and editor values follow the selection
+    if selected then MGE.Camera.followSelection() end -- like selecting in the list
 end)
 
 -- MGE.quit removes hooks of MGE.hookname only

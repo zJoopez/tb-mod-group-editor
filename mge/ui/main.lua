@@ -56,7 +56,7 @@ local iconButtons = menuBar:addChild({
     size = { iconsW, menuH },
 })
 local cameraButton, mouseButton
----Camera button is highlighted while Move makes the camera follow the selection
+---Camera button is highlighted while selecting and moving make the camera follow the selection
 local function updateCameraButton()
     local on = MGE.Camera.followMoves
     cameraButton.bgColor = on and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
@@ -68,7 +68,7 @@ end
 local icons = Widgets.barButtons(iconButtons, {
     -- working file (same as Ctrl+S), game's save icon
     { label = "Save", icon = "../textures/menu/general/buttons/savewhite.tga", onClick = function() MGE.save() end },
-    -- camera follows the selection on Move, toggled here (game's camera icon)
+    -- camera looks at the selection when selecting and moving, toggled here (game's camera icon)
     { label = "Camera", icon = "../textures/menu/general/buttons/camera.tga", onClick = function()
         MGE.Camera.followMoves = not MGE.Camera.followMoves
         updateCameraButton()
@@ -105,7 +105,9 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Click Pos / Rot / Scale: switch to Move / Rotate / Resize\n" ..
     "Click object or id: select it, Shift + click: add / remove\n" ..
     "Export / Import: save selection or player as an asset / add one\n" ..
-    "Drag / wheel: orbit / zoom camera\n" ..
+    "Gizmo (for the Move / Rotate / Resize row used last): drag arrows / squares to move,\n" ..
+    "rings to rotate, cubes to scale, the white cube scales evenly (Ctrl: steps)\n" ..
+    "Drag (off the gizmo) / wheel: orbit / zoom camera\n" ..
     "Camera button: follow the selection\n" ..
     "Mouse button: click to select in the world (off to play)")
 updateContentHeight(menuH)
@@ -352,7 +354,7 @@ function Main.toggleSelectAll(value)
     end
     Main.updateWindow()
     -- selecting everything frames it when the camera button is on, like selecting in the list
-    if value and #objects > 0 and MGE.Camera.followMoves then MGE.Camera.focus(objects) end
+    if value then MGE.Camera.followSelection() end
 end
 
 function Main.resetWindow()

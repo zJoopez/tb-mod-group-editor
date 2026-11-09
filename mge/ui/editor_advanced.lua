@@ -1,4 +1,4 @@
--- Advanced tab: Friction, Bounce, Flags, Model, Ids (Reindex)
+-- Advanced tab: Friction, Bounce, Hardness, Flags, Model, Ids (Reindex)
 local Rows = MGE.EditorRows
 local Widgets = MGE.Widgets
 local ModData = MGE.ModData
@@ -10,12 +10,12 @@ local createRow = Rows.createRow
 local createToggleButtonRow = Rows.createToggleButtonRow
 local function refreshProperties() Rows.refreshProperties() end
 
----Friction and bounce rows (advanced panel)
+---Friction, bounce and hardness rows (advanced panel)
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
 local function buildAdvancedProps(holder, selected)
     Rows.begin()
-    inwuts.advancedProps = Rows.buildPropertyRows(holder, selected, { { "Friction", "friction" }, { "Bounce", "bounce" } })
+    inwuts.advancedProps = Rows.buildPropertyRows(holder, selected, { { "Friction", "friction" }, { "Bounce", "bounce" }, { "Hardness", "hardness" } })
 end
 
 -- flag is a bit mask (MGE.FLAGS), objects without a flag line use the game's value
@@ -195,11 +195,11 @@ end
 
 ---@type EditorPanelModule
 return {
-    fixed = { { build = buildIdRows, panel = "advanced", row = 4, rows = 1 } },
+    fixed = { { build = buildIdRows, panel = "advanced", row = 5, rows = 1 } },
     blocks = {
-        { name = "advancedProps", build = buildAdvancedProps, panel = "advanced", row = 0, rows = 2 },
-        { name = "flags", build = buildFlags, panel = "advanced", row = 2, rows = 1 },
-        { name = "model", build = buildModel, panel = "advanced", row = 3, rows = 1 },
+        { name = "advancedProps", build = buildAdvancedProps, panel = "advanced", row = 0, rows = 3 },
+        { name = "flags", build = buildFlags, panel = "advanced", row = 3, rows = 1 },
+        { name = "model", build = buildModel, panel = "advanced", row = 4, rows = 1 },
     },
     inputs = { rebuilt = { "advancedProps" } },
 }

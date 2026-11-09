@@ -14,13 +14,17 @@ local function refreshProperties() Rows.refreshProperties() end
 
 local Transforms = MGE.Transforms
 
+---The world gizmo is for the transform row used last (Enter in it or a click on its name)
+---@param mode GizmoMode
+local function useGizmo(mode) MGE.Gizmo.mode = mode end
+
 -- Enter in a transform field applies that field only (only = its index)
-local function moveSelected(only) Transforms.move(readInputs(inwuts.pos, only)) end
-local function rotSelected(only) Transforms.rotate(readInputs(inwuts.rot, only)) end
-local function scaleSelected(only) Transforms.scale(readInputs(inwuts.scale, only)) end
-local function positionSelected(only) Transforms.positionTo(readInputs(inwuts.position, only)) end
-local function angleSelected(only) Transforms.angleTo(readInputs(inwuts.angle, only)) end
-local function sizeSelected(only) Transforms.sizeTo(readInputs(inwuts.size, only)) end
+local function moveSelected(only) useGizmo("move") Transforms.move(readInputs(inwuts.pos, only)) end
+local function rotSelected(only) useGizmo("rotate") Transforms.rotate(readInputs(inwuts.rot, only)) end
+local function scaleSelected(only) useGizmo("scale") Transforms.scale(readInputs(inwuts.scale, only)) end
+local function positionSelected(only) useGizmo("move") Transforms.positionTo(readInputs(inwuts.position, only)) end
+local function angleSelected(only) useGizmo("rotate") Transforms.angleTo(readInputs(inwuts.angle, only)) end
+local function sizeSelected(only) useGizmo("scale") Transforms.sizeTo(readInputs(inwuts.size, only)) end
 local shownPosition, groupAngles, groupExtents = Transforms.shownPosition, Transforms.groupAngles, Transforms.groupExtents
 
 -- Each transform row has two modes, switched by clicking the row's name. Both rows exist in the same
@@ -56,6 +60,7 @@ end
 
 ---@param key "move"|"rotate"|"scale"
 local function toggleTransformMode(key)
+    useGizmo(key)
     transformModes[key] = transformModes[key] == "absolute" and "offset" or "absolute"
     applyTransformModes(true) -- the label clicked is on the shown core panel
 end

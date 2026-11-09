@@ -101,8 +101,8 @@ local function create(view, fullList)
                 local selected = ModData.clickSelect(obj, get_keyboard_shift() ~= 0)
                 -- restyled in place, rebuilding the list would reset its scroll position
                 for other, otherCell in pairs(cells) do styleCell(otherCell, other.selected) end
-                -- a newly selected object is framed when the Camera button is on
-                if selected and MGE.Camera.followMoves then MGE.Camera.focus({ obj }) end
+                -- the selection is framed when the Camera button is on
+                if selected then MGE.Camera.followSelection() end
                 Main.onSelectionChanged()
             end)
         end
