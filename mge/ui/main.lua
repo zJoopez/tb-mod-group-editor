@@ -98,7 +98,7 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Shift + Z: undo\n" ..
     "Shift + Y: redo\n" ..
     "Enter: apply the value typed in an input field\n" ..
-    "Click Pos / Angle / Size: switch to Move / Rotate / Scale offsets and back\n" ..
+    "Click Pos / Rot / Scale: switch to Move / Rotate / Resize offsets and back\n" ..
     "Click an object in the world: select / deselect it\n" ..
     "Click an id in the list: select / deselect, double click: look at it\n" ..
     "Drag / mouse wheel: orbit / zoom the camera after looking at objects\n" ..

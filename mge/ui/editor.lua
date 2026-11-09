@@ -398,11 +398,31 @@ local refreshProperties
 
 -- Simple per-object properties edited with absolute values. Friction has no live setter,
 -- it's stored in props and applied by saving (the mod reloads with the new value).
+-- default: the game's value for objects without the line. decimals: what the game's modmaker writes
+-- (friction 10000.00, bounce 0.100000, mass 0.1000), used for the file and the placeholders.
+---@class EditorProperty
+---@field min number
+---@field default number
+---@field decimals integer
+---@field setter (fun(id: integer, value: number))?
+---@field getter (fun(id: integer): number?)?
+
+---@type table<string, EditorProperty>
 local PROPERTIES = {
-    mass = { min = 0.0001, setter = function(id, v) set_obj_mass(id, v) end, getter = function(id) return get_obj_mass(id) end }, -- zero mass breaks physics
-    friction = { min = 0 },
-    bounce = { min = 0, setter = function(id, v) set_obj_bounce(id, v) end, getter = function(id) return get_obj_bounce(id) end },
+    mass = { min = 0.0001, default = 0.1, decimals = 4, -- zero mass breaks physics
+        setter = function(id, v) set_obj_mass(id, v) end, getter = function(id) return get_obj_mass(id) end },
+    friction = { min = 0, default = 10000, decimals = 2 },
+    bounce = { min = 0, default = 0.1, decimals = 6,
+        setter = function(id, v) set_obj_bounce(id, v) end, getter = function(id) return get_obj_bounce(id) end },
 }
+
+---Value as the game writes it for the property, e.g. 0.1 -> "0.1000" for mass
+---@param property EditorProperty
+---@param value number
+---@return string
+local function formatProperty(property, value)
+    return string.format("%." .. property.decimals .. "f", value)
+end
 
 ---Sets a property on all selected objects from an input field, empty input does nothing
 ---@param key "mass"|"friction"|"bounce"
@@ -416,7 +436,7 @@ local function setProperty(key, input)
     local property = PROPERTIES[key]
     value = math.max(value, property.min)
     for _, v in ipairs(selectedObjects) do
-        v.props[key] = FileHandler.formatNumber(value)
+        v.props[key] = formatProperty(property, value)
         if property.setter then property.setter(v.id - 1, value) end
     end
     History.commit()
@@ -465,16 +485,6 @@ local function sharedChoice(objects, read)
     return value
 end
 
----Number shared by the objects as text, "-" for objects without it, "mixed" when they differ
----@param objects FileParserEnvObj[]
----@param read fun(obj: FileParserEnvObj): number?
----@return string?
-local function sharedValue(objects, read)
-    return sharedChoice(objects, function(obj)
-        local v = read(obj)
-        return v and FileHandler.formatNumber(v) or "-"
-    end)
-end
 
 ---@param placeholder string? text shown while empty, defaults to "0"
 local function createInput(container, onInputFunc, placeholder)
@@ -782,7 +792,7 @@ end
 --   core:     transforms and look: Pos/Move, Angle/Rotate, Size/Scale, Color, Mass, Shape, Visible
 --   advanced: physics: Friction, Bounce, Flags
 -- Both have input fields, the reset button is shown under either.
--- Every block of rows has its own holder. Move/Rotate/Scale are built once (typed values stay), the
+-- Every block of rows has its own holder. Move/Rotate/Resize are built once (typed values stay), the
 -- other blocks are rebuilt when the selection or the objects change, so their placeholders /
 -- highlights show current values (typed text is carried over the rebuild).
 local ROW_H = 30
@@ -799,8 +809,8 @@ local inputFooter = nil
 
 -- Each transform row has two modes, switched by clicking the row's name. Both rows exist in the same
 -- slot (offset rows built once, absolute rows rebuilt with the measured values), one is hidden:
---   absolute: Pos / Angle / Size, the group ends up at the typed values
---   offset:   Move / Rotate / Scale, the typed values are added (Scale multiplies)
+--   absolute: Pos / Rot / Scale, the group ends up at the typed values
+--   offset:   Move / Rotate / Resize, the typed values are added (Resize multiplies)
 ---@alias TransformMode "absolute"|"offset"
 local TRANSFORMS = { "move", "rotate", "scale" }
 ---@type table<string, TransformMode> kept while the script runs, also over editor rebuilds
@@ -858,7 +868,7 @@ end
 
 local SWITCH_HELP = "\nClick the name to switch to "
 
----Move/Rotate/Scale rows (offset mode, core panel), built once so typed values stay when the selection changes
+---Move/Rotate/Resize rows (offset mode, core panel), built once so typed values stay when the selection changes
 ---@param holder UIElement
 local function buildTransformRows(holder)
     totalHeight = 0
@@ -870,10 +880,10 @@ local function buildTransformRows(holder)
         SWITCH_HELP .. "Pos (move to a position).", switch("move"))
     inwuts.rot, transformRows.rotate.offset = createInputRow("Rotate", holder, function(_, i) rotSelected(i) end, zeros,
         "Rotates selected objects around their center\nby X, Y or Z degrees. Enter applies the field you typed in." ..
-        SWITCH_HELP .. "Angle (turn to an angle).", switch("rotate"))
-    inwuts.scale, transformRows.scale.offset = createInputRow("Scale", holder, function(_, i) scaleSelected(i) end, zeros,
+        SWITCH_HELP .. "Rot (turn to an angle).", switch("rotate"))
+    inwuts.scale, transformRows.scale.offset = createInputRow("Resize", holder, function(_, i) scaleSelected(i) end, zeros,
         "Multiplies size and spacing of selected objects\nalong the group's X, Y or Z. 0 means no change.\nEnter applies the field you typed in." ..
-        SWITCH_HELP .. "Size (set the overall size).", switch("scale"))
+        SWITCH_HELP .. "Scale (set the overall size).", switch("scale"))
 end
 
 ---@param values number[]
@@ -884,7 +894,7 @@ local function formatHints(values)
     return hints
 end
 
----Pos / Angle / Size rows, the whole-group versions of Move / Rotate / Scale. Placeholders show the
+---Pos / Rot / Scale rows (absolute), the whole-group versions of Move / Rotate / Resize. Placeholders show the
 ---selection's current center, orientation (degrees) and size ("0.00" without a selection)
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
@@ -899,13 +909,13 @@ local function buildMeasuredRows(holder, selected)
         SWITCH_HELP .. "Move (move by an offset).", switch("move"))
     local angles = any and groupAngles(selected) or { 0, 0, 0 }
     for i = 1, 3 do angles[i] = math.deg(angles[i]) end
-    inwuts.angle, transformRows.rotate.absolute = createInputRow("Angle", holder, function(_, i) angleSelected(i) end, formatHints(angles),
+    inwuts.angle, transformRows.rotate.absolute = createInputRow("Rot", holder, function(_, i) angleSelected(i) end, formatHints(angles),
         "Turns selected objects as a group to X, Y or Z degrees.\nShows the group's current angles. Only rotations done\nin MGE are known, others count as 0. Enter applies the field you typed in." ..
         SWITCH_HELP .. "Rotate (turn by degrees).", switch("rotate"))
-    inwuts.size, transformRows.scale.absolute = createInputRow("Size", holder, function(_, i) sizeSelected(i) end,
+    inwuts.size, transformRows.scale.absolute = createInputRow("Scale", holder, function(_, i) sizeSelected(i) end,
         any and formatHints(groupExtents(selected)) or zeros,
-        "Scales selected objects so the group is X, Y or Z long\n(along the group's axes, like Scale). Shows the current size.\nEnter applies the field you typed in." ..
-        SWITCH_HELP .. "Scale (multiply the size).", switch("scale"))
+        "Scales selected objects so the group is X, Y or Z long\n(along the group's axes, like Resize). Shows the current size.\nEnter applies the field you typed in." ..
+        SWITCH_HELP .. "Resize (multiply the size).", switch("scale"))
 end
 
 local PROPERTY_HELP = {
@@ -923,12 +933,13 @@ local function buildPropertyRows(holder, selected, entries)
     local inputs = {}
     for _, entry in ipairs(entries) do
         local label, key = entry[1], entry[2]
-        local property = PROPERTIES[key]
-        local hint = sharedValue(selected, function(obj)
-            if property.getter then return property.getter(obj.id - 1) end
-            return tonumber(obj.props[key])
-        end) or "0.00"
-        if hint == "-" then hint = "0.00" end -- selected objects without the property in the file
+        local property = PROPERTIES[key] ---@type EditorProperty
+        -- value shared by the selection ("mixed" when they differ), the game default without a
+        -- selection or for objects without the line in the file
+        local hint = sharedChoice(selected, function(obj)
+            local value = property.getter and property.getter(obj.id - 1) or tonumber(obj.props[key])
+            return formatProperty(property, value or property.default)
+        end) or formatProperty(property, property.default)
         local row = createInputRow(label, holder, function(rowInputs) setProperty(key, rowInputs[1]) end,
             { hint }, PROPERTY_HELP[key])
         table.insert(inputs, row[1])
@@ -964,7 +975,7 @@ local function buildLooks(holder, selected)
     createChoiceRow("Shape", holder, {
         { label = "Box", value = "box" },
         { label = "Sphere", value = "sphere" },
-        { label = "Cylinder", value = "cylinder" },
+        { label = "Pill", value = "cylinder" }, -- "cylinder" in mod files, round ends in game
     }, sharedChoice(selected, getShape), function(shape) setSelectedProp("shape", shape) end,
         "Shape of selected objects.\nSides are kept, so the size may look different.")
     createChoiceRow("Visible", holder, {
