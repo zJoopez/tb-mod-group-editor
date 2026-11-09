@@ -790,7 +790,7 @@ end
 
 -- Two panels sharing the editor area, picked by the window's tab row (Main.applyTab -> editor.applyPanel):
 --   core:     transforms and look: Pos/Move, Angle/Rotate, Size/Scale, Color, Mass, Shape, Visible
---   advanced: physics: Friction, Bounce, Flags
+--   advanced: physics: Friction, Bounce, Flags, then Ids (Reindex)
 -- Both have input fields, the reset button is shown under either.
 -- Every block of rows has its own holder. Move/Rotate/Resize are built once (typed values stay), the
 -- other blocks are rebuilt when the selection or the objects change, so their placeholders /
@@ -798,7 +798,7 @@ end
 local ROW_H = 30
 local PANELS = {
     core = { rows = 7 },
-    advanced = { rows = 3 },
+    advanced = { rows = 4 },
 }
 ---@type table<string, UIElement>
 local panels = {}
@@ -1016,6 +1016,34 @@ local function buildFlags(holder, selected)
         "Nogrip: players can't grab the object.")
 end
 
+---Dynamic objects can end up above id 48 (the footer warns), this moves them down and static
+---objects up, as far as ids allow. Acts on all objects, not the selection
+local function reindex()
+    local moved, left = ModData.reindex()
+    if left > 0 then
+        print("reindex: " .. left .. " dynamic objects still above id " .. MGE.MAX_NONSTATIC_OBJECTS ..
+            ", make some static")
+    end
+    if moved == 0 then
+        print("reindex: nothing to move")
+        return
+    end
+    History.commit()
+    MGE.save()
+    print("reindex moved " .. moved .. " objects")
+end
+
+---Ids row (advanced panel), built once: its buttons act on all objects, nothing to refresh
+---@param holder UIElement
+local function buildIdRows(holder)
+    totalHeight = 0
+    createToggleButtonRow("Ids", holder, {
+        { label = "Reindex", active = false, onClick = reindex },
+    }, "Reindex: moves dynamic objects to ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS ..
+        " and static objects above them,\nas far as free ids allow. Acts on all objects, " ..
+        "joints follow their objects.")
+end
+
 -- rebuilt blocks: builder and where they sit { panel, first row, rows }
 local BLOCKS = {
     measured = { build = buildMeasuredRows, panel = "core", row = 0, rows = 3 },
@@ -1135,6 +1163,10 @@ function editor.create(parent)
     buildTransformRows(panels.core:addChild({
         pos = { 0, 0 },
         size = { parent.size.w, 3 * ROW_H },
+    }))
+    buildIdRows(panels.advanced:addChild({
+        pos = { 0, 3 * ROW_H },
+        size = { parent.size.w, ROW_H },
     }))
     blocks = {}
     local selected = getSelected()

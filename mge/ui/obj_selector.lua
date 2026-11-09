@@ -1,8 +1,6 @@
 local obj_selector = {}
 
 local Main = MGE.Main
-local ModData = MGE.ModData
-local History = MGE.History
 local ScrollList = MGE.ScrollList
 local Widgets = MGE.Widgets
 
@@ -146,29 +144,14 @@ local function create(view, fullList)
             Main.updateWindow()
         end)
 
-    -- dynamic objects can end up above id 48 (the footer warns), this moves them down and static
-    -- objects up, as far as ids allow
-    local function reindex()
-        local moved, left = ModData.reindex()
-        if left > 0 then
-            print("reindex: " .. left .. " dynamic objects still above id " .. MGE.MAX_NONSTATIC_OBJECTS ..
-                ", make some static")
-        end
-        if moved == 0 then
-            print("reindex: nothing to move")
-            return
-        end
-        History.commit()
-        MGE.save()
-        print("reindex moved " .. moved .. " objects")
-    end
-
-    -- Duplicate/Delete act on selected objects, Reindex on all of them. In the list's bar so they're
-    -- there on every tab. MGE.Editor loads after this module, so it's looked up on click
+    -- Duplicate/Delete/Export act on selected objects, Import opens the asset list (ui/assets.lua).
+    -- In the list's bar so they're there on every tab (Reindex is in the editor's Advanced panel).
+    -- MGE.Editor loads after this module, so it's looked up on click
     Widgets.barButtons(botBar, {
         { label = "Duplicate", onClick = function() MGE.Editor.duplicate() end },
-        { label = "Reindex", onClick = function() reindex() end },
         { label = "Delete", onClick = function() MGE.Editor.deleteSelected() end }, -- asks first
+        { label = "Import", onClick = function() MGE.Assets.openImport() end },
+        { label = "Export", onClick = function() MGE.Assets.export() end },
     })
 end
 

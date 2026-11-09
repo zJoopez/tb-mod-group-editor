@@ -111,6 +111,7 @@ local function save(newname)
         end
         return
     end
+    MGE.syncGamerules() -- rules changed in the game's menu
     FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. name .. ".tbm")
     print("saved as " .. name .. ".tbm")
     -- the named copy is the one that gets shared, say so if dynamic objects won't fully work in it

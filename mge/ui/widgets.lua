@@ -117,7 +117,7 @@ end
 local BAR_PADDING = 2
 local BAR_GAP = 4
 
----Buttons filling a list bar with the shared bar padding (e.g. reindex, export/import)
+---Buttons filling a list bar with the shared bar padding (e.g. duplicate/delete, import)
 ---@param bar UIElement
 ---@param buttons { label: string|fun(): string, icon: string?, onClick: function? }[]
 ---@param style WidgetStyle?

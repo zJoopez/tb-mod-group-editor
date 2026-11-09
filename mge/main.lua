@@ -20,6 +20,7 @@
 ---@field reloadPending boolean? next match_begin comes from our own save
 ---@field keptSelection table<integer, boolean>? selected object ids restored after our own save
 ---@field focusAfterReload boolean? look at the selection after our own save reloads (asset import)
+---@field loadedGamerules table<string, string>? gamerules when the mod file was loaded, see syncGamerules
 ---@field onQuit function[] cleanup callbacks registered by modules, run on quit
 ---@field Main Main main window, set by ui/main.lua
 ---@field Editor table editor panels and duplicate/delete, set by ui/editor.lua
@@ -41,6 +42,8 @@
 ---@field saveOverlay UIElement? open name prompt (ui/save_overlay.lua)
 ---@field confirmOverlay UIElement? open confirmation popup (TBMenu:showConfirmationWindow)
 ---@field saveOverlayContext table? options for the next name prompt
+---@field importOverlay UIElement? open asset list (ui/assets.lua)
+---@field Assets table export / import overlay, ui/assets.lua
 MGE = MGE or { scriptPath = "mge/" }
 MGE.hookname = "mge"
 MGE.onQuit = {}
@@ -79,8 +82,40 @@ function MGE.loadMod(outputName)
     runCmd("lm " .. outputName)
 end
 
+---@return table<string, string> current gamerule values by name, as the game would write them
+local function readGamerules()
+    local values = {}
+    for name in pairs(get_game_rules()) do
+        if name ~= "mod" then values[name] = tostring(get_gamerule(name)) end -- mod is the file itself
+    end
+    return values
+end
+
+---Remembers the gamerules a mod file loaded with, later differences were made in the game's menu
+function MGE.snapshotGamerules()
+    MGE.loadedGamerules = readGamerules()
+end
+
+---Puts gamerules changed in the game's menu (Rules button) into the mod data, so saves keep them.
+---Only changed rules are written, rules the mod leaves at their default stay out of the file
+function MGE.syncGamerules()
+    local current = readGamerules()
+    local changed, names = {}, {}
+    for name, value in pairs(current) do
+        if value ~= (MGE.loadedGamerules or {})[name] then
+            changed[name] = value
+            table.insert(names, name)
+        end
+    end
+    if #names == 0 then return end
+    FileHandler.setGamerules(ModData.parsed, changed, current)
+    table.sort(names)
+    print("gamerules saved: " .. table.concat(names, ", "))
+end
+
 function MGE.save()
     local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or MGE.outputName  --bypass for lm not loaading updates without mod swap
+    MGE.syncGamerules()
     FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. outputName)
     print("save complete")
     MGE.reloadPending = true -- keeps undo history and selection over the reload caused by our own save
@@ -108,7 +143,7 @@ function MGE.quit(fromWindow)
     for _, callback in ipairs(MGE.onQuit or {}) do
         pcall(callback)
     end
-    for _, overlay in ipairs({ MGE.saveOverlay, MGE.confirmOverlay }) do
+    for _, overlay in ipairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.importOverlay }) do
         if overlay and not overlay.destroyed then
             pcall(function() overlay:kill() end)
         end
@@ -132,6 +167,9 @@ add_hook("match_begin", MGE.hookname, function()
     -- saves alternate between the two output files, that isn't a mod switch
     local switchedMod = path ~= MGE.modPath and not (isSaveOutput(path) and isSaveOutput(MGE.modPath))
     if switchedMod then set_camera_mode(0) end
+    -- a mod file was loaded: its rules are the new baseline. Applying gamerules in the game's menu
+    -- also starts a new match, that one keeps the old baseline so the change is saved later
+    if switchedMod or MGE.reloadPending then MGE.snapshotGamerules() end
 
     if MGE.reloadPending then
         -- our own save: same objects, restore selection and keep the list page
@@ -190,6 +228,7 @@ end)
 
 ---start
 MGE.updateSource()
+MGE.snapshotGamerules()
 History.reset()
 loadModule("ui/main.lua")
 MGE.running = true -- set last so a failed start isn't treated as running

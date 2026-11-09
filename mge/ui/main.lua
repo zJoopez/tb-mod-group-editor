@@ -5,8 +5,10 @@ require("toriui.uielement")
 ---@field page integer
 ---@field pageSize integer
 ---@field toggleAll boolean
----@field activeTab "core"|"advanced"|"assets"
-local Main = { page = 1, pageSize = 120, toggleAll = false, activeTab = "core" }
+---@field activeTab "core"|"advanced" editor panel, kept while the Players list hides the editor
+---@field listTab "objects"|"players" what the list area shows
+---@field selectedPlayer integer player Export / Import act on, picked in the Players list
+local Main = { page = 1, pageSize = 120, toggleAll = false, activeTab = "core", listTab = "objects", selectedPlayer = 0 }
 MGE.Main = Main -- registered before UI modules load so they can alias it
 
 local ModData = MGE.ModData
@@ -101,18 +103,51 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Click Pos / Rot / Scale: switch to Move / Rotate / Resize offsets and back\n" ..
     "Click an object in the world: select / deselect it\n" ..
     "Click an id in the list: select / deselect, double click: look at it\n" ..
+    "Export / Import: save the selected objects or picked player as an asset, or pick one to add\n" ..
+    "(objects appear at the spawn point, a player model replaces the picked player's), double click imports\n" ..
+    "Players list: click a player to pick it\n" ..
     "Drag / mouse wheel: orbit / zoom the camera after looking at objects\n" ..
     "Camera button: camera follows the selection when moving (highlighted when on)\n" ..
     "Mouse button: click objects in the world to select them (highlighted when on),\n" ..
     "turn off to play the mod without selecting")
 updateContentHeight(menuH)
 
--- header for the object list: what it lists and how full the mod is, set by setDynamicStrings
+-- tabs for the list area: objects (with how full the mod is) and players. The active tab has the
+-- list's color and touches it, same idea as the editor tabs
+local TAB_PANEL_COLOR = { 0, 0, 0, 0.15 } -- darkens the window, buttons inside (DARKER) stay visible
+
+---Active tabs are part of the panel under them: panel color, no hover/press change.
+---Inactive tabs keep the normal button look. Used by the list tabs and the editor tabs
+---@param btn UIElement
+---@param active boolean
+local function styleTab(btn, active)
+    if active then
+        btn.bgColor, btn.hoverColor, btn.pressedColor = TAB_PANEL_COLOR, TAB_PANEL_COLOR, TAB_PANEL_COLOR
+    else
+        btn.bgColor = TB_MENU_DEFAULT_DARKER_COLOR
+        btn.hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR
+        btn.pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
+    end
+end
 local listHeader = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 26 },
 })
-updateContentHeight(listHeader.size.h - 4) -- close to the list it describes
+updateContentHeight(listHeader.size.h - margin) -- no gap, the list starts right under the tabs
+local listTabNames = {
+    { id = "objects", label = function()
+        return "Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS
+    end },
+    { id = "players", label = "Players" },
+}
+local listTabItems = {}
+for i, tab in ipairs(listTabNames) do
+    listTabItems[i] = { label = tab.label, onClick = function() Main.setListTab(tab.id) end }
+end
+local listTabButtons = {}
+for i, btn in ipairs(Widgets.buttonRow(listHeader, 0, listHeader.size.h, listTabItems, 4)) do
+    listTabButtons[listTabNames[i].id] = btn
+end
 
 local obj_selector_container = content:addChild({
     pos = defaultPos,
@@ -124,7 +159,6 @@ updateContentHeight(obj_selector_container.size.h)
 -- Tabs, right above the area they switch (title row and object list stay the same on every tab).
 -- The area has its own panel color and the active tab uses the same color and touches the panel,
 -- so it reads as one shape. Inactive tabs keep the normal button look.
-local TAB_PANEL_COLOR = { 0, 0, 0, 0.15 } -- darkens the window, buttons inside (DARKER) stay visible
 local TAB_GAP = 4
 local TAB_PADDING = 6
 local tabRow = content:addChild({
@@ -133,22 +167,24 @@ local tabRow = content:addChild({
 })
 updateContentHeight(tabRow.size.h - margin) -- no gap, the panel starts right under the tabs
 
+-- editor panels for objects. Players have no controls here yet, the tab row and panel are hidden
+-- for them (Main.applyTab)
 local tabNames = {
     { id = "core", label = "Core" },
     { id = "advanced", label = "Advanced" },
-    { id = "assets", label = "Assets" },
 }
 local tabItems = {}
 for i, tab in ipairs(tabNames) do
     tabItems[i] = { label = tab.label, onClick = function() Main.setTab(tab.id) end }
 end
+---@type table<string, UIElement>
 local tabButtons = {}
 for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, TAB_GAP)) do
     tabButtons[tabNames[i].id] = btn
 end
 
--- editor and assets tabs share the same area inside the tab panel, only one is shown at a time
--- (250 fits the 7 rows of the Core panel with the reset button under them)
+-- the editor area inside the tab panel (250 fits the 7 rows of the Core panel with the reset button
+-- under them)
 local areaH = 250
 local tabPanel = content:addChild({
     pos = defaultPos,
@@ -159,15 +195,12 @@ local editorContainer = tabPanel:addChild({
     pos = { TAB_PADDING, TAB_PADDING },
     size = { tabPanel.size.w - TAB_PADDING * 2, areaH },
 })
-local assetsContainer = tabPanel:addChild({
-    pos = { TAB_PADDING, TAB_PADDING },
-    size = { tabPanel.size.w - TAB_PADDING * 2, areaH },
-})
 updateContentHeight(tabPanel.size.h)
 
--- Duplicate/Delete/Reindex are in the object list's bottom bar (ui/obj_selector.lua)
+-- Duplicate/Delete/Import/Export are in the list's bottom bar (ui/obj_selector.lua, ui/player_list.lua),
+-- Reindex in the Advanced panel
 
--- named copy of the mod, under the editor/assets area on every tab
+-- named copy of the mod, under the editor area
 local saveAsRow = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 30 },
@@ -194,42 +227,57 @@ local limitsRow = addFooterRow() -- dynamic id and joint usage, set by setDynami
 addFooterRow("Project Mod Group Editor by joopez")
 
 
-dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by obj_selector and assets
+dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by the lists and the import overlay
+dofile(MGE.scriptPath .. "ui/assets.lua") -- MGE.Assets, export / import overlay for the lists' buttons
 local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
+local player_list = dofile(MGE.scriptPath .. "ui/player_list.lua")
 local editor = dofile(MGE.scriptPath .. "ui/editor.lua")
-local assetsView = dofile(MGE.scriptPath .. "ui/assets.lua")
 
--- Core and Advanced are two panels of the editor area, Assets has its own area
-local tabContainers = { core = editorContainer, advanced = editorContainer, assets = assetsContainer }
-
----Shows the active tab's area (and editor panel) and hides the rest.
----hide(true) keeps hidden areas hidden when the window is re-shown (F1)
+---Shows the tab row and the active editor panel. Players have no editor controls yet, their list
+---shows without the tab area. hide(true) keeps hidden parts hidden when the window is re-shown (F1)
 function Main.applyTab()
-    local active = tabContainers[Main.activeTab]
-    for _, container in pairs({ editorContainer, assetsContainer }) do
-        if container ~= active then container:hide(true) end
+    if Main.listTab == "players" then
+        tabRow:hide(true)
+        tabPanel:hide(true)
+        return
     end
-    active:show(true)
-    if active == editorContainer then
-        editor.applyPanel(Main.activeTab)
-    end
+    tabRow:show(true)
+    tabPanel:show(true)
+    editor.applyPanel(Main.activeTab)
     for id, btn in pairs(tabButtons) do
-        if id == Main.activeTab then
-            -- part of the panel: same color, no hover/press change
-            btn.bgColor, btn.hoverColor, btn.pressedColor = TAB_PANEL_COLOR, TAB_PANEL_COLOR, TAB_PANEL_COLOR
-        else
-            btn.bgColor = TB_MENU_DEFAULT_DARKER_COLOR
-            btn.hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR
-            btn.pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
-        end
+        styleTab(btn, id == Main.activeTab)
     end
 end
 
----@param id "core"|"advanced"|"assets"
+---@param id "core"|"advanced"
 function Main.setTab(id)
-    if not tabContainers[id] then return end
+    if not tabButtons[id] then return end
     Main.activeTab = id
     Main.applyTab()
+end
+
+---Players in the current mod (numplayers gamerule), keeps the selected player in range
+---@return integer
+function Main.getPlayerCount()
+    local count = math.max(tonumber(get_game_rules().numplayers) or 2, 1)
+    if Main.selectedPlayer >= count then Main.selectedPlayer = 0 end -- picked in a mod with more players
+    return count
+end
+
+local function applyListTab()
+    for id, btn in pairs(listTabButtons) do
+        styleTab(btn, id == Main.listTab)
+    end
+end
+
+---Switches the list area between objects and players, the top level choice: the editor tabs are
+---only there for objects
+---@param id "objects"|"players"
+function Main.setListTab(id)
+    Main.listTab = id
+    applyListTab()
+    Main.applyTab()
+    Main.updateWindow()
 end
 
 -- footer text color while dynamic objects need attention
@@ -248,8 +296,6 @@ function Main.dynamicWarning()
 end
 
 local function setDynamicStrings()
-    listHeader:addAdaptedText("Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS,
-        nil, nil, nil, CENTERMID, nil, nil, nil)
     local warning = Main.dynamicWarning()
     limitsRow.uiColor = warning and WARNING_COLOR or UICOLORWHITE
     Widgets.infoText(limitsRow, "Dynamic " .. ModData.countDynamic() .. "/" .. MGE.MAX_NONSTATIC_OBJECTS ..
@@ -258,7 +304,11 @@ local function setDynamicStrings()
 end
 
 local function createObjSelector()
-    obj_selector.create(obj_selector_container, ModData.parsed.env_obj)
+    if Main.listTab == "players" then
+        player_list.create(obj_selector_container)
+    else
+        obj_selector.create(obj_selector_container, ModData.parsed.env_obj)
+    end
 end
 
 local function createEditor()
@@ -310,8 +360,8 @@ end
 setDynamicStrings()
 createObjSelector();
 createEditor()
-assetsView.create(assetsContainer)
 Main.applyTab()
+applyListTab()
 
 -- closing the window quits the script, window is already being killed so quit skips it
 Main.window.killAction = function() MGE.quit(true) end

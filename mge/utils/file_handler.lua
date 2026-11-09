@@ -265,6 +265,167 @@ local function writeParsedEnvObj(file, objects)
     end
 end
 
+-- section words that belong inside a player section (player 0 > body head, joint neck)
+local PLAYER_PART_WORDS = { body = true, joint = true }
+
+---Line range of a `player N` section: its header to its last non blank line. The section ends at an
+---unindented line or another section header (player 1, env_obj...), indented body/joint lines are its parts
+---@param lines string[]
+---@param playerId integer? nil finds the first player section
+---@return integer? first header line
+---@return integer? last
+---@return integer? playerId of the found section
+local function findPlayerSection(lines, playerId)
+    for i, line in ipairs(lines) do
+        local id = tonumber(line:match("^%s*player%s+(%d+)%s*$"))
+        if id and (playerId == nil or id == playerId) then
+            local last = i
+            for j = i + 1, #lines do
+                local l = lines[j]
+                if not l:match("^%s*$") then
+                    local word = firstWord(l) or ""
+                    if not l:match("^%s") or (SECTION_WORDS[word] and not PLAYER_PART_WORDS[word]) then break end
+                    last = j
+                end
+            end
+            return i, last, id
+        end
+    end
+    return nil, nil, nil
+end
+
+---Player sections can be before the first object (ignores) or after the objects (trailer)
+local PLAYER_LISTS = { "ignores", "trailer" }
+
+---Lines of a player section without its header (the body/joint parts, indentation kept)
+---@param parser FileParserResult
+---@param playerId integer? nil takes the first player section
+---@return string[]? nil when there's no such section (the game uses its default body)
+---@return integer? playerId of the found section
+function FileHandler.getPlayerLines(parser, playerId)
+    for _, key in ipairs(PLAYER_LISTS) do
+        local list = parser[key] or {}
+        local first, last, id = findPlayerSection(list, playerId)
+        if first then
+            local lines = {}
+            for i = first + 1, last do table.insert(lines, list[i]) end
+            return lines, id
+        end
+    end
+    return nil, nil
+end
+
+---Body/joint parts outside player sections (e.g. fatkido.tbm), the game applies them to all players.
+---Indentation is normalized to player section layout, some mods write these unindented
+---@param parser FileParserResult
+---@return string[]? nil when there are none
+function FileHandler.getSharedPlayerLines(parser)
+    local parts = {}
+    for _, key in ipairs(PLAYER_LISTS) do
+        local inPlayer, inPart = false, false
+        for _, line in ipairs(parser[key] or {}) do
+            local word = firstWord(line)
+            if word then
+                -- same end rule as findPlayerSection
+                if inPlayer and (not line:match("^%s") or (SECTION_WORDS[word] and not PLAYER_PART_WORDS[word])) then
+                    inPlayer = false
+                end
+                if word == "player" then
+                    inPlayer, inPart = true, false
+                elseif not inPlayer and PLAYER_PART_WORDS[word] then
+                    inPart = true
+                    table.insert(parts, indent .. (line:gsub("^%s+", "")))
+                elseif SECTION_WORDS[word] or inPlayer then
+                    inPart = false
+                elseif inPart then
+                    table.insert(parts, indent .. indent .. (line:gsub("^%s+", "")))
+                end
+            end
+        end
+    end
+    return #parts > 0 and parts or nil
+end
+
+---Replaces a player section's parts, or adds the section after the objects when the mod has none.
+---ignores/trailer are replaced with new tables, not modified: history states share them
+---@param parser FileParserResult
+---@param playerId integer
+---@param parts string[] lines after the header
+function FileHandler.setPlayerLines(parser, playerId, parts)
+    for _, key in ipairs(PLAYER_LISTS) do
+        local list = parser[key] or {}
+        local first, last = findPlayerSection(list, playerId)
+        if first then
+            local lines = {}
+            for i = 1, first do table.insert(lines, list[i]) end -- header kept as written
+            for _, line in ipairs(parts) do table.insert(lines, line) end
+            for i = last + 1, #list do table.insert(lines, list[i]) end
+            parser[key] = lines
+            return
+        end
+    end
+    local lines = {}
+    for _, line in ipairs(parser.trailer or {}) do table.insert(lines, line) end
+    if #lines > 0 then table.insert(lines, "") end
+    table.insert(lines, "player " .. playerId)
+    for _, line in ipairs(parts) do table.insert(lines, line) end
+    parser.trailer = lines
+end
+
+---Writes gamerule values into the `gamerule` section: existing lines get the new value (indentation
+---kept), missing rules are added at the end of the section, the section is added when the mod has none.
+---The section is its rule lines, blanks and comments after the header (some mods don't indent rules).
+---ignores/trailer are replaced with new tables, not modified: history states share them
+---@param parser FileParserResult
+---@param values table<string, string> rules to write
+---@param ruleNames table<string, any> every gamerule name, tells rule lines from what comes after the section
+function FileHandler.setGamerules(parser, values, ruleNames)
+    local pending = {}
+    for name in pairs(values) do table.insert(pending, name) end
+    table.sort(pending)
+
+    for _, key in ipairs(PLAYER_LISTS) do
+        local list = parser[key] or {}
+        local header
+        for i, line in ipairs(list) do
+            if firstWord(line) == "gamerule" then header = i break end
+        end
+        if header then
+            local lines, last = {}, header
+            for i = 1, header do table.insert(lines, list[i]) end
+            local written = {}
+            local i = header + 1
+            while i <= #list do
+                local line = list[i]
+                local word = firstWord(line)
+                if word and not ruleNames[word] and not word:match("^#") and not word:match("^//") then break end
+                if word and values[word] ~= nil then
+                    line = line:match("^(%s*)") .. word .. " " .. values[word]
+                    written[word] = true
+                end
+                table.insert(lines, line)
+                if word then last = #lines end
+                i = i + 1
+            end
+            -- new rules go right after the last rule line, blank lines stay after them
+            local added = {}
+            for _, name in ipairs(pending) do
+                if not written[name] then table.insert(added, indent .. name .. " " .. values[name]) end
+            end
+            for n, line in ipairs(added) do table.insert(lines, last + n, line) end
+            for j = i, #list do table.insert(lines, list[j]) end
+            parser[key] = lines
+            return
+        end
+    end
+
+    local lines = {}
+    for _, line in ipairs(parser.ignores or {}) do table.insert(lines, line) end
+    table.insert(lines, "gamerule")
+    for _, name in ipairs(pending) do table.insert(lines, indent .. name .. " " .. values[name]) end
+    parser.ignores = lines
+end
+
 ---@param parser FileParserResult
 ---@param path string
 ---@return boolean

@@ -10,17 +10,13 @@ local ScrollList = MGE.ScrollList
 local FileHandler = MGE.FileHandler
 local SHAPE = MGE.SHAPE
 
----@type UIElement
-local content = nil
-local selectedAssetName = nil
----@type { row: UIElement, index: integer }?
-local selectedRow = nil
-local searchText = ""
-local assetPage = 1
-local assetPageSize = 64
-local refreshAssetList
+local selectedAssetName = nil -- last picked asset, the default name for the next export
 
 local ASSET_DIR = MGE.scriptPath .. "assets" -- scriptPath ends with "/"
+-- object groups and player models are kept in their own folders, the list shows one kind at a time
+local ASSET_FOLDERS = { obj = "obj", player = "player" }
+---@type "obj"|"player"
+local assetKind = "obj" -- set from the list tab when exporting / opening the import overlay
 
 -- the game shifts mod file positions by this much when a mod loads (world = file - shift),
 -- exported assets subtract it again so they hold the values a mod file would
@@ -43,7 +39,7 @@ end
 local function getAssetPath(name)
     local fileName = sanitizeAssetName(name)
     if fileName == "" then return nil end
-    return ASSET_DIR .. "/" .. fileName
+    return ASSET_DIR .. "/" .. ASSET_FOLDERS[assetKind] .. "/" .. fileName
 end
 
 ---Distance from object center to its lowest point in world space, accounts for rotation
@@ -66,19 +62,20 @@ local function getObjHalfHeight(id)
     return (zx * sx + zy * sy + zz * sz) / 2 -- box: projected half extents
 end
 
----@type string[]? cached folder listing, search filters this instead of reading the folder per key
-local assetFiles = nil
+---@type table<string, string[]> cached folder listing per kind, search filters this instead of reading the folder per key
+local assetFiles = {}
 
----@return string[] asset file names, sorted
+---@return string[] asset file names of the shown kind, sorted
 local function getAssetFiles()
-    if assetFiles then return assetFiles end
-    assetFiles = {}
-    for _, fileName in ipairs(get_files("data/script/" .. ASSET_DIR, "")) do
+    if assetFiles[assetKind] then return assetFiles[assetKind] end
+    local files = {}
+    assetFiles[assetKind] = files
+    for _, fileName in ipairs(get_files("data/script/" .. ASSET_DIR .. "/" .. ASSET_FOLDERS[assetKind], "")) do
         local name = tostring(fileName):gsub("^.*[/\\]", "")
-        if name:match("%.tbm$") then table.insert(assetFiles, name) end
+        if name:match("%.tbm$") then table.insert(files, name) end
     end
-    table.sort(assetFiles)
-    return assetFiles
+    table.sort(files)
+    return files
 end
 
 local function saveSelectedToAsset()
@@ -139,8 +136,7 @@ local function saveSelectedToAsset()
             end
             if FileHandler.WriteMod(parser, path) then
                 print("asset saved: " .. path)
-                assetFiles = nil -- re-read the folder to show the new asset
-                refreshAssetList()
+                assetFiles[assetKind] = nil -- re-read the folder to show the new asset
                 return true
             end
             print("failed to save asset")
@@ -198,157 +194,267 @@ local function importAssetFromFile(assetName)
     print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints")
 end
 
-local function filterAssets()
-    local assets = getAssetFiles()
-    local searchTerm = string.lower(tostring(searchText or ""))
-    if searchTerm == "" then return assets, searchTerm end
-
-    local filteredAssets = {}
-    for _, assetName in ipairs(assets) do
-        if string.find(string.lower(assetName), searchTerm, 1, true) then
-            table.insert(filteredAssets, assetName)
-        end
+---Saves the mod's `player N` section (body/joint parts, the player's model) as a player asset.
+---Player values are relative to the player's own spawn, so the section is copied as is
+local function savePlayerToAsset()
+    Main.getPlayerCount() -- resets a player id the mod doesn't have
+    local playerId = Main.selectedPlayer
+    -- no player section: parts written for all players (fatkido.tbm style) are what this player uses
+    local parts = FileHandler.getPlayerLines(ModData.parsed, playerId) or FileHandler.getSharedPlayerLines(ModData.parsed)
+    if not parts then
+        print("Player " .. playerId .. " uses the default body, the mod has no body or joint changes for it")
+        return
     end
-    return filteredAssets, searchTerm
-end
 
----@class AssetListElements
----@field pagerHolder UIElement right half of the top bar, pager is rebuilt in here
----@field rowsHolder UIElement rows are rebuilt in here
----@field toReload UIElement bars redrawn over rows that scroll past the list edges
-local list = nil
-
----Rebuilds pager and rows, the list frame and search field stay as they are
-local function buildAssetList()
-    local filteredAssets, searchTerm = filterAssets()
-    local pageAssets, page, pageCount = ScrollList.paginate(filteredAssets, assetPage, assetPageSize)
-    assetPage = page
-
-    -- kill(true) keeps the holders, kill() would leave destroyed elements in the parent's child list
-    list.pagerHolder:kill(true)
-    list.rowsHolder:kill(true)
-
-    ScrollList.createPager(list.pagerHolder, { x = 0, y = 0, w = list.pagerHolder.size.w, h = list.pagerHolder.size.h },
-        assetPage, pageCount, function(newPage)
-            assetPage = newPage
-            refreshAssetList()
-        end)
-
-    selectedRow = nil
-    ScrollList.create(list.rowsHolder, {
-        x = 0,
-        y = 0,
-        w = list.rowsHolder.size.w,
-        h = list.rowsHolder.size.h
-    }, pageAssets, function(row, assetName, index)
-        row:addAdaptedText(assetName, 5, nil, nil, LEFTMID, 0.6, nil, nil)
-
-        local function select()
-            if selectedRow then
-                selectedRow.row.bgColor = ScrollList.getRowColor(selectedRow.index)
+    MGE.saveOverlayContext = {
+        title = "Player Model Name",
+        placeholder = "Enter model name",
+        defaultName = selectedAssetName or "",
+        sanitize = sanitizeAssetName,
+        validate = function(name)
+            if name == "" then
+                return false, "Enter a model name"
             end
-            selectedRow = { row = row, index = index }
-            selectedAssetName = assetName
-            row.bgColor = ScrollList.selectedColor
+            return true
+        end,
+        onSave = function(name)
+            local path = getAssetPath(name)
+            if not path then return false end
+            -- stored as player 0, replacing writes the parts under the chosen player
+            local lines = { "player 0" }
+            for _, line in ipairs(parts) do table.insert(lines, line) end
+            if FileHandler.WriteMod({ env_obj = {}, env_obj_joint = {}, ignores = lines }, path) then
+                print("player model saved: " .. path)
+                assetFiles[assetKind] = nil -- re-read the folder to show the new asset
+                return true
+            end
+            print("failed to save player model")
+            return false
         end
-        if assetName == selectedAssetName then select() end
-
-        -- selecting only highlights, importing is done with the import button
-        row:addMouseUpHandler(select)
-    end, list.toReload, searchTerm ~= "" and "No matching assets" or "No assets saved yet")
+    }
+    dofile(MGE.scriptPath .. "ui/save_overlay.lua")
 end
 
-refreshAssetList = function()
-    buildAssetList()
-    -- new children are displayed on creation, re-apply tab visibility in case this tab is hidden
-    if Main and Main.applyTab then Main.applyTab() end
+---Replaces the mod's `player N` section with the selected player asset (added if the mod has none)
+---@param assetName string
+local function replacePlayerFromFile(assetName)
+    local path = getAssetPath(assetName)
+    if not path or not Files.Exists(path) then
+        print("Asset not found")
+        return
+    end
+    -- first player section in the file, or parts for all players, so mods like fatkido.tbm can be
+    -- copied into the player folder as they are
+    local assetParser = FileHandler.ParseMod(path)
+    local parts = FileHandler.getPlayerLines(assetParser) or FileHandler.getSharedPlayerLines(assetParser)
+    if not parts then
+        print("Asset file contains no body or joint changes")
+        return
+    end
+
+    Main.getPlayerCount() -- resets a player id the mod doesn't have
+    local playerId = Main.selectedPlayer
+    FileHandler.setPlayerLines(ModData.parsed, playerId, parts)
+    History.commit()
+    MGE.save() -- body changes need a reload
+    print("player " .. playerId .. " replaced with " .. assetName)
 end
 
----Creates the list frame once: search + pager on top, rows, export/import buttons on the bottom
-local function createListFrame()
-    local barHeight = ScrollList.rowHeight
-    local bottomH = barHeight -- same height as the object list's bars
-    local listView = content:addChild({
-        pos = { 0, 0 },
-        size = { content.size.w, content.size.h },
-    }, true)
 
-    local toReload = listView:addChild({
-        pos = { 0, 0 },
-        size = { listView.size.w, listView.size.h },
-    }, true)
-    local topBar = toReload:addChild({
-        pos = { 0, 0 },
-        size = { listView.size.w, barHeight },
+---@return "obj"|"player" asset kind for what the list shows
+local function listKind()
+    return Main.listTab == "players" and "player" or "obj"
+end
+
+---Export button of the object / player list: saves the selected objects or the picked player's model
+function assetsView.export()
+    assetKind = listKind()
+    if assetKind == "obj" then saveSelectedToAsset() else savePlayerToAsset() end
+end
+
+-- import overlay layout
+local OVERLAY_W = 420
+local OVERLAY_H = 460
+local OVERLAY_PADDING = 10
+local OVERLAY_TITLE_H = 44
+local OVERLAY_BUTTON_H = 40
+local ASSET_PAGE_SIZE = 64
+local DOUBLE_CLICK_TIME = 0.35
+
+---Import button of the object / player list: opens a list of the saved assets of that kind.
+---Objects are added at the spawn point, a player model replaces the picked player's model
+function assetsView.openImport()
+    if MGE.importOverlay or MGE.saveOverlay then return end
+    assetKind = listKind()
+    local kind = assetKind
+    local selectedName = nil
+    local searchText = ""
+    local page = 1
+
+    local overlay = TBMenu:spawnWindowOverlay()
+    MGE.importOverlay = overlay -- lets MGE.quit close it
+    local defaultKillAction = overlay.killAction
+    overlay.killAction = function()
+        if defaultKillAction then defaultKillAction() end
+        -- the search field would otherwise stay in toriui's keyboard list (see Widgets.releaseKeyboard)
+        if MGE and MGE.Widgets then MGE.Widgets.releaseKeyboard(overlay) end
+        if MGE then MGE.importOverlay = nil end
+        enable_camera_movement()
+    end
+    local function close() overlay:kill() end
+
+    local w = math.min(OVERLAY_W, WIN_W - 20)
+    local h = math.min(OVERLAY_H, WIN_H - 20)
+    local box = overlay:addChild({
+        pos = { (WIN_W - w) / 2, (WIN_H - h) / 2 },
+        size = { w, h },
         bgColor = TB_MENU_DEFAULT_BG_COLOR,
-    }, true)
-    -- bars live in toReload so they are redrawn over rows that scroll past the list edges
-    local bottomBar = toReload:addChild({
-        pos = { 0, -bottomH },
-        size = { listView.size.w, bottomH },
+        shapeType = ROUNDED,
+        rounded = 5,
+        interactive = true,
+    })
+    -- the overlay blocks list scrolling (UIScrollbarIgnore), allow it while the mouse is over the box,
+    -- like the game's replay comments. Checked by position: hovering a row takes the box's hover state
+    box:addCustomDisplay(function()
+        UIScrollbarIgnore = not (MOUSE_X >= box.pos.x and MOUSE_X <= box.pos.x + box.size.w and
+            MOUSE_Y >= box.pos.y and MOUSE_Y <= box.pos.y + box.size.h)
+    end)
+
+    local barH = ScrollList.rowHeight
+    local innerW = w - OVERLAY_PADDING * 2
+    local listY = OVERLAY_TITLE_H + barH
+    local listH = h - listY - OVERLAY_BUTTON_H - OVERLAY_PADDING * 2
+
+    -- redrawn on scroll: covers rows that scroll past the list edges, holds everything around the list
+    local toReload = box:addChild({
+        pos = { 0, 0 },
+        size = { w, h },
+    })
+    local header = toReload:addChild({
+        pos = { 0, 0 },
+        size = { w, listY },
         bgColor = TB_MENU_DEFAULT_BG_COLOR,
-    }, true)
-    MGE.Widgets.barButtons(bottomBar, {
-        { label = "Export selected", onClick = saveSelectedToAsset },
-        { label = "Import", onClick = function()
-            if selectedAssetName then
-                importAssetFromFile(selectedAssetName)
-            else
-                print("Select an asset from the list")
+    })
+    local title = header:addChild({
+        pos = { OVERLAY_PADDING, 0 },
+        size = { innerW, OVERLAY_TITLE_H },
+    })
+    title:addAdaptedText(true, kind == "obj" and "Import Objects" or ("Import Model to Player " .. Main.selectedPlayer),
+        nil, nil, FONTS.BIG, nil, 0.6)
+    local topBar = header:addChild({
+        pos = { OVERLAY_PADDING, OVERLAY_TITLE_H },
+        size = { innerW, barH },
+        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+    })
+    local footer = toReload:addChild({
+        pos = { 0, listY + listH },
+        size = { w, h - listY - listH },
+        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+    })
+
+    -- search on the left half, pager on the right half (same split as the object list)
+    local halfW = innerW / 2
+    local searchHolder = topBar:addChild({ pos = { 0, 0 }, size = { halfW, barH } })
+    local pagerHolder = topBar:addChild({ pos = { halfW, 0 }, size = { innerW - halfW, barH } })
+    local rowsHolder = box:addChild({
+        pos = { OVERLAY_PADDING, listY },
+        size = { innerW, listH },
+    })
+
+    local function importSelected()
+        if not selectedName then
+            TBMenu:showStatusMessage("Select an asset from the list")
+            return
+        end
+        selectedAssetName = selectedName
+        close()
+        if kind == "obj" then importAssetFromFile(selectedName) else replacePlayerFromFile(selectedName) end
+    end
+
+    local buildList
+    local function rebuild() buildList() end
+    ---@type { name: string, time: number }?
+    local lastClick = nil -- a double click imports
+
+    buildList = function()
+        local term = string.lower(searchText)
+        local matches = {}
+        for _, name in ipairs(getAssetFiles()) do
+            if term == "" or string.find(string.lower(name), term, 1, true) then table.insert(matches, name) end
+        end
+        local pageItems, clamped, pageCount = ScrollList.paginate(matches, page, ASSET_PAGE_SIZE)
+        page = clamped
+
+        -- kill(true) keeps the holders, kill() would leave destroyed elements in the parent's child list
+        pagerHolder:kill(true)
+        rowsHolder:kill(true)
+        ScrollList.createPager(pagerHolder, { x = 0, y = 0, w = pagerHolder.size.w, h = barH }, page, pageCount,
+            function(newPage)
+                page = newPage
+                rebuild()
+            end)
+
+        ---@type { row: UIElement, index: integer }?
+        local selectedRow = nil
+        ScrollList.create(rowsHolder, { x = 0, y = 0, w = innerW, h = listH }, pageItems, function(row, name, index)
+            row:addAdaptedText(name, 5, nil, nil, LEFTMID, 0.6, nil, nil)
+            local function select()
+                if selectedRow then
+                    selectedRow.row.bgColor = ScrollList.getRowColor(selectedRow.index)
+                end
+                selectedRow = { row = row, index = index }
+                selectedName = name
+                row.bgColor = ScrollList.selectedColor
             end
-        end },
-    })
+            if name == selectedName then select() end
+            row:addMouseUpHandler(function()
+                local now = UIElement.clock or os.clock()
+                local double = lastClick ~= nil and lastClick.name == name and now - lastClick.time <= DOUBLE_CLICK_TIME
+                lastClick = { name = name, time = now }
+                select()
+                if double then importSelected() end
+            end)
+        end, toReload, term ~= "" and "No matching assets" or
+            ("No assets saved yet, Export saves them in " .. ASSET_DIR .. "/" .. ASSET_FOLDERS[kind]))
+    end
 
-    -- top bar: search on the left half, pager on the right half (same split as the object list)
-    local halfW = topBar.size.w / 2
-    local searchHolder = topBar:addChild({
-        pos = { 0, 0 },
-        size = { halfW, barHeight },
-    })
-    local pagerHolder = topBar:addChild({
-        pos = { halfW, 0 },
-        size = { topBar.size.w - halfW, barHeight },
-    })
-
-    -- created once so typing doesn't rebuild the text field, only the pager and rows.
-    -- keepFocusOnHide keeps focus when toReload is hidden/shown on scroll
     local search = TBMenu:spawnTextField2(searchHolder, {
         x = 2, y = 2,
-        w = searchHolder.size.w - 4, h = searchHolder.size.h - 4
+        w = searchHolder.size.w - 4, h = barH - 4
     }, nil, "Search assets", {
         fontId = 4,
         textScale = 0.65,
         textAlign = LEFTMID,
-        keepFocusOnHide = true,
+        keepFocusOnHide = true, -- toReload is hidden/shown on scroll
     })
-    if searchText ~= "" then
-        search:setText(searchText)
-    end
     search:addInputCallback(function()
         searchText = tostring(search.textfieldstr[1] or "")
-        assetPage = 1
-        refreshAssetList()
-    end)
-    -- keepFocusOnHide keeps the keyboard captured after the window is killed, release it on quit
-    table.insert(MGE.onQuit, function()
-        if search.menuKeyboardId then search:disableMenuKeyboard() end
+        page = 1
+        rebuild()
     end)
 
-    local rowsHolder = listView:addChild({
-        pos = { 0, barHeight },
-        size = { listView.size.w, listView.size.h - barHeight - bottomH },
-    })
+    local buttonW = (innerW - OVERLAY_PADDING) / 2
+    for i, info in ipairs({
+        { label = TB_MENU_LOCALIZED.BUTTONCANCEL, onClick = close },
+        { label = "Import", onClick = importSelected },
+    }) do
+        local btn = footer:addChild({
+            pos = { OVERLAY_PADDING + (i - 1) * (buttonW + OVERLAY_PADDING), OVERLAY_PADDING },
+            size = { buttonW, OVERLAY_BUTTON_H },
+            interactive = true,
+            bgColor = { 0, 0, 0, 0.1 },
+            hoverColor = { 0, 0, 0, 0.3 },
+            pressedColor = { 1, 1, 1, 0.2 },
+            shapeType = ROUNDED,
+            rounded = 4,
+        }, true)
+        btn:addAdaptedText(false, info.label)
+        btn:addMouseHandlers(nil, info.onClick)
+    end
 
-    list = { pagerHolder = pagerHolder, rowsHolder = rowsHolder, toReload = toReload }
+    assetFiles[kind] = nil -- re-read the folder, files may have been added outside the game
+    buildList()
 end
 
----Layout: list frame fills the area (search + pager, rows, export/import)
----@param container UIElement
-function assetsView.create(container)
-    content = container
-    selectedRow = nil
-    createListFrame()
-    buildAssetList()
-end
-
+MGE.Assets = assetsView
 return assetsView

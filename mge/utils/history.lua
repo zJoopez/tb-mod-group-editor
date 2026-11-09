@@ -18,7 +18,8 @@ local History = {
 local function copyObject(obj)
     local copy = ModData.copy(obj)
     copy.props = ModData.copy(obj.props)
-    -- lines, ignores and trailer are never modified after parsing, frame is replaced not modified, safe to share
+    -- lines, ignores and trailer are never modified after parsing (only replaced), frame is replaced not
+    -- modified, safe to share
     return copy
 end
 
@@ -67,6 +68,8 @@ end
 ---@return boolean
 local function sameObjects(a, b)
     if #a.env_obj ~= #b.env_obj or #a.env_obj_joint ~= #b.env_obj_joint then return false end
+    -- player model replaced (FileHandler.setPlayerLines swaps these tables), needs a reload
+    if a.ignores ~= b.ignores or a.trailer ~= b.trailer then return false end
     for i, obj in ipairs(a.env_obj) do
         local other = b.env_obj[i]
         if obj.id ~= other.id or not sameProps(obj.props, other.props, LIVE_KEYS) then return false end
