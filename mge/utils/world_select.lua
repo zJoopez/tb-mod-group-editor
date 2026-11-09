@@ -19,6 +19,7 @@ local HOOK_SET = MGE.hookname .. "_worldselect" -- own set, MGE's draw3d hook is
 ---@class WorldSelect
 local WorldSelect = {
     clickMoveLimit = 4, -- pixels the mouse may move between down and up to still count as a click
+    enabled = true, -- toggled by the mouse button in the top menu, off lets you play without selecting
 }
 
 ---@type { x: number, y: number }?
@@ -180,7 +181,14 @@ end
 
 local function isActive()
     local Main = MGE.Main -- created after this module loads
-    return Main and Main.window and Main.window.displayed and not TB_MENU_INPUT_ISACTIVE
+    return WorldSelect.enabled and Main and Main.window and Main.window.displayed and not TB_MENU_INPUT_ISACTIVE
+end
+
+---Turns click to select on or off. A click already waiting is dropped when turned off
+---@param enabled boolean
+function WorldSelect.setEnabled(enabled)
+    WorldSelect.enabled = enabled
+    if not enabled then pressed, pendingClick = nil, nil end
 end
 
 add_hook("mouse_button_down", HOOK_SET, function(button, x, y)

@@ -19,6 +19,7 @@
 ---@field cameraChanged boolean? camera was switched to look-at mode, reset on quit
 ---@field reloadPending boolean? next match_begin comes from our own save
 ---@field keptSelection table<integer, boolean>? selected object ids restored after our own save
+---@field focusAfterReload boolean? look at the selection after our own save reloads (asset import)
 ---@field onQuit function[] cleanup callbacks registered by modules, run on quit
 ---@field Main Main main window, set by ui/main.lua
 ---@field Editor table editor panels and duplicate/delete, set by ui/editor.lua
@@ -138,6 +139,11 @@ add_hook("match_begin", MGE.hookname, function()
             obj.selected = MGE.keptSelection and MGE.keptSelection[obj.id] or nil
         end
         MGE.Main.updateWindow()
+        -- e.g. an asset import: the new objects are selected and only exist in the world now
+        if MGE.focusAfterReload and MGE.Camera.followMoves then
+            local selected = ModData.getSelected()
+            if #selected > 0 then MGE.Camera.focus(selected) end
+        end
     else
         -- other reloads (new mod, game restart) re-read the file, older states no longer match
         History.reset()
@@ -145,6 +151,7 @@ add_hook("match_begin", MGE.hookname, function()
     end
     MGE.reloadPending = false
     MGE.keptSelection = nil
+    MGE.focusAfterReload = nil -- only for the reload it was set for
 end)
 
 -- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game), Ctrl+S saves the working file,

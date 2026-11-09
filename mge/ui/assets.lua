@@ -190,6 +190,10 @@ local function importAssetFromFile(assetName)
 
     ModData.sortObjects()
     History.commit()
+    -- imports land at the spawn point, which doesn't move: show the editor to move them right away and
+    -- look at them once they're in the world (after the reload, if the camera button is on)
+    MGE.Main.setTab("core")
+    MGE.focusAfterReload = true
     MGE.save() -- the reload refreshes the window
     print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints")
 end

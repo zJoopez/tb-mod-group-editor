@@ -44,17 +44,21 @@ local menuBar = content:addChild({
     size = { content.size.w, menuH },
     bgColor = TB_MENU_DEFAULT_BG_COLOR,
 })
-local iconsW = iconSize * 4 + iconGap * 3
+local iconsW = iconSize * 5 + iconGap * 4
 local iconsX = menuBar.size.w - (helpSize + 4) - iconGap - iconsW
 local iconButtons = menuBar:addChild({
     pos = { iconsX, 0 },
     size = { iconsW, menuH },
 })
-local cameraButton
+local cameraButton, mouseButton
 ---Camera button is highlighted while Move makes the camera follow the selection
 local function updateCameraButton()
     local on = MGE.Camera.followMoves
     cameraButton.bgColor = on and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
+end
+---Mouse button is highlighted while clicking objects in the world selects them
+local function updateMouseButton()
+    mouseButton.bgColor = MGE.WorldSelect.enabled and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
 end
 local icons = Widgets.barButtons(iconButtons, {
     -- working file (same as Ctrl+S), game's save icon
@@ -64,12 +68,19 @@ local icons = Widgets.barButtons(iconButtons, {
         MGE.Camera.followMoves = not MGE.Camera.followMoves
         updateCameraButton()
     end },
+    -- click to select objects in the world, off to play the mod without selecting (mge/textures/mouse.tga)
+    { label = "Select", icon = MGE.scriptPath .. "textures/mouse.tga", onClick = function()
+        MGE.WorldSelect.setEnabled(not MGE.WorldSelect.enabled)
+        updateMouseButton()
+    end },
     -- game's undo icon, redo is the same icon mirrored (mge/textures/redo.tga)
     { label = "Undo", icon = "../textures/menu/general/buttons/undo.tga", onClick = function() History.undo() end },
     { label = "Redo", icon = MGE.scriptPath .. "textures/redo.tga", onClick = function() History.redo() end },
 })
 cameraButton = icons[2]
+mouseButton = icons[3]
 updateCameraButton()
+updateMouseButton()
 local menuTextW = 80 -- fixed width, leaves open space between the text and icon groups
 local textButtons = menuBar:addChild({
     pos = { 0, 0 },
@@ -91,7 +102,9 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Click an object in the world: select / deselect it\n" ..
     "Click an id in the list: select / deselect, double click: look at it\n" ..
     "Drag / mouse wheel: orbit / zoom the camera after looking at objects\n" ..
-    "Camera button: camera follows the selection when moving (highlighted when on)")
+    "Camera button: camera follows the selection when moving (highlighted when on)\n" ..
+    "Mouse button: click objects in the world to select them (highlighted when on),\n" ..
+    "turn off to play the mod without selecting")
 updateContentHeight(menuH)
 
 -- header for the object list: what it lists and how full the mod is, set by setDynamicStrings
