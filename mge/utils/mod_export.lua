@@ -45,6 +45,26 @@ function ModData.copy(t)
     return copy
 end
 
+---Usual click selection, for the object list and clicks in the world: a click selects only the
+---clicked object (clicking the only selected one deselects it), Shift + click adds it to or removes
+---it from the selection
+---@param obj FileParserEnvObj
+---@param additive boolean Shift held: toggle only this object
+---@return boolean selected whether the clicked object ended up selected
+function ModData.clickSelect(obj, additive)
+    if additive then
+        obj.selected = not obj.selected or nil
+        return obj.selected == true
+    end
+    local onlySelected = obj.selected
+    for _, other in ipairs(ModData.parsed.env_obj) do
+        if other ~= obj and other.selected then onlySelected = false end
+        other.selected = nil
+    end
+    obj.selected = not onlySelected or nil
+    return obj.selected == true
+end
+
 ---@return FileParserEnvObj[]
 function ModData.getSelected()
     local selected = {}
@@ -267,6 +287,58 @@ function ModData.reindex()
     return moved, left
 end
 
+-- model_name is relative to mod_assets/<the mod file's folders>/<mod name>/, as used by the game's own
+-- mods: mod/owo.tbm uses ../Noki/PinTori for mod_assets/Noki/PinTori.obj, mod/Fun/HoleInTheWall/
+-- holeinthewall6.tbm uses ../../../events/sakura for mod_assets/events/sakura.obj
+
+---@param path string? "" for the root
+---@return string[]
+local function splitPath(path)
+    local parts = {}
+    for part in tostring(path or ""):gmatch("[^/\\]+") do table.insert(parts, part) end
+    return parts
+end
+
+---model_name for a model saved by MGE: our files (working file, Save as) are in data/mod itself, so
+---their model folder is mod_assets/<mod name>/ and models are one folder up from it
+---@param model string model path in mod_assets without .obj, e.g. "Noki/PinTori"
+---@return string
+function ModData.toModelName(model)
+    return "../" .. model
+end
+
+---Model path in mod_assets (without .obj) that a model_name points to, for the mod file at modPath
+---@param modelName string?
+---@param modPath string? mod file path relative to data/mod, e.g. "Fun/HoleInTheWall/holeinthewall6.tbm"
+---@return string? nil when it points outside mod_assets
+function ModData.fromModelName(modelName, modPath)
+    if not modelName or modelName == "" then return nil end
+    -- the mod's model folder: its folders, then a folder named like the mod
+    local parts = splitPath(modPath)
+    if #parts > 0 then parts[#parts] = parts[#parts]:gsub("%.tbm$", "") else parts = { "mod" } end
+    for _, part in ipairs(splitPath(modelName)) do
+        if part == ".." then
+            if #parts == 0 then return nil end
+            table.remove(parts)
+        elseif part ~= "." then
+            table.insert(parts, part)
+        end
+    end
+    return table.concat(parts, "/")
+end
+
+---MGE saves into data/mod itself (working file, Save as), so models of a mod loaded from a subfolder
+---would point to the wrong folder after the first save: rewrite them relative to data/mod
+local function rebaseModels()
+    if not tostring(MGE.modPath or ""):find("[/\\]") then return end
+    for _, obj in ipairs(ModData.parsed.env_obj) do
+        if obj.props.use_model == "1" then
+            local model = ModData.fromModelName(obj.props.model_name, MGE.modPath)
+            if model then obj.props.model_name = ModData.toModelName(model) end
+        end
+    end
+end
+
 local function init()
     ModData.parsed = { env_obj = {}, env_obj_joint = {}, ignores = {} }
     ModData.freeIds = { nonStatic = {}, static = {} }
@@ -279,6 +351,7 @@ function ModData.reloadObjects()
 
     if MGE.modPath then
         ModData.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
+        rebaseModels()
         ModData.jointIds = getJointIds(ModData.parsed.env_obj_joint)
     else
         print("Mod not found")

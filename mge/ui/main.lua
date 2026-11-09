@@ -101,9 +101,9 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Shift + Y: redo\n" ..
     "Enter: apply the value typed in an input field\n" ..
     "Click Pos / Rot / Scale: switch to Move / Rotate / Resize offsets and back\n" ..
-    "Click an object in the world: select / deselect it\n" ..
-    "Click an id in the list: select only it (again: deselect), Shift + click: add / remove it\n" ..
-    "List buttons (names show on hover): New adds a default object (assets/obj/default.tbm),\n" ..
+    "Click an object in the world or an id in the list: select only it (again: deselect),\n" ..
+    "Shift + click: add / remove it\n" ..
+    "List buttons (names show on hover): New adds a default object,\n" ..
     "Duplicate, Delete, Import, Export\n" ..
     "Export / Import: save the selected objects or picked player as an asset, or pick one to add\n" ..
     "(objects appear at the spawn point, a player model replaces the picked player's), double click imports\n" ..
@@ -237,7 +237,9 @@ local limitsRow = addFooterRow() -- dynamic id and joint usage, set by setDynami
 addFooterRow("Project Mod Group Editor by joopez")
 
 
-dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by the lists and the import overlay
+dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by the lists and the list overlay
+dofile(MGE.scriptPath .. "ui/list_overlay.lua") -- MGE.ListOverlay, popup list: asset import, model picker
+dofile(MGE.scriptPath .. "ui/model_picker.lua") -- MGE.ModelPicker, model_name from data/mod_assets
 dofile(MGE.scriptPath .. "ui/assets.lua") -- MGE.Assets, export / import overlay for the lists' buttons
 local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
 local player_list = dofile(MGE.scriptPath .. "ui/player_list.lua")

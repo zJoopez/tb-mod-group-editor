@@ -1,4 +1,5 @@
--- Click objects in the world to select / deselect them.
+-- Click objects in the world to select them: click selects only that object, Shift + click adds /
+-- removes it (ModData.clickSelect, same as the object list).
 --
 -- The click is turned into a camera ray by MGE itself and intersected exactly with every object's
 -- shape (box, sphere, capsule). The nearest hit along the ray wins, so objects in front block the
@@ -24,7 +25,7 @@ local WorldSelect = {
 
 ---@type { x: number, y: number }?
 local pressed = nil
----@type { x: number, y: number }? click waiting for the next draw3d (get_screen_pos only works there)
+---@type { x: number, y: number, additive: boolean }? click waiting for the next draw3d (get_screen_pos only works there)
 local pendingClick = nil
 
 local function sub(a, b) return { a[1] - b[1], a[2] - b[2], a[3] - b[3] } end
@@ -203,7 +204,7 @@ add_hook("mouse_button_up", HOOK_SET, function(button, x, y)
     if button ~= 1 or not start or not isActive() then return end
     local limit = WorldSelect.clickMoveLimit
     if math.abs(x - start.x) > limit or math.abs(y - start.y) > limit then return end -- camera drag
-    pendingClick = { x = x, y = y }
+    pendingClick = { x = x, y = y, additive = get_keyboard_shift() ~= 0 } -- Shift read at the click
 end)
 
 add_hook("draw3d", HOOK_SET, function()
@@ -216,7 +217,7 @@ add_hook("draw3d", HOOK_SET, function()
         return
     end
     if not obj then return end
-    obj.selected = not obj.selected or nil
+    ModData.clickSelect(obj, click.additive)
     MGE.Main.updateWindow() -- list checkboxes and editor values follow the selection
 end)
 

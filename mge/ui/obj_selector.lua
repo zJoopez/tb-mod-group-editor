@@ -1,6 +1,7 @@
 local obj_selector = {}
 
 local Main = MGE.Main
+local ModData = MGE.ModData
 local ScrollList = MGE.ScrollList
 local Widgets = MGE.Widgets
 
@@ -24,25 +25,6 @@ local function styleCell(cell, selected)
         cell.uiColor = CELL_TEXT
     end
     cell.pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
-end
-
----Usual list selection: a click selects only the clicked object (clicking the only selected one
----deselects it), Shift + click adds it to or removes it from the selection
----@param obj FileParserEnvObj
----@param objects FileParserEnvObj[] every object, others are deselected on a plain click
----@return boolean selected whether the clicked object ended up selected
-local function clickSelect(obj, objects)
-    if get_keyboard_shift() ~= 0 then
-        obj.selected = not obj.selected or nil
-        return obj.selected == true
-    end
-    local onlySelected = obj.selected
-    for _, other in ipairs(objects) do
-        if other ~= obj and other.selected then onlySelected = false end
-        other.selected = nil
-    end
-    obj.selected = not onlySelected or nil
-    return obj.selected == true
 end
 
 local function create(view, fullList)
@@ -83,7 +65,7 @@ local function create(view, fullList)
     })
 
     -- grid: one button per object, several per row. Click selects only that object, Shift + click
-    -- adds / removes it (clickSelect)
+    -- adds / removes it (ModData.clickSelect, same as clicking objects in the world)
     local gridRows = {}
     for i, obj in ipairs(list) do
         local r = math.ceil(i / GRID_COLUMNS)
@@ -116,7 +98,7 @@ local function create(view, fullList)
             styleCell(cell, obj.selected)
             cell:addAdaptedText(tostring(obj.id), nil, nil, nil, CENTERMID, 0.7, nil, nil)
             cell:addMouseUpHandler(function()
-                local selected = clickSelect(obj, fullList)
+                local selected = ModData.clickSelect(obj, get_keyboard_shift() ~= 0)
                 -- restyled in place, rebuilding the list would reset its scroll position
                 for other, otherCell in pairs(cells) do styleCell(otherCell, other.selected) end
                 -- a newly selected object is framed when the Camera button is on

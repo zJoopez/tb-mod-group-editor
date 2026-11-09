@@ -790,7 +790,7 @@ end
 
 -- Two panels sharing the editor area, picked by the window's tab row (Main.applyTab -> editor.applyPanel):
 --   core:     transforms and look: Pos/Move, Angle/Rotate, Size/Scale, Color, Mass, Shape, Visible
---   advanced: physics: Friction, Bounce, Flags, then Ids (Reindex)
+--   advanced: physics: Friction, Bounce, Flags, Model, then Ids (Reindex)
 -- Both have input fields, the reset button is shown under either.
 -- Every block of rows has its own holder. Move/Rotate/Resize are built once (typed values stay), the
 -- other blocks are rebuilt when the selection or the objects change, so their placeholders /
@@ -798,7 +798,7 @@ end
 local ROW_H = 30
 local PANELS = {
     core = { rows = 7 },
-    advanced = { rows = 4 },
+    advanced = { rows = 5 },
 }
 ---@type table<string, UIElement>
 local panels = {}
@@ -1016,6 +1016,56 @@ local function buildFlags(holder, selected)
         "Nogrip: players can't grab the object.")
 end
 
+---3d model shown instead of the object's shape (model_name + use_model), nil for no model
+---@param obj FileParserEnvObj
+---@return string|false model path in mod_assets, false when the object uses no model
+local function getModel(obj)
+    if obj.props.use_model ~= "1" then return false end
+    return ModData.fromModelName(obj.props.model_name, MGE.modPath) or obj.props.model_name or false
+end
+
+---Sets model_name / use_model on the selected objects, needs a reload
+---@param model string? model path in mod_assets without .obj, nil turns the model off
+local function setModel(model)
+    local changed = false
+    for _, v in ipairs(getSelected()) do
+        local useModel = model and "1" or "0"
+        local modelName = model and ModData.toModelName(model) or v.props.model_name
+        if v.props.use_model ~= useModel or v.props.model_name ~= modelName then
+            v.props.use_model = useModel
+            v.props.model_name = modelName -- kept when turning the model off, the game ignores it then
+            changed = true
+        end
+    end
+    if not changed then return end
+    History.commit()
+    MGE.save()
+end
+
+---Model row (advanced panel): the model button opens the picker, None turns the model off
+---@param holder UIElement
+---@param selected FileParserEnvObj[]
+local function buildModel(holder, selected)
+    totalHeight = 0
+    local current = sharedChoice(selected, getModel)
+    local row, contentX, contentW = createRow("Model", holder,
+        "3d model drawn for selected objects instead of their shape, the shape\n" ..
+        "still collides. Click the model to pick a .obj from data/mod_assets,\n" ..
+        "a texture with the same name next to it is used too. None: no model.")
+    local labels = { [false] = "Pick model", mixed = "Mixed" }
+    local label = current == nil and "-" or labels[current] or tostring(current)
+    local gap = 4
+    local noneW = (contentW - 4 - gap) * 0.3
+    local modelW = contentW - 4 - gap - noneW
+    Widgets.button(row, { x = contentX + 2, y = 2, w = modelW, h = row.size.h - 4 }, label, function()
+        if #getSelected() == 0 then return end
+        MGE.ModelPicker.open(type(current) == "string" and current or nil, setModel)
+    end, nil, Widgets.PANEL_STYLE)
+    local none = Widgets.button(row, { x = contentX + 2 + modelW + gap, y = 2, w = noneW, h = row.size.h - 4 }, "None",
+        function() setModel(nil) end, nil, Widgets.PANEL_STYLE)
+    if current == false then none.bgColor = TB_MENU_DEFAULT_LIGHTER_COLOR end -- like the current choice
+end
+
 ---Dynamic objects can end up above id 48 (the footer warns), this moves them down and static
 ---objects up, as far as ids allow. Acts on all objects, not the selection
 local function reindex()
@@ -1051,9 +1101,10 @@ local BLOCKS = {
     looks = { build = buildLooks, panel = "core", row = 5, rows = 2 },
     advancedProps = { build = buildAdvancedProps, panel = "advanced", row = 0, rows = 2 },
     flags = { build = buildFlags, panel = "advanced", row = 2, rows = 1 },
+    model = { build = buildModel, panel = "advanced", row = 3, rows = 1 },
 }
 -- fixed build order (pairs() order isn't defined)
-local BLOCK_ORDER = { "measured", "coreProps", "looks", "advancedProps", "flags" }
+local BLOCK_ORDER = { "measured", "coreProps", "looks", "advancedProps", "flags", "model" }
 
 -- input lists in inwuts: all of them are cleared by "Reset inputs", the rebuilt ones keep typed text
 local ALL_INPUTS = { "pos", "rot", "scale", "position", "angle", "size", "color", "coreProps", "advancedProps" }
@@ -1165,7 +1216,7 @@ function editor.create(parent)
         size = { parent.size.w, 3 * ROW_H },
     }))
     buildIdRows(panels.advanced:addChild({
-        pos = { 0, 3 * ROW_H },
+        pos = { 0, 4 * ROW_H },
         size = { parent.size.w, ROW_H },
     }))
     blocks = {}
