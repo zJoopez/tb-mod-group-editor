@@ -97,25 +97,17 @@ Widgets.barButtons(textButtons, {
 })
 Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Shortcuts\n" ..
-    "F1: show / hide this window\n" ..
-    "Ctrl + S: save edits to the working file and reload it\n" ..
-    "Ctrl + A: select / deselect all objects\n" ..
-    "Shift + Z: undo\n" ..
-    "Shift + Y: redo\n" ..
-    "Enter: apply the value typed in an input field\n" ..
-    "Click Pos / Rot / Scale: switch to Move / Rotate / Resize offsets and back\n" ..
-    "Click an object in the world or an id in the list: select only it (again: deselect),\n" ..
-    "Shift + click: add / remove it\n" ..
-    "List buttons (names show on hover): New adds a default object,\n" ..
-    "Duplicate, Delete, Import, Export\n" ..
-    "Export / Import: save the selected objects or picked player as an asset, or pick one to add\n" ..
-    "(objects appear at the spawn point, a player model replaces the picked player's), double click imports\n" ..
-    "Players list: click a player to pick it\n" ..
-    "Drag / mouse wheel: orbit / zoom the camera after looking at objects\n" ..
-    "Camera button: camera follows the selection when moving or scaling and looks at\n" ..
-    "objects selected in the list or with Select All / Ctrl + A (highlighted when on)\n" ..
-    "Mouse button: click objects in the world to select them (highlighted when on),\n" ..
-    "turn off to play the mod without selecting")
+    "F1: show / hide window\n" ..
+    "Ctrl + S: save and reload\n" ..
+    "Ctrl + A: select / deselect all\n" ..
+    "Shift + Z / Y: undo / redo\n" ..
+    "Enter: apply the typed field\n" ..
+    "Click Pos / Rot / Scale: switch to Move / Rotate / Resize\n" ..
+    "Click object or id: select it, Shift + click: add / remove\n" ..
+    "Export / Import: save selection or player as an asset / add one\n" ..
+    "Drag / wheel: orbit / zoom camera\n" ..
+    "Camera button: follow the selection\n" ..
+    "Mouse button: click to select in the world (off to play)")
 updateContentHeight(menuH)
 
 -- tabs for the list area: objects (with how full the mod is) and players. The active tab has the

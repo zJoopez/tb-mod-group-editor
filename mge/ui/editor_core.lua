@@ -60,7 +60,7 @@ local function toggleTransformMode(key)
     applyTransformModes(true) -- the label clicked is on the shown core panel
 end
 
-local SWITCH_HELP = "\nClick the name to switch to "
+local SWITCH_HELP = "\nClick the name: "
 
 ---Move/Rotate/Resize rows (offset mode, core panel), built once so typed values stay when the selection changes
 ---@param holder UIElement
@@ -71,14 +71,14 @@ local function buildTransformRows(holder)
     local function switch(key) return function() toggleTransformMode(key) end end
     -- Enter applies only the field it's pressed in (index i), the row's other fields are ignored
     inwuts.pos, transformRows.move.offset = createInputRow("Move", holder, function(_, i) moveSelected(i) end, zeros,
-        "Moves selected objects by X, Y or Z.\nEnter applies the field you typed in." ..
-        SWITCH_HELP .. "Pos (move to a position).", switch("move"))
+        "Moves the selection by X, Y, Z." ..
+        SWITCH_HELP .. "Pos (move to).", switch("move"))
     inwuts.rot, transformRows.rotate.offset = createInputRow("Rotate", holder, function(_, i) rotSelected(i) end, zeros,
-        "Rotates selected objects around their center\nby X, Y or Z degrees. Enter applies the field you typed in." ..
-        SWITCH_HELP .. "Rot (turn to an angle).", switch("rotate"))
+        "Turns the selection around its center by degrees." ..
+        SWITCH_HELP .. "Rot (turn to).", switch("rotate"))
     inwuts.scale, transformRows.scale.offset = createInputRow("Resize", holder, function(_, i) scaleSelected(i) end, zeros,
-        "Multiplies size and spacing of selected objects\nalong the group's X, Y or Z. 0 means no change.\nEnter applies the field you typed in." ..
-        SWITCH_HELP .. "Scale (set the overall size).", switch("scale"))
+        "Multiplies the group's size along its axes. 0: no change." ..
+        SWITCH_HELP .. "Scale (set size).", switch("scale"))
 end
 
 ---Pos / Rot / Scale rows (absolute), the whole-group versions of Move / Rotate / Resize. Placeholders show the
@@ -92,17 +92,17 @@ local function buildMeasuredRows(holder, selected)
     local function switch(key) return function() toggleTransformMode(key) end end
     inwuts.position, transformRows.move.absolute = createInputRow("Pos", holder, function(_, i) positionSelected(i) end,
         any and formatHints(shownPosition(selected)) or zeros,
-        "Moves selected objects so their center is at X, Y or Z.\n0 0 0 is the middle of the dojo. Shows the current center.\nEnter applies the field you typed in." ..
-        SWITCH_HELP .. "Move (move by an offset).", switch("move"))
+        "Moves selection to given location." ..
+        SWITCH_HELP .. "Name click changes mode.", switch("move"))
     local angles = any and groupAngles(selected) or { 0, 0, 0 }
     for i = 1, 3 do angles[i] = math.deg(angles[i]) end
     inwuts.angle, transformRows.rotate.absolute = createInputRow("Rot", holder, function(_, i) angleSelected(i) end, formatHints(angles),
-        "Turns selected objects as a group to X, Y or Z degrees.\nShows the group's current angles. Only rotations done\nin MGE are known, others count as 0. Enter applies the field you typed in." ..
-        SWITCH_HELP .. "Rotate (turn by degrees).", switch("rotate"))
+        "Turns selection to given angles.\nOnly rotations done in MGE are known, others count as 0." ..
+        SWITCH_HELP .. "Name click changes mode.", switch("rotate"))
     inwuts.size, transformRows.scale.absolute = createInputRow("Scale", holder, function(_, i) sizeSelected(i) end,
         any and formatHints(groupExtents(selected)) or zeros,
-        "Scales selected objects so the group is X, Y or Z long\n(along the group's axes, like Resize). Shows the current size.\nEnter applies the field you typed in." ..
-        SWITCH_HELP .. "Resize (multiply the size).", switch("scale"))
+        "Sets the selection's size." ..
+        SWITCH_HELP .. "Name click changes mode.", switch("scale"))
 end
 
 -- empty color fields count as these (0-255), shown as the fields' placeholders
@@ -135,7 +135,7 @@ local function buildCoreProps(holder, selected)
     local colorHints = {}
     for i = 1, 4 do colorHints[i] = tostring(COLOR_DEFAULTS[i]) end
     inwuts.color = createInputRow("Color", holder, function() adjustColor() end, colorHints,
-        "Red, green, blue and alpha (0-255, up to 500 for brighter colors).\nEnter in any field applies all four,\nempty fields count as 0 0 0 255.")
+        "RGBA 0-255 (up to 500 is brighter).\nEnter applies all four, empty fields: 0 0 0 255.")
     inwuts.coreProps = Rows.buildPropertyRows(holder, selected, { { "Mass", "mass" } })
 end
 
@@ -192,12 +192,12 @@ local function buildLooks(holder, selected)
         { label = "Sphere", value = "sphere" },
         { label = "Pill", value = "cylinder" }, -- "cylinder" in mod files, round ends in game
     }, sharedChoice(selected, getShape), function(shape) Rows.setSelectedProp("shape", shape) end,
-        "Shape of selected objects.\nSides are kept, so the size may look different.")
+        "Sides are kept, so the size may look different.")
     createChoiceRow("Visible", holder, {
         { label = "Shown", value = true },
         { label = "Hidden", value = false },
     }, sharedChoice(selected, isVisible), setVisible,
-        "Hidden objects aren't drawn but still collide.")
+        "Hidden objects still collide.")
 end
 
 

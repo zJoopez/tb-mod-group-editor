@@ -103,10 +103,9 @@ local function buildFlags(holder, selected)
         flagButton("Static", FLAGS.STATIC, setStatic),
         flagButton("Weapon", FLAGS.WEAPON, function(on) setFlagBits(FLAGS.WEAPON, on) end),
         flagButton("Nogrip", FLAGS.UNGRIPPABLE, function(on) setFlagBits(FLAGS.UNGRIPPABLE, on) end),
-    }, "Click to turn a flag on or off for selected objects,\nhighlighted when all of them have it.\n" ..
-        "Static: stays in place, otherwise the object is dynamic. Dynamic objects\nonly work fully on ids 1-" ..
-        MGE.MAX_NONSTATIC_OBJECTS .. ", Reindex moves them there.\nWeapon: the object acts as a weapon.\n" ..
-        "Nogrip: players can't grab the object.")
+    }, "Click to toggle, lit when all selected have it.\n" ..
+        "Static: doesn't move. Dynamic needs ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. " (Reindex).\n" ..
+        "Weapon: acts as a weapon. Nogrip: can't be grabbed.")
 end
 
 ---3d model shown instead of the object's shape (model_name + use_model), nil for no model
@@ -142,9 +141,8 @@ local function buildModel(holder, selected)
     Rows.begin()
     local current = sharedChoice(selected, getModel)
     local row, contentX, contentW = createRow("Model", holder,
-        "3d model drawn for selected objects instead of their shape, the shape\n" ..
-        "still collides. Click the model to pick a .obj from data/mod_assets,\n" ..
-        "a texture with the same name next to it is used too. None: no model.")
+        "Draws a .obj from data/mod_assets instead of the shape,\n" ..
+        "the shape still collides. None: no model.")
     local labels = { [false] = "Pick model", mixed = "Mixed" }
     local label = current == nil and "-" or labels[current] or tostring(current)
     local gap = 4
@@ -190,9 +188,8 @@ local function buildIdRows(holder)
     Rows.begin()
     createToggleButtonRow("Ids", holder, {
         { label = "Reindex", active = false, onClick = reindex },
-    }, "Reindex: moves dynamic objects to ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS ..
-        " and static objects above them,\nas far as free ids allow. Acts on all objects, " ..
-        "joints follow their objects.")
+    }, "Moves dynamic objects to ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. ", static above.\n" ..
+        "Acts on all objects, joints follow.")
 end
 
 

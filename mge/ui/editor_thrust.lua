@@ -97,10 +97,9 @@ local function buildThrust(holder, selected)
         dir[i] = shown(function(t) return string.format("%.2f", t.dir[i]) end) or "0.00"
     end
     local framesInputs = createInputRow("Frames", holder, function() setThrustField(1) end, { frames },
-        "Thrust is applied every this many frames, 1 is every frame.")
+        "Pushes every N frames, 1: every frame.")
     local dirInputs = createInputRow("Direction", holder, function(_, i) setThrustField(i + 1) end, dir,
-        "Push applied each time, along X, Y and Z of the axes below.\n" ..
-        "Enter applies the field you typed in. Turns thrust on\nfor selected objects without it.")
+        "Push along the axes below. Turns thrust on if it's off.")
     inwuts.thrust = { framesInputs[1], dirInputs[1], dirInputs[2], dirInputs[3] }
 
     -- the axes choices plus Off, objects without thrust count as Off
@@ -117,8 +116,7 @@ local function buildThrust(holder, selected)
             thrust.space = space
             return thrust
         end)
-    end, "World: the direction uses the world's X, Y and Z.\nObject: it uses the object's own axes, so it turns with the object.\n" ..
-        "Off: no thrust. World or Object turns it on: every frame, no direction yet.")
+    end, "World: world axes. Object: turns with the object.\nOff: no thrust.")
 end
 
 

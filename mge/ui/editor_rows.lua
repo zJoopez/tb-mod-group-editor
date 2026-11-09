@@ -244,9 +244,9 @@ local function setProperty(key, input)
 end
 
 local PROPERTY_HELP = {
-    mass = "Sets mass of selected objects.\nShows the current value, \"mixed\" if they differ.",
-    friction = "Sets friction of selected objects.\nApplied by saving, the game can't change it live.",
-    bounce = "Sets bounciness of selected objects.\nShows the current value, \"mixed\" if they differ.",
+    mass = "Applies mass\n\"mixed\": the selected objects differ.",
+    friction = "Applied by saving, the game can't change it live.",
+    bounce = "Bounciness. \"mixed\": the selected objects differ.",
 }
 
 ---Single value rows (mass, friction, bounce), placeholders show the selection's current value

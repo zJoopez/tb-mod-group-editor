@@ -70,9 +70,8 @@ local function buildAlign(holder)
         align = value
         Rows.refreshBlocks({ "generateAlign" })
     end,
-        "How pieces of different thickness (Z Increment) line up.\n" ..
-        "Edge: bottoms flush. Angle 0 + Increment Z 0.3: stairs.\n" ..
-        "Center: middles in line. Angle 0 + Increment Y and Z 0.3:\na stepped pyramid lying along X (Rotate Y -90 stands it up).")
+        "Edge: bottoms flush (Increment Z 0.3: stairs).\n" ..
+        "Center: middles in line (Increment Y, Z 0.3: pyramid).")
 end
 
 ---Generate panel: amount, gap, angle, piece size, increment and the Generate button. Nothing depends
@@ -86,20 +85,18 @@ local function buildGenerate(holder)
         for _, input in ipairs(row) do table.insert(inputs, input) end
     end
     add(createInputRow("Amount", holder, apply, { tostring(GENERATE_AMOUNT) }, "Pieces in the shape. Enter in any field generates."))
-    add(createInputRow("Gap", holder, apply, { "0.00" }, "Space between pieces, negative overlaps them."))
+    add(createInputRow("Gap", holder, apply, { "0.00" }, "Space between pieces, negative overlaps."))
     add(createInputRow("Angle", holder, apply, { tostring(GENERATE_ANGLE) },
-        "Degrees the shape bends up in total:\n0 is a line, 90 a quarter pipe, 360 a closed loop.\n" ..
-        "Rotate the result for other directions (e.g. X 90 for a flat ring)."))
+        "Total bend: 0 line, 90 quarter pipe, 360 loop."))
     add(createInputRow("Size", holder, apply, formatHints(defaultSides()),
-        "First piece's length (X), width (Y) and thickness (Z),\nempty fields use the default object's."))
+        "First piece's size, empty: the default object's."))
     add(createInputRow("Increment", holder, apply, { "0.00", "0.00", "0.00" },
-        "Added to the X, Y and Z size of each next piece, negative shrinks.\n" ..
-        "Align sets how different thicknesses line up."))
+        "Added to each next piece's size, negative shrinks."))
     inwuts.generate = inputs
 
     createToggleButtonRow("", holder, {
         { label = "Generate", active = false, onClick = generate },
-    }, "Adds the shape at the middle of the dojo, made of static\ndefault objects, and selects it. Undo removes it again.")
+    }, "Adds static pieces at the dojo middle and selects them.")
 end
 
 
