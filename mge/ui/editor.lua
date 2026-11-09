@@ -389,7 +389,9 @@ end
 ---value. Axes left empty (or 0 and below) don't change.
 ---Size doesn't follow the factor one to one: pill caps keep their radius when the length scales,
 ---spheres stay round (their radius takes the average factor) and rotated objects only partly stretch.
----So the factors are found by predicting the result (planScale) and correcting until it matches
+---So the factors are found by predicting the result (planScale) and correcting until it matches.
+---Each step corrects by how fast the size actually followed the factor last time (in log space:
+---a sphere's size grows with the cube root of one axis' factor), so it takes a few steps, not dozens
 ---@param only integer? axis input Enter was pressed in, nil applies all
 local function sizeSelected(only)
     local selectedObjects = getSelected()
@@ -404,16 +406,28 @@ local function sizeSelected(only)
     end
     if not changed then return end
 
+    ---@type number[]
     local scale = { 1, 1, 1 }
-    for _ = 1, 100 do
+    ---@type table<integer, { scale: number, size: number }> per axis: log factor and log size of the step before
+    local previous = {}
+    for _ = 1, 50 do
         local extents = groupExtents(selectedObjects, scale)
         local done = true
         for i = 1, 3 do
             if targets[i] and extents[i] > 1e-9 then
-                local ratio = targets[i] / extents[i]
-                if math.abs(ratio - 1) > 1e-10 then
+                local logScale, logSize = math.log(scale[i]), math.log(extents[i])
+                local miss = math.log(targets[i]) - logSize
+                if math.abs(miss) > 1e-10 then
                     done = false
-                    scale[i] = math.min(math.max(scale[i] * ratio, 1e-4), 1e4)
+                    -- how much the size moved per factor change, 1 for plain boxes; kept in a sane
+                    -- range, axes affect each other (spheres) so a step can be off
+                    local response = 1
+                    local p = previous[i]
+                    if p and math.abs(logScale - p.scale) > 1e-12 then
+                        response = math.min(math.max((logSize - p.size) / (logScale - p.scale), 0.05), 2)
+                    end
+                    previous[i] = { scale = logScale, size = logSize }
+                    scale[i] = math.min(math.max(math.exp(logScale + miss / response), 1e-4), 1e4)
                 end
             end
         end
