@@ -163,22 +163,16 @@ local function importAssetFromFile(assetName)
         return
     end
 
-    -- id pool per object (the asset's own joints need dynamic ids), counted first so it imports
-    -- everything or nothing
-    local assetJointIds = Joints.getObjectIds(parser.env_obj_joint)
-    local pools = {}
-    local need = { static = 0, nonStatic = 0 }
+    -- only joints with both objects in the asset are imported, so only those objects need low ids
+    local linkedJoints = Joints.getLinked(Joints.idSet(parser.env_obj), parser.env_obj_joint)
+    if not Joints.haveRoom(#linkedJoints) then return end
+    local linkedIds = Joints.getObjectIds(linkedJoints)
+    local plans = {}
     for i, assetObj in ipairs(parser.env_obj) do
-        pools[i] = ModData.idPool(assetObj, false, assetJointIds)
-        need[pools[i]] = need[pools[i]] + 1
+        plans[i] = { pool = ModData.isStatic(assetObj) and "static" or "nonStatic", linked = linkedIds[assetObj.id] or false }
     end
-    if not Joints.haveRoom(Joints.countLinked(parser.env_obj_joint, Joints.idSet(parser.env_obj))) then return end
-    -- static objects on dynamic ids are moved up only if the import needs their ids
-    if need.static > #ModData.freeIds.static
-        or not ModData.freeDynamicIds(need.nonStatic, { reserveStatic = need.static }) then
-        print("Not enough objects available")
-        return
-    end
+    local ids = ModData.allocateIds(plans) -- all or nothing
+    if not ids then return end
 
     -- selection moves to the imported objects so they can be moved right away
     for _, obj in ipairs(ModData.parsed.env_obj) do
@@ -187,7 +181,7 @@ local function importAssetFromFile(assetName)
 
     local idMap = {} -- asset object id -> id in the mod
     for i, assetObj in ipairs(parser.env_obj) do
-        local newId = table.remove(ModData.freeIds[pools[i]], 1)
+        local newId = ids[i]
         table.insert(ModData.parsed.env_obj, { kind = "env_obj", id = newId, props = ModData.copy(assetObj.props),
             frame = assetObj.frame, selected = true })
         idMap[assetObj.id] = newId

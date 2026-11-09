@@ -81,8 +81,39 @@ function ModData.idPool(obj, loaded, jointIds)
     return "nonStatic"
 end
 
----Objects that need a dynamic id (1-MAX_NONSTATIC_OBJECTS): dynamic ones and joint-linked ones.
----Static objects on low ids aren't counted, freeDynamicIds moves them when the ids are needed.
+---Object ids linked to any of the joints
+---@param joints FileParserEnvObjJoint[]?
+---@return table<integer, boolean>
+local function getJointIds(joints)
+    local ids = {}
+    for _, joint in ipairs(joints or {}) do
+        if joint.obj1 then ids[joint.obj1] = true end
+        if joint.obj2 then ids[joint.obj2] = true end
+    end
+    return ids
+end
+
+-- Id rules: only joints strictly need ids 1-MAX_NONSTATIC_OBJECTS (the game ignores joints to higher
+-- ids). Dynamic objects can sit on any id, above 48 the game treats them partly as static, so they
+-- only prefer low ids and the window warns until Reindex moves them down. Ids only change on
+-- Reindex, or when joint-linked copies need low ids that static objects hold.
+
+---Free id list an id belongs to
+---@param id integer
+---@return IdPool
+local function rangeOf(id)
+    return id <= MAX_NONSTATIC_OBJECTS and "nonStatic" or "static"
+end
+
+---Returns an id to the free lists, e.g. after deleting its object
+---@param id integer
+function ModData.releaseId(id)
+    local list = ModData.freeIds[rangeOf(id)]
+    table.insert(list, id)
+    table.sort(list)
+end
+
+---Objects that should be on ids 1-MAX_NONSTATIC_OBJECTS: dynamic ones and joint-linked ones
 ---@return integer
 function ModData.countDynamic()
     local count = 0
@@ -92,52 +123,148 @@ function ModData.countDynamic()
     return count
 end
 
----Makes room for dynamic objects: moves static objects off ids 1-MAX_NONSTATIC_OBJECTS to free
----static ids until `count` dynamic ids are free. Ids only change when needed. Objects linked to
----joints stay. Without opts.partial nothing moves unless enough ids can be freed.
----@param count integer dynamic ids needed in total (math.huge with partial = free all possible)
----@param opts { keep: table<integer, boolean>?, reserveStatic: integer?, partial: boolean? }?
----  keep: ids that must not move, reserveStatic: static ids the caller still needs
----@return boolean enough, integer moved
-function ModData.freeDynamicIds(count, opts)
-    opts = opts or {}
+---Dynamic objects above id MAX_NONSTATIC_OBJECTS, treated partly as static by the game until Reindex
+---@return integer
+function ModData.countMisplaced()
+    local count = 0
+    for _, obj in ipairs(ModData.parsed.env_obj) do
+        if obj.id > MAX_NONSTATIC_OBJECTS and ModData.idPool(obj, true) == "nonStatic" then count = count + 1 end
+    end
+    return count
+end
+
+---Gives obj a new id. The game flag is read by id, so a missing flag line is written first
+---@param obj FileParserEnvObj
+---@param id integer
+local function changeId(obj, id)
+    if obj.props.flag == nil then obj.props.flag = tostring(get_obj_flag(obj.id - 1) or FLAGS.STATIC) end
+    obj.id = id
+end
+
+---Frees ids 1-MAX_NONSTATIC_OBJECTS for joint-linked objects by moving static objects on low ids to
+---free high ids (highest low ids first). Nothing moves unless `count` low ids can be freed
+---@param count integer low ids needed in total
+---@return boolean enough
+local function freeLowIds(count)
     local free = ModData.freeIds
     local missing = count - #free.nonStatic
-    if missing <= 0 then return true, 0 end
+    if missing <= 0 then return true end
 
     local candidates = {}
     for _, obj in ipairs(ModData.parsed.env_obj) do
-        if obj.id <= MAX_NONSTATIC_OBJECTS and not (opts.keep and opts.keep[obj.id])
-            and ModData.idPool(obj, true) == "static" then
+        if obj.id <= MAX_NONSTATIC_OBJECTS and ModData.idPool(obj, true) == "static" then
             table.insert(candidates, obj)
         end
     end
-    -- highest low ids first, the lowest ones are the most likely to be used as dynamic later
+    if math.min(#candidates, #free.static) < missing then return false end
     table.sort(candidates, function(a, b) return a.id > b.id end)
-    local available = math.min(#candidates, #free.static - (opts.reserveStatic or 0))
-    if available < missing and not opts.partial then return false, 0 end
-
-    local moved = 0
-    for i = 1, math.min(available, missing) do
+    for i = 1, missing do
         local obj = candidates[i]
-        -- the game flag is read by id, keep it in the file before the id changes
-        if obj.props.flag == nil then obj.props.flag = tostring(get_obj_flag(obj.id - 1) or FLAGS.STATIC) end
         table.insert(free.nonStatic, obj.id)
-        obj.id = table.remove(free.static, 1)
-        moved = moved + 1
+        changeId(obj, table.remove(free.static, 1))
     end
     table.sort(free.nonStatic)
     ModData.sortObjects()
-    return #free.nonStatic >= count, moved
+    return true
 end
 
-local function getJointIds(joints)
+---Picks ids for new objects (duplicate, import), all or nothing. Joint-linked objects get ids
+---1-MAX_NONSTATIC_OBJECTS (static objects are moved up when needed), the others take their preferred
+---range when it has free ids, otherwise any free id. Prints why when they don't fit
+---@param plans { pool: IdPool, linked: boolean }[] one per new object, pool is the preferred range
+---@return integer[]? ids same order as plans
+function ModData.allocateIds(plans)
+    local free = ModData.freeIds
+    local total = #free.nonStatic + #free.static
+    if #plans > total then
+        print("Not enough object ids: " .. #plans .. " needed, " .. total .. " free")
+        return nil
+    end
+    local linkedCount = 0
+    for _, plan in ipairs(plans) do
+        if plan.linked then linkedCount = linkedCount + 1 end
+    end
+    if not freeLowIds(linkedCount) then
+        print("Not enough ids 1-" .. MAX_NONSTATIC_OBJECTS .. " for objects linked by joints: " .. linkedCount ..
+            " needed, " .. #free.nonStatic .. " free")
+        return nil
+    end
+
     local ids = {}
-    for _, joint in ipairs(joints or {}) do
-        if joint.obj1 then ids[joint.obj1] = true end
-        if joint.obj2 then ids[joint.obj2] = true end
+    for i, plan in ipairs(plans) do -- joint-linked first, they can't use the other range
+        if plan.linked then ids[i] = table.remove(free.nonStatic, 1) end
+    end
+    for i, plan in ipairs(plans) do
+        if not plan.linked then
+            if #free[plan.pool] > 0 then
+                ids[i] = table.remove(free[plan.pool], 1)
+            elseif plan.pool == "static" then
+                ids[i] = table.remove(free.nonStatic) -- highest low id, keeps the lowest ones free
+            else
+                ids[i] = table.remove(free.static, 1)
+            end
+        end
     end
     return ids
+end
+
+---Puts dynamic and joint-linked objects on ids 1-MAX_NONSTATIC_OBJECTS and static ones above, as far
+---as ids allow: dynamic objects above take free low ids or swap with static objects on low ids, then
+---the remaining static objects on low ids move to free high ids. Joints follow the new ids.
+---@return integer moved objects that got a new id
+---@return integer left dynamic objects still above (more need low ids than there are)
+function ModData.reindex()
+    local free = ModData.freeIds
+    local highDynamic, lowStatic = {}, {}
+    -- pools are read before any id changes, a missing flag line is read from the game by id
+    for _, obj in ipairs(ModData.parsed.env_obj) do
+        local pool = ModData.idPool(obj, true)
+        if pool == "nonStatic" and obj.id > MAX_NONSTATIC_OBJECTS then
+            table.insert(highDynamic, obj)
+        elseif pool == "static" and obj.id <= MAX_NONSTATIC_OBJECTS then
+            table.insert(lowStatic, obj)
+        end
+    end
+    table.sort(highDynamic, function(a, b) return a.id < b.id end)
+    table.sort(lowStatic, function(a, b) return a.id > b.id end) -- highest low ids move first
+
+    local idMap = {} -- old id -> new id, every object moves at most once
+    local function move(obj, id)
+        idMap[obj.id] = id
+        changeId(obj, id)
+    end
+    local left = 0
+    for _, obj in ipairs(highDynamic) do
+        local oldId = obj.id
+        if #free.nonStatic > 0 then
+            move(obj, table.remove(free.nonStatic, 1))
+            table.insert(free.static, oldId)
+        elseif #lowStatic > 0 then
+            local static = table.remove(lowStatic, 1)
+            local lowId = static.id
+            move(static, oldId)
+            move(obj, lowId)
+        else
+            left = left + 1
+        end
+    end
+    table.sort(free.static)
+    for _, obj in ipairs(lowStatic) do
+        if #free.static == 0 then break end
+        table.insert(free.nonStatic, obj.id)
+        move(obj, table.remove(free.static, 1))
+    end
+    table.sort(free.nonStatic)
+
+    local moved = 0
+    for _ in pairs(idMap) do moved = moved + 1 end
+    for _, joint in ipairs(ModData.parsed.env_obj_joint) do
+        joint.obj1 = idMap[joint.obj1] or joint.obj1
+        joint.obj2 = idMap[joint.obj2] or joint.obj2
+    end
+    ModData.jointIds = getJointIds(ModData.parsed.env_obj_joint) -- ids changed, the old set is stale
+    ModData.sortObjects()
+    return moved, left
 end
 
 local function init()

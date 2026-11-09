@@ -70,7 +70,7 @@ local function sameObjects(a, b)
     for i, obj in ipairs(a.env_obj) do
         local other = b.env_obj[i]
         if obj.id ~= other.id or not sameProps(obj.props, other.props, LIVE_KEYS) then return false end
-        -- static/dynamic is decided when the mod loads, it can't be switched live
+        -- tested in game: set_obj_flag doesn't switch static/dynamic, only a reload does
         if isStaticFlag(obj.props) ~= isStaticFlag(other.props) then return false end
     end
     -- joints can't be changed live, any difference in them needs a save

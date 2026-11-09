@@ -146,10 +146,14 @@ local function create(view, fullList)
             Main.updateWindow()
         end)
 
-    -- duplicate, import and the Dynamic button free ids on their own when needed,
-    -- this moves every static object it can off the dynamic ids at once
-    local function reindexNonDynamic()
-        local _, moved = ModData.freeDynamicIds(math.huge, { partial = true })
+    -- dynamic objects can end up above id 48 (the footer warns), this moves them down and static
+    -- objects up, as far as ids allow
+    local function reindex()
+        local moved, left = ModData.reindex()
+        if left > 0 then
+            print("reindex: " .. left .. " dynamic objects still above id " .. MGE.MAX_NONSTATIC_OBJECTS ..
+                ", make some static")
+        end
         if moved == 0 then
             print("reindex: nothing to move")
             return
@@ -163,7 +167,7 @@ local function create(view, fullList)
     -- there on every tab. MGE.Editor loads after this module, so it's looked up on click
     Widgets.barButtons(botBar, {
         { label = "Duplicate", onClick = function() MGE.Editor.duplicate() end },
-        { label = "Reindex", onClick = function() reindexNonDynamic() end },
+        { label = "Reindex", onClick = function() reindex() end },
         { label = "Delete", onClick = function() MGE.Editor.deleteSelected() end }, -- asks first
     })
 end

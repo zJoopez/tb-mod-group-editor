@@ -601,28 +601,24 @@ end
 local function duplicate()
     local selected = getSelected()
     if #selected == 0 then return end
-    -- pick each copy's id pool and count them first, so it either copies everything or nothing
-    local pools = {}
-    local need = { static = 0, nonStatic = 0 }
+    -- only joints between selected objects are copied, so only those copies need low ids
+    local linkedJoints = Joints.getLinked(Joints.idSet(selected))
+    if not Joints.haveRoom(#linkedJoints) then return end
+    local linkedIds = Joints.getObjectIds(linkedJoints)
+    local plans = {}
     for i, obj in ipairs(selected) do
-        pools[i] = ModData.idPool(obj, true)
-        need[pools[i]] = need[pools[i]] + 1
+        plans[i] = { pool = ModData.isStatic(obj, true) and "static" or "nonStatic", linked = linkedIds[obj.id] or false }
     end
-    if not Joints.haveRoom(Joints.countLinked(ModData.parsed.env_obj_joint, Joints.idSet(selected))) then return end
-    -- static objects on dynamic ids are moved up only if the copies need their ids
-    if need.static > #ModData.freeIds.static
-        or not ModData.freeDynamicIds(need.nonStatic, { reserveStatic = need.static }) then
-        print("Not enough objects available")
-        return
-    end
+    local ids = ModData.allocateIds(plans) -- all or nothing
+    if not ids then return end
 
     local idMap = {} -- original id -> copy id, used to copy joints between duplicated objects
     for i, obj in ipairs(selected) do
         local copy = ModData.copy(obj)
-        copy.id = table.remove(ModData.freeIds[pools[i]], 1)
+        copy.id = ids[i]
         copy.props = ModData.copy(obj.props) -- don't share props with the original
         -- the game flag is read by id, a copy without a flag line could get a different default
-        -- (objects moved by freeDynamicIds already have their flag written)
+        -- (objects moved by allocateIds already have their flag written)
         copy.props.flag = copy.props.flag or tostring(get_obj_flag(obj.id - 1) or 0)
         table.insert(ModData.parsed.env_obj, copy)
         idMap[obj.id] = copy.id
@@ -641,7 +637,7 @@ local function delete()
         if obj.selected then
             deleted[obj.id] = true
             table.remove(ModData.parsed.env_obj, i)
-            table.insert(ModData.freeIds[ModData.idPool(obj, true)], obj.id)
+            ModData.releaseId(obj.id)
         end
     end
     Joints.removeLinkedToAny(deleted) -- a joint can't point to a missing object
@@ -663,8 +659,9 @@ local function onDeleteClick()
     end)
 end
 
--- Shape, static/dynamic and visibility. The game reads them when the mod loads, so they're saved
--- instead of set live (undo restores them the same way).
+-- Shape, flags and visibility. Shape and the static flag are read when the mod loads, so they're
+-- saved (undo restores them the same way). Other flags and visibility are set live and saved with
+-- the next save.
 
 -- names used in mod files, indexed by get_obj_shape
 local SHAPE_FILE_NAMES = { [SHAPE.SPHERE] = "sphere", [SHAPE.BOX] = "box", [SHAPE.CAPSULE] = "cylinder" }
@@ -727,7 +724,7 @@ local function withBits(flag, bits, on)
 end
 
 ---Sets or clears flag bits on selected objects, applied live (set_obj_flag) and saved with the
----next save. Not for the static bit, that one can move ids (setStatic)
+---next save. Not for the static bit, the game only reads that when the mod loads (setStatic)
 ---@param bits integer
 ---@param on boolean
 local function setFlagBits(bits, on)
@@ -746,6 +743,24 @@ local function setFlagBits(bits, on)
     refreshProperties()
 end
 
+---Makes selected objects static or dynamic. Ids don't change: dynamic objects above id 48 are
+---treated partly as static by the game, the window warns about them until Reindex moves them down.
+---Saved instead of set live: tested in game, set_obj_flag doesn't switch static/dynamic, the game
+---only reads it when the mod loads. The reload also refreshes the dynamic count and warning.
+---@param static boolean
+local function setStatic(static)
+    local changed = false
+    for _, v in ipairs(getSelected()) do
+        if ModData.isStatic(v, true) ~= static then
+            v.props.flag = tostring(withBits(getFlag(v), MGE.FLAGS.STATIC, static)) -- other flags are kept
+            changed = true
+        end
+    end
+    if not changed then return end
+    History.commit()
+    MGE.save()
+end
+
 ---Shows or hides selected objects, applied live (set_obj_vis) and saved with the next save
 ---@param visible boolean
 local function setVisible(visible)
@@ -761,56 +776,6 @@ local function setVisible(visible)
     if not changed then return end
     History.commit()
     refreshProperties()
-end
-
----Makes selected objects static or dynamic. Dynamic objects need ids 1-48: objects above that get a
----free low id, static objects are moved off low ids if there aren't enough (ModData.freeDynamicIds).
----New static objects move above 48 when a free id exists, so they don't hold a dynamic id.
----Joints follow the new ids. Nothing changes if there aren't enough ids.
----@param static boolean
-local function setStatic(static)
-    local freeIds = ModData.freeIds
-    local MAX = MGE.MAX_NONSTATIC_OBJECTS
-    local toChange = {}
-    local keep = {} -- objects being changed must not be moved by freeDynamicIds
-    local needIds = 0
-    for _, v in ipairs(getSelected()) do
-        if ModData.isStatic(v, true) ~= static then
-            table.insert(toChange, v)
-            keep[v.id] = true
-            if not static and v.id > MAX then needIds = needIds + 1 end
-        end
-    end
-    if #toChange == 0 then return end
-    if not static and not ModData.freeDynamicIds(needIds, { keep = keep }) then
-        print("Not enough dynamic object ids: " .. needIds .. " needed, " .. #freeIds.nonStatic .. " free")
-        return
-    end
-
-    local idMap = {} -- old id -> new id
-    local function moveTo(v, pool, releaseTo)
-        local newId = table.remove(pool, 1)
-        table.insert(releaseTo, v.id)
-        idMap[v.id] = newId
-        v.id = newId
-    end
-    for _, v in ipairs(toChange) do
-        v.props.flag = tostring(withBits(getFlag(v), MGE.FLAGS.STATIC, static)) -- other flags are kept
-        if not static and v.id > MAX then
-            moveTo(v, freeIds.nonStatic, freeIds.static)
-        elseif static and v.id <= MAX and #freeIds.static > 0 and not ModData.jointIds[v.id] then
-            moveTo(v, freeIds.static, freeIds.nonStatic)
-        end
-    end
-    table.sort(freeIds.static)
-    table.sort(freeIds.nonStatic)
-    for _, joint in ipairs(ModData.parsed.env_obj_joint) do
-        joint.obj1 = idMap[joint.obj1] or joint.obj1
-        joint.obj2 = idMap[joint.obj2] or joint.obj2
-    end
-    ModData.sortObjects()
-    History.commit()
-    MGE.save()
 end
 
 -- Two panels sharing the editor area, picked by the window's tab row (Main.applyTab -> editor.applyPanel):
@@ -1035,8 +1000,8 @@ local function buildFlags(holder, selected)
         flagButton("Weapon", FLAGS.WEAPON, function(on) setFlagBits(FLAGS.WEAPON, on) end),
         flagButton("Nogrip", FLAGS.UNGRIPPABLE, function(on) setFlagBits(FLAGS.UNGRIPPABLE, on) end),
     }, "Click to turn a flag on or off for selected objects,\nhighlighted when all of them have it.\n" ..
-        "Static: stays in place, otherwise the object is dynamic. Dynamic objects\nneed ids 1-" ..
-        MGE.MAX_NONSTATIC_OBJECTS .. ", higher ids get a free low id.\nWeapon: the object acts as a weapon.\n" ..
+        "Static: stays in place, otherwise the object is dynamic. Dynamic objects\nonly work fully on ids 1-" ..
+        MGE.MAX_NONSTATIC_OBJECTS .. ", Reindex moves them there.\nWeapon: the object acts as a weapon.\n" ..
         "Nogrip: players can't grab the object.")
 end
 
@@ -1088,12 +1053,35 @@ local function restoreTypedProperties(saved)
     end
 end
 
----Rebuilds the named blocks with the current selection, typed text is kept
+---Rebuilt input that has keyboard focus, as its inwuts key and index
+---@return string? key, integer? index
+local function findFocusedInput()
+    for _, key in ipairs(REBUILT_INPUTS) do
+        for i, input in ipairs(inwuts[key] or {}) do
+            -- hide() doesn't clear keyboard, a field on a hidden tab isn't focused
+            if input.keyboard and input.displayed and not input.destroyed then return key, i end
+        end
+    end
+    return nil, nil
+end
+
+---Gives a text field keyboard focus, same as clicking it (UIElement.handleMouseDn)
+---@param input UIElement
+local function focusInput(input)
+    for _, v in ipairs(UIKeyboardHandler) do v.keyboard = v.permanentListener end
+    input.keyboard = true
+    input:enableMenuKeyboard()
+    disable_camera_movement()
+end
+
+---Rebuilds the named blocks with the current selection, typed text is kept and the field that had
+---focus gets it back (applying a value with Enter rebuilds the rows, you can keep trying values)
 ---@param names string[]
 local function rebuildBlocks(names)
     if not blocks.measured or blocks.measured.destroyed then return end
     local selected = getSelected() -- read once, every row shows values of the same objects
     local typed = saveTypedProperties()
+    local focusKey, focusIndex = findFocusedInput()
     for _, name in ipairs(names) do
         Widgets.clearChildren(blocks[name])
         BLOCKS[name].build(blocks[name], selected)
@@ -1101,6 +1089,10 @@ local function rebuildBlocks(names)
     restoreTypedProperties(typed)
     reapplyTabs()
     applyTransformModes() -- also when the editor isn't the shown tab (applyPanel isn't called then)
+
+    ---@type UIElement?
+    local refocus = focusKey and focusIndex and (inwuts[focusKey] or {})[focusIndex] or nil
+    if refocus and not refocus.destroyed and refocus.displayed then focusInput(refocus) end
 end
 
 -- after a move / rotate / scale only the measured values change

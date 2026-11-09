@@ -113,6 +113,9 @@ local function save(newname)
     end
     FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. name .. ".tbm")
     print("saved as " .. name .. ".tbm")
+    -- the named copy is the one that gets shared, say so if dynamic objects won't fully work in it
+    local warning = MGE.Main and MGE.Main.dynamicWarning()
+    if warning then echo("^04[MGE] saved with " .. warning) end
     closeOverlay()
 end
 

@@ -219,10 +219,28 @@ function Main.setTab(id)
     Main.applyTab()
 end
 
+-- footer text color while dynamic objects need attention
+local WARNING_COLOR = { 1, 0.45, 0.35, 1 }
+
+---Why dynamic objects won't fully work yet, nil when they do
+---@return string?
+function Main.dynamicWarning()
+    local dynamic, misplaced = ModData.countDynamic(), ModData.countMisplaced()
+    if dynamic > MGE.MAX_NONSTATIC_OBJECTS then
+        return (dynamic - MGE.MAX_NONSTATIC_OBJECTS) .. " too many dynamic, make some static"
+    elseif misplaced > 0 then
+        return misplaced .. " dynamic above id " .. MGE.MAX_NONSTATIC_OBJECTS .. ", Reindex"
+    end
+    return nil
+end
+
 local function setDynamicStrings()
     listHeader:addAdaptedText("Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS,
         nil, nil, nil, CENTERMID, nil, nil, nil)
+    local warning = Main.dynamicWarning()
+    limitsRow.uiColor = warning and WARNING_COLOR or UICOLORWHITE
     Widgets.infoText(limitsRow, "Dynamic " .. ModData.countDynamic() .. "/" .. MGE.MAX_NONSTATIC_OBJECTS ..
+        (warning and " (" .. warning .. ")" or "") ..
         "    Joints " .. #ModData.parsed.env_obj_joint .. "/" .. MGE.MAX_ENV_JOINTS)
 end
 
