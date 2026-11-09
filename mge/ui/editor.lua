@@ -479,6 +479,77 @@ local function angleSelected(only)
     rotBy(selectedObjects, { Mat3.toEulerXYZ(delta) })
 end
 
+-- Shape generator (Generate tab): a chain of boxes along X that bends up (toward Z) as it goes.
+-- Angle is how far it turns in total: 0 is a straight line, 90 a quarter pipe, 360 a closed loop.
+-- The pieces are chords of that arc, they touch on the inside of the bend (a ramp's riding surface
+-- stays smooth) and Gap is the space between them along that edge.
+
+---Rotation by t radians around the unit vector u (Rodrigues)
+---@param u number[]
+---@param t number
+---@return number[][]
+local function rotationAbout(u, t)
+    local c, s = math.cos(t), math.sin(t)
+    local k = 1 - c
+    local x, y, z = u[1], u[2], u[3]
+    return {
+        { c + x * x * k, x * y * k - z * s, x * z * k + y * s },
+        { y * x * k + z * s, c + y * y * k, y * z * k - x * s },
+        { z * x * k - y * s, z * y * k + x * s, c + z * z * k },
+    }
+end
+
+---@class GeneratePiece
+---@field pos number[]
+---@field rot number[] degrees, as written in the file
+---@field frame number[][] MGE's rotation record (#mge_frame), see rotBy
+
+---Where the pieces go: the shape's lowest point at z 0, centered on `center` in x and y
+---@param amount integer
+---@param gap number
+---@param angle number degrees turned in total
+---@param sides number[] box sides of every piece: length (x), width (y), thickness (z)
+---@param center number[] x y
+---@return GeneratePiece[]
+local function planGenerate(amount, gap, angle, sides, center)
+    local step = math.rad(angle) / amount
+    local axis = { 0, -1, 0 } -- turning around -Y tilts X up toward Z
+    local length, half = sides[1], sides[3] / 2
+    local vertex = { 0, 0, half } -- inner (top) edge of the chain, each piece starts where it is
+    local pieces = {}
+    local min, max = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
+    for i = 0, amount - 1 do
+        local turn = rotationAbout(axis, step * (i + 0.5))
+        local dir, up = Mat3.apply(turn, { 1, 0, 0 }), Mat3.apply(turn, { 0, 0, 1 })
+        local pos = {}
+        for k = 1, 3 do pos[k] = vertex[k] + dir[k] * length / 2 - up[k] * half end
+        -- box corners, for the shape's bounds
+        for cx = -1, 1, 2 do
+            for cy = -1, 1, 2 do
+                for cz = -1, 1, 2 do
+                    local corner = Mat3.apply(turn, { cx * sides[1] / 2, cy * sides[2] / 2, cz * sides[3] / 2 })
+                    for k = 1, 3 do
+                        min[k] = math.min(min[k], pos[k] + corner[k])
+                        max[k] = math.max(max[k], pos[k] + corner[k])
+                    end
+                end
+            end
+        end
+        local offsets = { Mat3.toEulerXYZ(turn) }
+        table.insert(pieces, {
+            pos = pos,
+            rot = RotatingOld.SetRotOffset(0, 0, 0, offsets[1], offsets[2], offsets[3]),
+            frame = turn,
+        })
+        for k = 1, 3 do vertex[k] = vertex[k] + dir[k] * (length + gap) end
+    end
+    local shift = { center[1] - (min[1] + max[1]) / 2, center[2] - (min[2] + max[2]) / 2, -min[3] }
+    for _, piece in ipairs(pieces) do
+        for k = 1, 3 do piece.pos[k] = piece.pos[k] + shift[k] end
+    end
+    return pieces
+end
+
 -- Rebuilds the Properties tab so its placeholders show the selection's current values
 local refreshProperties
 
@@ -875,23 +946,25 @@ local function setVisible(visible)
 end
 
 -- Panels sharing the editor area, picked by the window's tab row (Main.applyTab -> editor.applyPanel):
---   core:     transforms and look: Pos/Move, Angle/Rotate, Size/Scale, Color, Mass, Shape, Visible, Flags
---   advanced: physics: Friction, Bounce, Model, Ids (Reindex), then under a Thrust header
---             Frames, Direction, Axes (World / Object / Off)
--- Both have input fields, the reset button is shown under either.
+--   core:     transforms and look: Pos/Move, Angle/Rotate, Size/Scale, Color, Mass, Shape, Visible
+--   advanced: physics: Friction, Bounce, Flags, Model, then Ids (Reindex)
+--   thrust:   Frames, Direction, Axes (World / Object / Off)
+--   generate: Amount, Gap, Angle, Size, Generate button (built once, doesn't use the selection)
+-- All have input fields, the reset button is shown under each.
 -- Every block of rows has its own holder. Move/Rotate/Resize are built once (typed values stay), the
 -- other blocks are rebuilt when the selection or the objects change, so their placeholders /
 -- highlights show current values (typed text is carried over the rebuild).
 local ROW_H = 30
-local HEADER_H = ROW_H -- section name inside a panel (Thrust), a full row so both panels are 8 rows tall
-local THRUST_Y = 4 * ROW_H + HEADER_H -- thrust rows in the advanced panel, under Ids and the header
 local FOOTER_GAP = 4
 local FOOTER_H = 24 -- reset button
--- panel heights, kept equal so the reset button doesn't move between tabs. The editor area in
--- ui/main.lua fits them with the reset button under them
+-- panel heights, all as tall as the tallest (Core, 7 rows) so the reset button stays in place
+-- between tabs. The editor area in ui/main.lua fits them with the reset button under them
+local PANEL_H = 7 * ROW_H
 local PANELS = {
-    core = { height = 8 * ROW_H },
-    advanced = { height = THRUST_Y + 3 * ROW_H },
+    core = { height = PANEL_H },
+    advanced = { height = PANEL_H },
+    thrust = { height = PANEL_H },
+    generate = { height = PANEL_H },
 }
 ---@type table<string, UIElement>
 local panels = {}
@@ -938,7 +1011,7 @@ local function toggleTransformMode(key)
 end
 
 ---Shows one editor panel, called by Main.applyTab
----@param id string "core"|"advanced"
+---@param id string "core"|"advanced"|"thrust"|"generate"
 function editor.applyPanel(id)
     local panel = PANELS[id]
     if not panel then return end
@@ -1078,7 +1151,7 @@ local function buildLooks(holder, selected)
         "Hidden objects aren't drawn but still collide.")
 end
 
----Flags row (core panel)
+---Flags row (advanced panel)
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
 local function buildFlags(holder, selected)
@@ -1307,22 +1380,88 @@ local function buildThrust(holder, selected)
         "Off: no thrust. World or Object turns it on: every frame, no direction yet.")
 end
 
--- rebuilt blocks: builder and where they sit { panel, first row (or y in pixels), rows }
+-- used for empty Generate fields, shown as their placeholders
+local GENERATE_AMOUNT = 8
+local GENERATE_ANGLE = 90
+local MAX_GENERATE = 200 -- more than any mod has room for, stops a typo from planning thousands
+
+---@return number[] sides of the default object (ui/assets.lua), what empty Size fields use
+local function defaultSides()
+    local sides = {}
+    for v in MGE.Assets.defaultProps().sides:gmatch("%S+") do table.insert(sides, tonumber(v) or 0.5) end
+    return sides
+end
+
+---Generate button / Enter: adds the shape, made of the default object made static
+local function generate()
+    local fields = inwuts.generate or {}
+    local function typed(i) return fields[i] and tonumber(fields[i].textfieldstr[1]) end
+    local amount = math.floor((typed(1) or GENERATE_AMOUNT) + 0.5)
+    if amount < 2 or amount > MAX_GENERATE then -- one piece is what the list's New button adds
+        print("Generate: amount must be 2-" .. MAX_GENERATE)
+        return
+    end
+    local sides = defaultSides()
+    for i = 1, 3 do
+        local value = typed(3 + i)
+        if value and value > 0 then sides[i] = math.max(value, MGE.MIN_SIDE) end
+    end
+    local pieces = planGenerate(amount, typed(2) or 0, typed(3) or GENERATE_ANGLE, sides, { POS_ORIGIN[1], POS_ORIGIN[2] })
+
+    local objects = {}
+    for i, piece in ipairs(pieces) do
+        local obj = { kind = "env_obj", id = i, props = MGE.Assets.defaultProps(), frame = piece.frame }
+        obj.props.flag = tostring(MGE.FLAGS.STATIC) -- a ramp stays in place, and static ids are plenty
+        writeVectorProperty(obj, "pos", piece.pos)
+        writeVectorProperty(obj, "rot", piece.rot)
+        writeVectorProperty(obj, "sides", sides)
+        objects[i] = obj
+    end
+    -- selected and saved like an import, the tab stays so values can be tried again after Undo
+    MGE.Assets.addObjects(objects, true)
+end
+
+---Generate panel: amount, gap, angle, piece size and the Generate button. Nothing depends on the
+---selection, placeholders show the values empty fields use
+---@param holder UIElement
+local function buildGenerate(holder)
+    totalHeight = 0
+    local function apply() generate() end
+    local inputs = {}
+    local function single(label, hint, help)
+        table.insert(inputs, createInputRow(label, holder, apply, { hint }, help)[1])
+    end
+    single("Amount", tostring(GENERATE_AMOUNT), "Pieces in the shape. Enter in any field generates.")
+    single("Gap", "0.00", "Space between pieces, negative overlaps them.")
+    single("Angle", tostring(GENERATE_ANGLE), "Degrees the shape bends up in total:\n0 is a line, 90 a quarter pipe, 360 a closed loop.\n" ..
+        "Rotate the result for other directions (e.g. X 90 for a flat ring).")
+    for _, input in ipairs(createInputRow("Size", holder, apply, formatHints(defaultSides()),
+        "Piece length (X), width (Y) and thickness (Z),\nempty fields use the default object's.")) do
+        table.insert(inputs, input)
+    end
+    inwuts.generate = inputs
+
+    createToggleButtonRow("", holder, {
+        { label = "Generate", active = false, onClick = generate },
+    }, "Adds the shape at the middle of the dojo, made of static\ndefault objects, and selects it. Undo removes it again.")
+end
+
+-- rebuilt blocks: builder and where they sit { panel, first row, rows }
 local BLOCKS = {
     measured = { build = buildMeasuredRows, panel = "core", row = 0, rows = 3 },
     coreProps = { build = buildCoreProps, panel = "core", row = 3, rows = 2 },
     looks = { build = buildLooks, panel = "core", row = 5, rows = 2 },
     advancedProps = { build = buildAdvancedProps, panel = "advanced", row = 0, rows = 2 },
-    flags = { build = buildFlags, panel = "core", row = 7, rows = 1 },
-    model = { build = buildModel, panel = "advanced", row = 2, rows = 1 },
-    thrust = { build = buildThrust, panel = "advanced", y = THRUST_Y, rows = 3 },
+    flags = { build = buildFlags, panel = "advanced", row = 2, rows = 1 },
+    model = { build = buildModel, panel = "advanced", row = 3, rows = 1 },
+    thrust = { build = buildThrust, panel = "thrust", row = 0, rows = 3 },
 }
 -- fixed build order (pairs() order isn't defined)
 local BLOCK_ORDER = { "measured", "coreProps", "looks", "advancedProps", "flags", "model", "thrust" }
 
 -- input lists in inwuts: all of them are cleared by "Reset inputs", the rebuilt ones keep typed text
 local ALL_INPUTS = { "pos", "rot", "scale", "position", "angle", "size", "color", "coreProps", "advancedProps",
-    "thrust" }
+    "thrust", "generate" }
 local REBUILT_INPUTS = { "position", "angle", "size", "color", "coreProps", "advancedProps", "thrust" }
 
 ---Empties all input fields, placeholders show again
@@ -1431,20 +1570,19 @@ function editor.create(parent)
         size = { parent.size.w, 3 * ROW_H },
     }))
     buildIdRows(panels.advanced:addChild({
-        pos = { 0, 3 * ROW_H },
+        pos = { 0, 4 * ROW_H },
         size = { parent.size.w, ROW_H },
     }))
-    -- section name above the thrust rows
-    panels.advanced:addChild({
-        pos = { 5, 4 * ROW_H },
-        size = { parent.size.w - 10, HEADER_H },
-    }):addAdaptedText(true, "Thrust", nil, nil, FONTS.MEDIUM, LEFTMID, 0.65)
+    buildGenerate(panels.generate:addChild({
+        pos = { 0, 0 },
+        size = { parent.size.w, 5 * ROW_H },
+    }))
     blocks = {}
     local selected = getSelected()
     for _, name in ipairs(BLOCK_ORDER) do
         local block = BLOCKS[name]
         blocks[name] = panels[block.panel]:addChild({
-            pos = { 0, block.y or block.row * ROW_H },
+            pos = { 0, block.row * ROW_H },
             size = { parent.size.w, block.rows * ROW_H },
         })
         block.build(blocks[name], selected)

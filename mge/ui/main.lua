@@ -5,7 +5,7 @@ require("toriui.uielement")
 ---@field page integer
 ---@field pageSize integer
 ---@field toggleAll boolean
----@field activeTab "core"|"advanced" editor panel, kept while the Players list hides the editor
+---@field activeTab "core"|"advanced"|"thrust"|"generate" editor panel, kept while the Players list hides the editor
 ---@field listTab "objects"|"players" what the list area shows
 ---@field selectedPlayer integer player Export / Import act on, picked in the Players list
 local Main = { page = 1, pageSize = 120, toggleAll = false, activeTab = "core", listTab = "objects", selectedPlayer = 0 }
@@ -30,7 +30,7 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 692
+    h = 662
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
@@ -185,6 +185,8 @@ updateContentHeight(tabRow.size.h, 0) -- no gap, the panel starts right under th
 local tabNames = {
     { id = "core", label = "Core" },
     { id = "advanced", label = "Advanced" },
+    { id = "thrust", label = "Thrust" },
+    { id = "generate", label = "Generate" },
 }
 local tabItems = {}
 for i, tab in ipairs(tabNames) do
@@ -196,9 +198,9 @@ for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, TAB_G
     tabButtons[tabNames[i].id] = btn
 end
 
--- the editor area inside the tab panel: fits the panels (8 rows each, see PANELS in ui/editor.lua)
+-- the editor area inside the tab panel: fits the panels (7 rows each, see PANELS in ui/editor.lua)
 -- with the reset button under them
-local areaH = 268
+local areaH = 238
 local tabPanel = content:addChild({
     pos = defaultPos,
     size = { content.size.w, areaH + TAB_PADDING * 2 },
@@ -263,7 +265,7 @@ function Main.applyTab()
     end
 end
 
----@param id "core"|"advanced"
+---@param id "core"|"advanced"|"thrust"|"generate"
 function Main.setTab(id)
     if not tabButtons[id] then return end
     Main.activeTab = id

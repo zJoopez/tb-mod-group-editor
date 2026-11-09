@@ -141,7 +141,8 @@ end
 
 ---Adds an asset's objects (and joints between them) to the mod, selected, then saves and reloads
 ---@param parser FileParserResult asset contents, positions relative to the spawn point
-local function importObjects(parser)
+---@param keepTab boolean? stay on the shown editor tab instead of switching to Core
+local function importObjects(parser, keepTab)
     -- only joints with both objects in the asset are imported, so only those objects need low ids
     local linkedJoints = Joints.getLinked(Joints.idSet(parser.env_obj), parser.env_obj_joint)
     if not Joints.haveRoom(#linkedJoints) then return end
@@ -171,7 +172,7 @@ local function importObjects(parser)
     History.commit()
     -- imports land at the spawn point, which doesn't move: show the editor to move them right away and
     -- look at them once they're in the world (after the reload, if the camera button is on)
-    MGE.Main.setTab("core")
+    if not keepTab then MGE.Main.setTab("core") end
     MGE.focusAfterReload = true
     MGE.save() -- the reload refreshes the window
     print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints")
@@ -278,11 +279,23 @@ local DEFAULT_OBJECT = {
     { "hardness", "0.000000" },
 }
 
+---@return table<string, string> a new copy of DEFAULT_OBJECT's properties
+function assetsView.defaultProps()
+    local props = {}
+    for _, entry in ipairs(DEFAULT_OBJECT) do props[entry[1]] = entry[2] end
+    return props
+end
+
+---Adds objects like an import: new ids, selected, saved. Used by the Generate tab
+---@param objects FileParserEnvObj[]
+---@param keepTab boolean? see importObjects
+function assetsView.addObjects(objects, keepTab)
+    importObjects({ env_obj = objects, env_obj_joint = {}, ignores = {} }, keepTab)
+end
+
 ---New button of the object list: adds DEFAULT_OBJECT, placed like an imported asset
 function assetsView.newObject()
-    local obj = { kind = "env_obj", id = 1, props = {} }
-    for _, entry in ipairs(DEFAULT_OBJECT) do obj.props[entry[1]] = entry[2] end
-    importObjects({ env_obj = { obj }, env_obj_joint = {}, ignores = {} })
+    assetsView.addObjects({ { kind = "env_obj", id = 1, props = assetsView.defaultProps() } })
 end
 
 ---@return "obj"|"player" asset kind for what the list shows
