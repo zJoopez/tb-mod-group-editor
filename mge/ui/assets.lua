@@ -261,6 +261,19 @@ local function replacePlayerFromFile(assetName)
 end
 
 
+-- object the New button adds, edit or replace this asset to change what New spawns
+local NEW_OBJECT_ASSET = "default.tbm"
+
+---New button of the object list: adds the default object asset, like importing it
+function assetsView.newObject()
+    assetKind = "obj"
+    if not Files.Exists(getAssetPath(NEW_OBJECT_ASSET) or "") then
+        print("New needs " .. ASSET_DIR .. "/" .. ASSET_FOLDERS.obj .. "/" .. NEW_OBJECT_ASSET)
+        return
+    end
+    importAssetFromFile(NEW_OBJECT_ASSET)
+end
+
 ---@return "obj"|"player" asset kind for what the list shows
 local function listKind()
     return Main.listTab == "players" and "player" or "obj"

@@ -6,7 +6,6 @@ local Widgets = MGE.Widgets
 
 local GRID_COLUMNS = 6
 local GRID_GAP = 3
-local DOUBLE_CLICK_TIME = 0.35 -- seconds between clicks on the same object
 
 -- cell colors: selected cells are pale with dark text so the state reads at a glance
 local CELL_TEXT = { 1, 1, 1, 1 }
@@ -27,23 +26,23 @@ local function styleCell(cell, selected)
     cell.pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
 end
 
----@type { id: integer, time: number }?
-local lastClick = nil
-
----True when the same object was clicked again within DOUBLE_CLICK_TIME
----@param id integer
----@return boolean
-local function isDoubleClick(id)
-    local now = UIElement.clock or os.clock()
-    local double = lastClick ~= nil and lastClick.id == id and now - lastClick.time <= DOUBLE_CLICK_TIME
-    lastClick = not double and { id = id, time = now } or nil
-    return double
-end
-
----Frames the object: same viewing direction, far enough away that it fits on screen
+---Usual list selection: a click selects only the clicked object (clicking the only selected one
+---deselects it), Shift + click adds it to or removes it from the selection
 ---@param obj FileParserEnvObj
-local function lookAt(obj)
-    MGE.Camera.focus({ obj })
+---@param objects FileParserEnvObj[] every object, others are deselected on a plain click
+---@return boolean selected whether the clicked object ended up selected
+local function clickSelect(obj, objects)
+    if get_keyboard_shift() ~= 0 then
+        obj.selected = not obj.selected or nil
+        return obj.selected == true
+    end
+    local onlySelected = obj.selected
+    for _, other in ipairs(objects) do
+        if other ~= obj and other.selected then onlySelected = false end
+        other.selected = nil
+    end
+    obj.selected = not onlySelected or nil
+    return obj.selected == true
 end
 
 local function create(view, fullList)
@@ -63,7 +62,7 @@ local function create(view, fullList)
         parent = toReload,
         pos = { 0, 0 },
         size = { view.size.w / 2, listElementHeight },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+        bgColor = Widgets.TAB_PANEL_SOLID, -- list bars match the tab panel they sit in
         interactive = true
     })
 
@@ -71,7 +70,7 @@ local function create(view, fullList)
         parent = toReload,
         pos = { view.size.w / 2, 0 },
         size = { view.size.w / 2, listElementHeight },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+        bgColor = Widgets.TAB_PANEL_SOLID, -- list bars match the tab panel they sit in
         interactive = true
     })
 
@@ -79,18 +78,21 @@ local function create(view, fullList)
         parent = toReload,
         pos = { 0, -listElementHeight },
         size = { view.size.w, listElementHeight },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+        bgColor = Widgets.TAB_PANEL_SOLID, -- list bars match the tab panel they sit in
         interactive = true
     })
 
-    -- grid: one button per object, several per row. Click toggles selection, double click points
-    -- the camera at the object
+    -- grid: one button per object, several per row. Click selects only that object, Shift + click
+    -- adds / removes it (clickSelect)
     local gridRows = {}
     for i, obj in ipairs(list) do
         local r = math.ceil(i / GRID_COLUMNS)
         gridRows[r] = gridRows[r] or {}
         table.insert(gridRows[r], obj)
     end
+
+    ---@type table<FileParserEnvObj, UIElement> cells on this page, restyled when a click changes others
+    local cells = {}
 
     -- list area between top and bottom bars
     ScrollList.create(view, {
@@ -110,16 +112,15 @@ local function create(view, fullList)
                 hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
                 pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
             }, true)
+            cells[obj] = cell
             styleCell(cell, obj.selected)
             cell:addAdaptedText(tostring(obj.id), nil, nil, nil, CENTERMID, 0.7, nil, nil)
             cell:addMouseUpHandler(function()
-                if isDoubleClick(obj.id) then
-                    lookAt(obj) -- the first click already toggled, a double click keeps the state
-                    obj.selected = not obj.selected or nil
-                else
-                    obj.selected = not obj.selected or nil
-                end
-                styleCell(cell, obj.selected)
+                local selected = clickSelect(obj, fullList)
+                -- restyled in place, rebuilding the list would reset its scroll position
+                for other, otherCell in pairs(cells) do styleCell(otherCell, other.selected) end
+                -- a newly selected object is framed when the Camera button is on
+                if selected and MGE.Camera.followMoves then MGE.Camera.focus({ obj }) end
                 Main.onSelectionChanged()
             end)
         end
@@ -144,14 +145,21 @@ local function create(view, fullList)
             Main.updateWindow()
         end)
 
-    -- Duplicate/Delete/Export act on selected objects, Import opens the asset list (ui/assets.lua).
-    -- In the list's bar so they're there on every tab (Reindex is in the editor's Advanced panel).
+    -- New adds the default object, Duplicate/Delete/Export act on selected objects, Import opens the
+    -- asset list (ui/assets.lua). In the list's bar so they're there on every tab (Reindex is in the
+    -- editor's Advanced panel). Icons share the width, their names show on hover.
     -- MGE.Editor loads after this module, so it's looked up on click
     Widgets.barButtons(botBar, {
-        { label = "Duplicate", onClick = function() MGE.Editor.duplicate() end },
-        { label = "Delete", onClick = function() MGE.Editor.deleteSelected() end }, -- asks first
-        { label = "Import", onClick = function() MGE.Assets.openImport() end },
-        { label = "Export", onClick = function() MGE.Assets.export() end },
+        { label = "New", icon = "../textures/menu/general/buttons/addsign.tga", wide = true,
+            onClick = function() MGE.Assets.newObject() end },
+        { label = "Duplicate", icon = MGE.scriptPath .. "textures/duplicate.tga", wide = true,
+            onClick = function() MGE.Editor.duplicate() end },
+        { label = "Delete", icon = "../textures/menu/general/buttons/trash.tga", wide = true,
+            onClick = function() MGE.Editor.deleteSelected() end }, -- asks first
+        { label = "Import", icon = MGE.scriptPath .. "textures/import.tga", wide = true,
+            onClick = function() MGE.Assets.openImport() end },
+        { label = "Export", icon = MGE.scriptPath .. "textures/export.tga", wide = true,
+            onClick = function() MGE.Assets.export() end },
     })
 end
 

@@ -42,8 +42,6 @@
 ---@field saveOverlay UIElement? open name prompt (ui/save_overlay.lua)
 ---@field confirmOverlay UIElement? open confirmation popup (TBMenu:showConfirmationWindow)
 ---@field saveOverlayContext table? options for the next name prompt
----@field importOverlay UIElement? open asset list (ui/assets.lua)
----@field Assets table export / import overlay, ui/assets.lua
 MGE = MGE or { scriptPath = "mge/" }
 MGE.hookname = "mge"
 MGE.onQuit = {}

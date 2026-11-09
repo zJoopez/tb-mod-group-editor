@@ -32,6 +32,17 @@ Widgets.PANEL_STYLE = {
     pressed = TB_MENU_DEFAULT_DARKER_COLOR,
 }
 
+---Tab panel color (ui/main.lua): darkens the window, the active tab uses it too so it touches the panel
+Widgets.TAB_PANEL_COLOR = { 0, 0, 0, 0.15 }
+---The tab panel color as a solid color: the window color under it, darkened the same. For parts that
+---have to cover what's behind them, like list bars over rows that scroll past the list edges
+Widgets.TAB_PANEL_SOLID = {
+    TB_MENU_DEFAULT_BG_COLOR[1] * (1 - Widgets.TAB_PANEL_COLOR[4]),
+    TB_MENU_DEFAULT_BG_COLOR[2] * (1 - Widgets.TAB_PANEL_COLOR[4]),
+    TB_MENU_DEFAULT_BG_COLOR[3] * (1 - Widgets.TAB_PANEL_COLOR[4]),
+    1,
+}
+
 ---Standard MGE button
 ---@param parent UIElement
 ---@param rect WidgetRect position relative to parent
@@ -80,31 +91,41 @@ function Widgets.iconButton(parent, rect, image, onClick, style)
     return btn
 end
 
+---@class WidgetRowButton
+---@field label string|fun(): string text, for icon buttons the name shown when hovering (string labels)
+---@field icon string? image shown instead of the label
+---@field wide boolean? icon buttons are square unless wide, wide ones share the width like text buttons
+---@field onClick function?
+
 ---Buttons filling the parent's width exactly: n buttons and n - 1 gaps between them.
----Entries with `icon` show that image instead of the label and are square (h wide), text buttons
----share the rest of the width equally
+---Entries with `icon` show that image instead of the label and are square (h wide) unless `wide`,
+---the other buttons share the rest of the width equally. Icon buttons show their label on hover
 ---@param parent UIElement
 ---@param y number
 ---@param h number
----@param buttons { label: string|fun(): string, icon: string?, onClick: function? }[]
+---@param buttons WidgetRowButton[]
 ---@param gap number space between buttons
 ---@param textScale number?
 ---@param style WidgetStyle?
 ---@return UIElement[]
 function Widgets.buttonRow(parent, y, h, buttons, gap, textScale, style)
-    local iconCount = 0
+    local squareCount = 0
     for _, info in ipairs(buttons) do
-        if info.icon then iconCount = iconCount + 1 end
+        if info.icon and not info.wide then squareCount = squareCount + 1 end
     end
-    local textCount = #buttons - iconCount
-    local textW = textCount > 0 and (parent.size.w - gap * (#buttons - 1) - iconCount * h) / textCount or 0
+    local sharedCount = #buttons - squareCount
+    local sharedW = sharedCount > 0 and (parent.size.w - gap * (#buttons - 1) - squareCount * h) / sharedCount or 0
     local created = {}
     local x = 0
     for i, info in ipairs(buttons) do
-        local w = info.icon and h or textW
+        local w = (info.icon and not info.wide) and h or sharedW
         local rect = { x = x, y = y, w = w, h = h }
         if info.icon then
             created[i] = Widgets.iconButton(parent, rect, info.icon, info.onClick, style)
+            local label = info.label
+            if type(label) == "string" and label ~= "" then
+                TBMenu:displayPopup(created[i], label) -- name of the icon on hover
+            end
         else
             created[i] = Widgets.button(parent, rect, info.label, info.onClick, textScale, style)
         end
@@ -119,7 +140,7 @@ local BAR_GAP = 4
 
 ---Buttons filling a list bar with the shared bar padding (e.g. duplicate/delete, import)
 ---@param bar UIElement
----@param buttons { label: string|fun(): string, icon: string?, onClick: function? }[]
+---@param buttons WidgetRowButton[]
 ---@param style WidgetStyle?
 ---@return UIElement[]
 function Widgets.barButtons(bar, buttons, style)

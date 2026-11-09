@@ -40,12 +40,14 @@ function player_list.create(view)
     local botBar = toReload:addChild({
         pos = { 0, -barH },
         size = { view.size.w, barH },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+        bgColor = MGE.Widgets.TAB_PANEL_SOLID, -- list bars match the tab panel they sit in
         interactive = true,
     })
     MGE.Widgets.barButtons(botBar, {
-        { label = "Import", onClick = function() MGE.Assets.openImport() end },
-        { label = "Export", onClick = function() MGE.Assets.export() end },
+        { label = "Import", icon = MGE.scriptPath .. "textures/import.tga", wide = true,
+            onClick = function() MGE.Assets.openImport() end },
+        { label = "Export", icon = MGE.scriptPath .. "textures/export.tga", wide = true,
+            onClick = function() MGE.Assets.export() end },
     })
 
     local ids = {}

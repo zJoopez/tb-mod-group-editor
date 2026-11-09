@@ -27,7 +27,7 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 709
+    h = 721
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
@@ -102,19 +102,23 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Enter: apply the value typed in an input field\n" ..
     "Click Pos / Rot / Scale: switch to Move / Rotate / Resize offsets and back\n" ..
     "Click an object in the world: select / deselect it\n" ..
-    "Click an id in the list: select / deselect, double click: look at it\n" ..
+    "Click an id in the list: select only it (again: deselect), Shift + click: add / remove it\n" ..
+    "List buttons (names show on hover): New adds a default object (assets/obj/default.tbm),\n" ..
+    "Duplicate, Delete, Import, Export\n" ..
     "Export / Import: save the selected objects or picked player as an asset, or pick one to add\n" ..
     "(objects appear at the spawn point, a player model replaces the picked player's), double click imports\n" ..
     "Players list: click a player to pick it\n" ..
     "Drag / mouse wheel: orbit / zoom the camera after looking at objects\n" ..
-    "Camera button: camera follows the selection when moving (highlighted when on)\n" ..
+    "Camera button: camera follows the selection when moving and looks at objects\n" ..
+    "selected in the list (highlighted when on)\n" ..
     "Mouse button: click objects in the world to select them (highlighted when on),\n" ..
     "turn off to play the mod without selecting")
 updateContentHeight(menuH)
 
 -- tabs for the list area: objects (with how full the mod is) and players. The active tab has the
 -- list's color and touches it, same idea as the editor tabs
-local TAB_PANEL_COLOR = { 0, 0, 0, 0.15 } -- darkens the window, buttons inside (DARKER) stay visible
+local TAB_PANEL_COLOR = Widgets.TAB_PANEL_COLOR -- darkens the window, buttons inside (DARKER) stay visible
+local TAB_PADDING = 6 -- space between a tab panel's edge and its content
 
 ---Active tabs are part of the panel under them: panel color, no hover/press change.
 ---Inactive tabs keep the normal button look. Used by the list tabs and the editor tabs
@@ -133,7 +137,7 @@ local listHeader = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 26 },
 })
-updateContentHeight(listHeader.size.h - margin) -- no gap, the list starts right under the tabs
+updateContentHeight(listHeader.size.h - margin) -- no gap, the list panel starts right under the tabs
 local listTabNames = {
     { id = "objects", label = function()
         return "Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS
@@ -149,18 +153,24 @@ for i, btn in ipairs(Widgets.buttonRow(listHeader, 0, listHeader.size.h, listTab
     listTabButtons[listTabNames[i].id] = btn
 end
 
-local obj_selector_container = content:addChild({
+-- the list sits in a panel like the editor's: panel color, padding, the active list tab touches it
+local listH = 200
+local listPanel = content:addChild({
     pos = defaultPos,
-    size = { content.size.w, 200 },
+    size = { content.size.w, listH + TAB_PADDING * 2 },
+    bgColor = TAB_PANEL_COLOR,
+})
+local obj_selector_container = listPanel:addChild({
+    pos = { TAB_PADDING, TAB_PADDING },
+    size = { listPanel.size.w - TAB_PADDING * 2, listH },
     bgColor = TB_MENU_DEFAULT_DARKER_COLOR
 })
-updateContentHeight(obj_selector_container.size.h)
+updateContentHeight(listPanel.size.h)
 
 -- Tabs, right above the area they switch (title row and object list stay the same on every tab).
 -- The area has its own panel color and the active tab uses the same color and touches the panel,
 -- so it reads as one shape. Inactive tabs keep the normal button look.
 local TAB_GAP = 4
-local TAB_PADDING = 6
 local tabRow = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 30 },
