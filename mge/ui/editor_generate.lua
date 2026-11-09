@@ -23,14 +23,14 @@ local function defaultSides()
     return sides
 end
 
----Generate button / Enter: adds the shape, made of the default object made static
-local function generate()
+---Pieces for the typed values (empty fields use their placeholders), same for the preview and Generate
+---@return GeneratePiece[]? pieces, string? error why nothing can be generated
+local function planFromFields()
     local fields = inwuts.generate or {}
-    local function typed(i) return fields[i] and tonumber(fields[i].textfieldstr[1]) end
+    local function typed(i) return fields[i] and not fields[i].destroyed and tonumber(fields[i].textfieldstr[1]) end
     local amount = math.floor((typed(1) or GENERATE_AMOUNT) + 0.5)
     if amount < 2 or amount > MAX_GENERATE then -- one piece is what the list's New button adds
-        print("Generate: amount must be 2-" .. MAX_GENERATE)
-        return
+        return nil, "amount must be 2-" .. MAX_GENERATE
     end
     local sides, increment = defaultSides(), {}
     for i = 1, 3 do
@@ -40,11 +40,44 @@ local function generate()
     end
     local most = MGE.ShapeGen.maxPieces(sides, increment)
     if most and amount > most then
-        print("Generate: the increment shrinks pieces to nothing after " .. most .. " pieces, use fewer or a smaller increment")
+        return nil, "the increment shrinks pieces to nothing after " .. most .. " pieces, use fewer or a smaller increment"
+    end
+    return MGE.ShapeGen.plan(amount, typed(2) or 0, typed(3) or GENERATE_ANGLE, sides,
+        { MGE.POS_ORIGIN[1], MGE.POS_ORIGIN[2] }, { increment = increment, align = align })
+end
+
+-- Preview: the pieces Generate would add, drawn by utils/highlight.lua while the Generate tab is open.
+-- Planned again only when a field's text or Align changes, the draw hook asks every frame
+local previewKey, previewPieces
+
+---@return string everything the plan depends on
+local function fieldsKey()
+    ---@type string[]
+    local parts = { align }
+    for i, field in ipairs(inwuts.generate or {}) do
+        parts[i + 1] = field.destroyed and "" or field.textfieldstr[1]
+    end
+    return table.concat(parts, "|")
+end
+
+MGE.Highlight.preview = function()
+    local Main = MGE.Main
+    if Main.activeTab ~= "generate" or Main.listTab == "players" or not inwuts.generate then return nil end
+    local key = fieldsKey()
+    if key ~= previewKey then
+        previewKey = key
+        previewPieces = planFromFields() -- nil when the values can't be generated, nothing is drawn
+    end
+    return previewPieces
+end
+
+---Generate button / Enter: adds the shape, made of the default object made static
+local function generate()
+    local pieces, err = planFromFields()
+    if not pieces then
+        print("Generate: " .. err)
         return
     end
-    local pieces = MGE.ShapeGen.plan(amount, typed(2) or 0, typed(3) or GENERATE_ANGLE, sides,
-        { MGE.POS_ORIGIN[1], MGE.POS_ORIGIN[2] }, { increment = increment, align = align })
 
     local objects = {}
     for i, piece in ipairs(pieces) do
@@ -57,6 +90,8 @@ local function generate()
     end
     -- selected and saved like an import, the tab stays so values can be tried again after Undo
     MGE.Assets.addObjects(objects, true)
+    -- the shape is there now (highlighted as the selection), the preview comes back when a value changes
+    previewKey, previewPieces = fieldsKey(), nil
 end
 
 ---Align row (generate panel), rebuilt on a click so the current choice is highlighted
@@ -98,7 +133,7 @@ local function buildGenerate(holder)
 
     createToggleButtonRow("", holder, {
         { label = "Generate", active = false, onClick = generate },
-    }, "Adds static pieces at the dojo middle and selects them.")
+    }, "Adds the orange preview as static pieces and selects them.")
 end
 
 
