@@ -18,8 +18,7 @@ local History = {
 local function copyObject(obj)
     local copy = ModData.copy(obj)
     copy.props = ModData.copy(obj.props)
-    -- lines, ignores and trailer are never modified after parsing (only replaced), frame is replaced not
-    -- modified, safe to share
+    -- lines, ignores and trailer are never modified after parsing (only replaced), safe to share
     return copy
 end
 

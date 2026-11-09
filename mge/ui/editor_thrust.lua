@@ -94,7 +94,7 @@ local function buildThrust(holder, selected)
     local frames = shown(function(t) return tostring(t.frames) end) or tostring(THRUST_DEFAULT.frames)
     local dir = {}
     for i = 1, 3 do
-        dir[i] = shown(function(t) return string.format("%.2f", t.dir[i]) end) or "0.00"
+        dir[i] = shown(function(t) return Rows.formatHint(t.dir[i]) end) or "0.00"
     end
     local framesInputs = createInputRow("Frames", holder, function() setThrustField(1) end, { frames },
         "Pushes every N frames, 1: every frame.")

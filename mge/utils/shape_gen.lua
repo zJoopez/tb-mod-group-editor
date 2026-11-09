@@ -31,7 +31,7 @@ end
 ---@class GeneratePiece
 ---@field pos number[]
 ---@field rot number[] degrees, as written in the file
----@field frame number[][] MGE's rotation record (#mge_frame), see rotBy
+---@field frame number[][] orientation the rot line gives, columns are the piece's axes (preview drawing)
 ---@field sides number[]
 
 ---@alias GenerateAlign "in"|"out"|"center"

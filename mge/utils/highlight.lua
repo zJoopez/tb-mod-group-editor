@@ -21,7 +21,7 @@ local Highlight = {
 }
 MGE.Highlight = Highlight
 
----Rotation matrix as get_obj_rot gives it (row-major, see Transforms getLocalAxes), for draw_*_m
+---Rotation matrix as get_obj_rot gives it (row-major, r0 r1 r2 = first row), for draw_*_m
 ---@param m number[][]
 ---@return MatrixTB
 local function toMatrixTB(m)

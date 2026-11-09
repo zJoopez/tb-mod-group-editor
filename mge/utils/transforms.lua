@@ -2,7 +2,9 @@
 -- Scale/Resize rows (ui/editor_core.lua). Live changes go to the game (set_obj_*) and the
 -- mod data, then History.commit. Transforms.onChanged is called after each change (the editor
 -- refreshes the measured rows), tests can leave it as is.
-require("toriui.uielement3d") -- Utils3D.MatrixToMatrixTB
+-- Positions and orientations are read from the mod data (pos and rot lines), not from the live world:
+-- once the game runs, dynamic objects fall and tumble, and edits should start from where the file has
+-- them. The live world only tells which objects exist (objects not in the world yet don't count).
 
 local Transforms = {}
 MGE.Transforms = Transforms
@@ -22,6 +24,57 @@ local pickGroupFrame
 
 ---Called after every change, set by the editor to refresh the rows showing current values
 Transforms.onChanged = function() end
+
+-- Angle convention of the Rot and Rotate rows.
+--   true:  the numbers are the rot line's, Rot shows what the file says and Rotate z 30 from 0 writes
+--          "0 0 30". Positive angles turn clockwise when looking down the axis (the game's way).
+--   false: standard right-handed angles, positive turns counterclockwise. Rotate z 30 shows Rot z 30
+--          but writes "0 0 -30", and an object saved as "0 0 45" shows Rot z -45.
+Transforms.fileAngles = true
+---@return number 1 or -1, multiplies the typed / shown angles into the math's right-handed ones
+local function angleSign() return Transforms.fileAngles and -1 or 1 end
+
+---@param obj FileParserEnvObj
+---@return boolean the object exists in the world
+local function inWorld(obj)
+    return get_obj_pos(obj.id - 1) ~= nil
+end
+
+---Position from the pos line, the live position for objects without one
+---@param obj FileParserEnvObj
+---@return number[]
+local function positionOf(obj)
+    local x, y, z = (obj.props.pos or ""):match("(%S+)%s+(%S+)%s+(%S+)")
+    x, y, z = tonumber(x), tonumber(y), tonumber(z)
+    if x and y and z then return { x, y, z } end
+    return { get_obj_pos(obj.id - 1) }
+end
+
+---@param obj FileParserEnvObj
+---@return number[] the rot line in radians, 0 0 0 without one
+local function rotLine(obj)
+    local x, y, z = (obj.props.rot or ""):match("(%S+)%s+(%S+)%s+(%S+)")
+    return { math.rad(tonumber(x) or 0), math.rad(tonumber(y) or 0), math.rad(tonumber(z) or 0) }
+end
+
+---Puts the object's live rotation back to its rot line (after the game tumbled it)
+---@param obj FileParserEnvObj
+local function applyFileRotation(obj)
+    local r = rotLine(obj)
+    set_obj_rot(obj.id - 1, r[1], r[2], r[3])
+end
+
+---Orientation from the rot line (degrees, no line is 0 0 0), columns are the object's axes in world
+---space. The game reads rot x y z as (Rz(z) Ry(y) Rx(x))^T = Rx(-x) Ry(-y) Rz(-z): the convention in
+---which rotating.lua's SetRotOffset turns objects the way SetRotPos moves them, and the one get_obj_rot
+---matched in game (it gave the same axes as MGE's rotations)
+---@param obj FileParserEnvObj
+---@return number[][]
+local function orientationOf(obj)
+    local r = rotLine(obj)
+    local x, y, z = r[1], r[2], r[3]
+    return Mat3.mul(Mat3.rotX(-x), Mat3.mul(Mat3.rotY(-y), Mat3.rotZ(-z)))
+end
 
 ---@param values number[]
 local function writeVectorProperty(obj, key, values)
@@ -53,9 +106,9 @@ local function getSelectionPivot(selectedObjects)
 
     local sumX, sumY, sumZ, count = 0, 0, 0, 0
     for _, obj in ipairs(selectedObjects) do
-        local x, y, z = get_obj_pos(obj.id - 1)
-        if x then -- objects not in the world (yet) don't count
-            sumX, sumY, sumZ, count = sumX + x, sumY + y, sumZ + z, count + 1
+        if inWorld(obj) then -- objects not in the world (yet) don't count
+            local p = positionOf(obj)
+            sumX, sumY, sumZ, count = sumX + p[1], sumY + p[2], sumZ + p[3], count + 1
         end
     end
     if count == 0 then return 0, 0, 0 end
@@ -69,8 +122,10 @@ end
 local function moveBy(selectedObjects, offsets)
     local function move(x, y, z) return x + offsets[1], y + offsets[2], z + offsets[3] end
     for _, v in ipairs(selectedObjects) do
-        local pos = { move(get_obj_pos(v.id - 1)) }
+        local p = positionOf(v)
+        local pos = { move(p[1], p[2], p[3]) }
         set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
+        applyFileRotation(v) -- the whole object goes back to the file's state, not only its position
         writeVectorProperty(v, "pos", pos)
     end
 
@@ -117,10 +172,8 @@ local function rotBy(selectedObjects, offsets)
     local pivot = { getSelectionPivot(selectedObjects) }
 
     for _, v in ipairs(selectedObjects) do
-        local rotValue = v.props.rot or "0 0 0"
-        local x, y, z = rotValue:match("(%S+)%s+(%S+)%s+(%S+)")
-        local rot = { math.rad(tonumber(x) or 0), math.rad(tonumber(y) or 0), math.rad(tonumber(z) or 0) }
-        local pos = { get_obj_pos(v.id - 1) }
+        local rot = rotLine(v)
+        local pos = positionOf(v)
 
         local outPos = RotatingOld.SetRotPos(
             pos[1], pos[2], pos[3],
@@ -137,13 +190,6 @@ local function rotBy(selectedObjects, offsets)
         writeVectorProperty(v, "rot", outRot)
         writeVectorProperty(v, "pos", outPos)
     end
-    -- each object remembers the rotation MGE applied to it (saved in the mod), so scaling can use the
-    -- group's own axes later, even after reselecting. Same rotation SetRotPos applies: z, then y, then x
-    local rotation = Mat3.mul(Mat3.rotX(offsets[1]), Mat3.mul(Mat3.rotY(offsets[2]), Mat3.rotZ(offsets[3])))
-    for _, v in ipairs(selectedObjects) do
-        v.frame = Mat3.mul(rotation, v.frame or Mat3.IDENTITY)
-    end
-
     -- anchors rotate around the same pivot, axis directions get the same rotation without translation
     finishTransform(selectedObjects, function(x, y, z)
         local p = RotatingOld.SetRotPos(x, y, z, pivot[1], pivot[2], pivot[3], offsets[1], offsets[2], offsets[3])
@@ -155,24 +201,21 @@ local function rotBy(selectedObjects, offsets)
     Transforms.onChanged()
 end
 
----Rotate row: rotates selected objects by the typed degrees
+---Rotate row: rotates selected objects by the typed degrees (direction: Transforms.fileAngles)
 ---@param typed (number?)[] x y z degrees, nil axes don't turn
 function Transforms.rotate(typed)
     local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
-    rotBy(selectedObjects, { math.rad(typed[1] or 0), math.rad(typed[2] or 0), math.rad(typed[3] or 0) })
+    local sign = angleSign()
+    rotBy(selectedObjects, { sign * math.rad(typed[1] or 0), sign * math.rad(typed[2] or 0), sign * math.rad(typed[3] or 0) })
 end
 
----World directions of an object's local x, y, z axes.
----get_obj_rot is row-major (r0 r1 r2 = first row, verified in game against MGE's own rotation),
----so the local axes are its columns.
----@param id integer 0-based object id
+---World directions of an object's local x, y, z axes (columns of its orientation)
+---@param obj FileParserEnvObj
 ---@return number[][]
-local function getLocalAxes(id)
-    local raw = get_obj_rot(id)
-    if type(raw) ~= "table" then return { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } } end
-    local m = Utils3D.MatrixToMatrixTB(raw)
-    return { { m.r0, m.r4, m.r8 }, { m.r1, m.r5, m.r9 }, { m.r2, m.r6, m.r10 } }
+local function getLocalAxes(obj)
+    local m = orientationOf(obj)
+    return { { m[1][1], m[2][1], m[3][1] }, { m[1][2], m[2][2], m[3][2] }, { m[1][3], m[2][3], m[3][3] } }
 end
 
 ---Linear map that scales along the group frame axes: G * diag(scale) * G^T
@@ -189,13 +232,14 @@ end
 ---up to 1). Exact for objects aligned with the group, and reversible: scaling by s and then by 1/s
 ---gives the original sides back (the old "how much the map stretches the axis" fit didn't, tilted
 ---objects drifted on every scale)
----@param id integer 0-based object id
+---@param obj FileParserEnvObj
 ---@param sides number[]
 ---@param frame number[][] group frame, columns are the group axes
 ---@param scale number[] factors along the group axes
 ---@return number[]
-local function scaleSides(id, sides, frame, scale)
-    local axes = getLocalAxes(id)
+local function scaleSides(obj, sides, frame, scale)
+    local id = obj.id - 1
+    local axes = getLocalAxes(obj)
     local logScale = {}
     for j = 1, 3 do logScale[j] = math.log(math.max(math.abs(scale[j]), 1e-9)) end -- mirroring keeps sizes
     local f = {}
@@ -233,17 +277,18 @@ local function sameFrame(a, b)
     return true
 end
 
----Frame to scale the selection in: objects rotated together share the frame MGE stored on them.
----If selected objects carry different frames, the one covering the most volume wins.
----Objects never rotated by MGE count as the world frame.
+---The group's axes (what Rot shows and Scale / Resize stretch along): objects turned together share
+---their orientation. If the selected objects point different ways, the orientation most of them
+---share wins (a house's walls over its tilted roof pieces), ties go to the first object. Counted,
+---not weighed by size: scaling changes sizes, and the axes must not switch halfway through a Scale
+---or between a Resize and its inverse (rotating and scaling never change which objects match)
 ---@param objects FileParserEnvObj[]
 ---@return number[][]
 pickGroupFrame = function(objects)
     local groups = {} -- { frame, weight }
     for _, obj in ipairs(objects) do
-        local frame = obj.frame or Mat3.IDENTITY
-        local sx, sy, sz = get_obj_sides(obj.id - 1)
-        local weight = math.abs((sx or 1) * (sy or 1) * (sz or 1)) + 1e-6
+        local frame = orientationOf(obj)
+        local weight = 1
         local group
         for _, g in ipairs(groups) do
             if sameFrame(g.frame, frame) then group = g break end
@@ -281,7 +326,7 @@ end
 local function planScale(selectedObjects, scale)
     local pivot = { getSelectionPivot(selectedObjects) }
 
-    -- scale along the group's own axes (world axes if never rotated by MGE), as if scaled before rotating
+    -- scale along the group's own axes, as if scaled before rotating
     local frame = pickGroupFrame(selectedObjects)
     local map = groupScaleMatrix(frame, scale)
     local function scalePos(x, y, z)
@@ -291,11 +336,12 @@ local function planScale(selectedObjects, scale)
 
     local planned = {}
     for _, v in ipairs(selectedObjects) do
-        if get_obj_pos(v.id - 1) ~= nil then
+        if inWorld(v) then
+            local p = positionOf(v)
             table.insert(planned, {
                 obj = v,
-                pos = { scalePos(get_obj_pos(v.id - 1)) },
-                sides = scaleSides(v.id - 1, { get_obj_sides(v.id - 1) }, frame, scale),
+                pos = { scalePos(p[1], p[2], p[3]) },
+                sides = scaleSides(v, { get_obj_sides(v.id - 1) }, frame, scale),
             })
         end
     end
@@ -311,6 +357,7 @@ local function scaleBy(selectedObjects, scale)
         local id = p.obj.id - 1
         set_obj_pos(id, p.pos[1], p.pos[2], p.pos[3])
         set_obj_sides(id, p.sides[1], p.sides[2], p.sides[3])
+        applyFileRotation(p.obj)
         writeVectorProperty(p.obj, "pos", p.pos)
         writeVectorProperty(p.obj, "sides", p.sides)
     end
@@ -358,7 +405,11 @@ local function groupExtents(selectedObjects, scale)
     local min, max = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
     for _, v in ipairs(selectedObjects) do
         local id = v.id - 1
-        local x, y, z = get_obj_pos(id)
+        local x, y, z
+        if inWorld(v) then
+            local pos = positionOf(v)
+            x, y, z = pos[1], pos[2], pos[3]
+        end
         local sx, sy, sz = get_obj_sides(id)
         local p = placed[v.id]
         if p then
@@ -367,7 +418,7 @@ local function groupExtents(selectedObjects, scale)
         end
         if x then
             local shape = get_obj_shape(id)
-            local localAxes = getLocalAxes(id)
+            local localAxes = getLocalAxes(v)
             for i, a in ipairs(axes) do
                 local function along(k) return math.abs(localAxes[k][1] * a[1] + localAxes[k][2] * a[2] + localAxes[k][3] * a[3]) end
                 local half
@@ -439,12 +490,13 @@ function Transforms.sizeTo(typed)
     scaleBy(selectedObjects, scale)
 end
 
----Group orientation as angles (radians) in the rotate tool's order. Only rotations MGE applied are
----known (stored per object as #mge_frame), objects never rotated by MGE count as 0 0 0
+---Group orientation as the Rot row shows it (radians, Transforms.fileAngles), from the rot lines
 ---@param selectedObjects FileParserEnvObj[]
 ---@return number[]
 function Transforms.groupAngles(selectedObjects)
-    return { Mat3.toEulerXYZ(pickGroupFrame(selectedObjects)) }
+    local sign = angleSign()
+    local x, y, z = Mat3.toEulerXYZ(pickGroupFrame(selectedObjects))
+    return { sign * x, sign * y, sign * z }
 end
 
 ---Angle row: rotates the selection so the group's orientation becomes the typed degrees on the
@@ -454,19 +506,22 @@ function Transforms.angleTo(typed)
     local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
     local frame = pickGroupFrame(selectedObjects)
-    local target = { Mat3.toEulerXYZ(frame) }
+    local target = Transforms.groupAngles(selectedObjects) -- as shown, typed axes replace theirs
     local changed = false
     for i = 1, 3 do
         if typed[i] then target[i], changed = math.rad(typed[i]), true end
     end
     if not changed then return end
-    rotBy(selectedObjects, rotationTo(frame, target))
+    local sign = angleSign()
+    rotBy(selectedObjects, rotationTo(frame, { sign * target[1], sign * target[2], sign * target[3] }))
 end
 
 
 -- used by the editor rows, the generator and the offline tests
 Transforms.writeVector = writeVectorProperty
 Transforms.getSelectionPivot = getSelectionPivot
+Transforms.positionOf = positionOf
+Transforms.orientationOf = orientationOf
 Transforms.groupExtents = groupExtents
 Transforms.rotBy = rotBy
 Transforms.scaleBy = scaleBy

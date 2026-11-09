@@ -62,11 +62,21 @@ local function sharedChoice(objects, read)
 end
 
 
+---Value as a placeholder shows it, two decimals. Values that round to zero show "0.00", not "-0.00"
+---(-0 and tiny negatives like -0.000001 left over from rotation math)
+---@param value number
+---@return string
+local function formatHint(value)
+    local s = string.format("%.2f", value)
+    if s == "-0.00" then s = "0.00" end
+    return s
+end
+
 ---@param values number[]
 ---@return string[]
 local function formatHints(values)
     local hints = {}
-    for i = 1, 3 do hints[i] = string.format("%.2f", values[i]) end
+    for i = 1, 3 do hints[i] = formatHint(values[i]) end
     return hints
 end
 
@@ -292,6 +302,7 @@ end
 Rows.readInputs = readInputs
 Rows.sharedChoice = sharedChoice
 Rows.formatHints = formatHints
+Rows.formatHint = formatHint
 Rows.createInput = createInput
 Rows.createRow = createRow
 Rows.createInputRow = createInputRow

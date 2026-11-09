@@ -1,5 +1,3 @@
-require("toriui.uielement3d") -- Utils3D.MatrixToMatrixTB
-
 local assetsView = {}
 
 local Main = MGE.Main
@@ -48,17 +46,18 @@ local function getImportPath(relative)
     return ASSET_DIR .. "/" .. ASSET_FOLDERS[assetKind] .. "/" .. relative
 end
 
----Distance from object center to its lowest point in world space, accounts for rotation
----@param id integer 0-based object id
+---Distance from object center to its lowest point in world space, accounts for rotation. Rotation
+---comes from the rot line like the editor's transforms, not the live world (see utils/transforms.lua)
+---@param obj FileParserEnvObj
 ---@return number?
-local function getObjHalfHeight(id)
+local function getObjHalfHeight(obj)
+    local id = obj.id - 1
     local sx, sy, sz = get_obj_sides(id)
     local shape = get_obj_shape(id)
-    local rawRot = get_obj_rot(id)
-    if sx == nil or shape == nil or type(rawRot) ~= "table" then return nil end
-    -- get_obj_rot is row-major, so the third row r8 r9 r10 holds the world z component of local x, y, z axes
-    local rot = Utils3D.MatrixToMatrixTB(rawRot)
-    local zx, zy, zz = math.abs(rot.r8), math.abs(rot.r9), math.abs(rot.r10)
+    if sx == nil or shape == nil then return nil end
+    -- third row: world z component of the local x, y, z axes
+    local rot = MGE.Transforms.orientationOf(obj)
+    local zx, zy, zz = math.abs(rot[3][1]), math.abs(rot[3][2]), math.abs(rot[3][3])
 
     if shape == SHAPE.SPHERE then
         return sx -- x is radius
@@ -93,8 +92,12 @@ local function saveSelectedToAsset()
             local totalX, totalY, minZ = 0, 0, nil
 
             for i, obj in ipairs(selectedObjects) do
-                local x, y, z = get_obj_pos(obj.id - 1)
-                local halfHeight = getObjHalfHeight(obj.id - 1)
+                local x, y, z
+                if get_obj_pos(obj.id - 1) ~= nil then -- exists in the world, position as the file has it
+                    local pos = MGE.Transforms.positionOf(obj)
+                    x, y, z = pos[1], pos[2], pos[3]
+                end
+                local halfHeight = getObjHalfHeight(obj)
                 if x == nil or y == nil or z == nil or halfHeight == nil then
                     print("Unable to read selected object position or scale")
                     return false
@@ -110,8 +113,7 @@ local function saveSelectedToAsset()
             local centerX = totalX / #positions - MGE.POS_ORIGIN[1]
             local centerY = totalY / #positions - MGE.POS_ORIGIN[2]
             for i, obj in ipairs(selectedObjects) do
-                -- frame keeps the group's axes so the asset scales properly after import
-                local assetObj = { kind = "env_obj", id = obj.id, props = ModData.copy(obj.props), frame = obj.frame }
+                local assetObj = { kind = "env_obj", id = obj.id, props = ModData.copy(obj.props) }
                 local pos = positions[i]
                 assetObj.props.pos = FileHandler.formatNumbers(pos.x - centerX, pos.y - centerY, pos.z - minZ)
                 table.insert(parser.env_obj, assetObj)
@@ -159,7 +161,7 @@ local function importObjects(parser, keepTab)
     for i, assetObj in ipairs(parser.env_obj) do
         local newId = ids[i]
         table.insert(ModData.parsed.env_obj, { kind = "env_obj", id = newId, props = ModData.copy(assetObj.props),
-            frame = assetObj.frame, selected = true })
+            selected = true })
         idMap[assetObj.id] = newId
     end
     local importedJoints = Joints.copyLinked(parser.env_obj_joint, idMap)

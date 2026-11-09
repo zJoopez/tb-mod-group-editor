@@ -81,7 +81,7 @@ local function generate()
 
     local objects = {}
     for i, piece in ipairs(pieces) do
-        local obj = { kind = "env_obj", id = i, props = MGE.Assets.defaultProps(), frame = piece.frame }
+        local obj = { kind = "env_obj", id = i, props = MGE.Assets.defaultProps() }
         obj.props.flag = tostring(MGE.FLAGS.STATIC) -- a ramp stays in place, and static ids are plenty
         Transforms.writeVector(obj, "pos", piece.pos)
         Transforms.writeVector(obj, "rot", piece.rot)

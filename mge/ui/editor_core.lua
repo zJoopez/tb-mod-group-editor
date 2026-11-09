@@ -97,7 +97,7 @@ local function buildMeasuredRows(holder, selected)
     local angles = any and groupAngles(selected) or { 0, 0, 0 }
     for i = 1, 3 do angles[i] = math.deg(angles[i]) end
     inwuts.angle, transformRows.rotate.absolute = createInputRow("Rot", holder, function(_, i) angleSelected(i) end, formatHints(angles),
-        "Turns selection to given angles.\nOnly rotations done in MGE are known, others count as 0." ..
+        "Turns selection to given angles." ..
         SWITCH_HELP .. "Name click changes mode.", switch("rotate"))
     inwuts.size, transformRows.scale.absolute = createInputRow("Scale", holder, function(_, i) sizeSelected(i) end,
         any and formatHints(groupExtents(selected)) or zeros,
