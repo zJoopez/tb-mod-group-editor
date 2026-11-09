@@ -42,8 +42,8 @@
 ---@field saveOverlay UIElement? open name prompt (ui/save_overlay.lua)
 ---@field confirmOverlay UIElement? open confirmation popup (TBMenu:showConfirmationWindow)
 ---@field saveOverlayContext table? options for the next name prompt
----@field listOverlay UIElement? open list popup: asset import, model picker (ui/list_overlay.lua)
----@field ListOverlay table ui/list_overlay.lua
+---@field pickerOverlay UIElement? open file picker: asset import, Model row (ui/file_picker.lua)
+---@field FilePicker table ui/file_picker.lua
 ---@field Assets table export / import, ui/assets.lua
 MGE = MGE or { scriptPath = "mge/" }
 MGE.hookname = "mge"
@@ -144,7 +144,7 @@ function MGE.quit(fromWindow)
     for _, callback in ipairs(MGE.onQuit or {}) do
         pcall(callback)
     end
-    for _, overlay in ipairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.listOverlay }) do
+    for _, overlay in ipairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay }) do
         if overlay and not overlay.destroyed then
             pcall(function() overlay:kill() end)
         end

@@ -104,8 +104,12 @@ local function moveSelected(only)
     moveBy(selectedObjects, { typed[1] or 0, typed[2] or 0, typed[3] or 0 })
 end
 
+-- world point the Pos row shows as 0 0 0: the game's center (the middle of the dojo between the
+-- players), so Pos 0 0 0 puts the selection there. World positions are 1 -0.1 0 off from it
+local POS_ORIGIN = { 1, -0.1, 0 }
+
 ---Pos row: moves selected objects so their center (same pivot as rotate) lands on the typed
----coordinates. Axes left empty don't move
+---coordinates, counted from POS_ORIGIN. Axes left empty don't move
 ---@param only integer? axis input Enter was pressed in, nil applies all
 local function positionSelected(only)
     local selectedObjects = getSelected()
@@ -113,8 +117,17 @@ local function positionSelected(only)
     local typed = readInputs(inwuts.position, only)
     local pivot = { getSelectionPivot(selectedObjects) }
     local offsets = {}
-    for i = 1, 3 do offsets[i] = typed[i] and typed[i] - pivot[i] or 0 end
+    for i = 1, 3 do offsets[i] = typed[i] and typed[i] + POS_ORIGIN[i] - pivot[i] or 0 end
     moveBy(selectedObjects, offsets)
+end
+
+---Selection center as the Pos row shows it: relative to POS_ORIGIN
+---@param selectedObjects FileParserEnvObj[]
+---@return number[]
+local function shownPosition(selectedObjects)
+    local pivot = { getSelectionPivot(selectedObjects) }
+    for i = 1, 3 do pivot[i] = pivot[i] - POS_ORIGIN[i] end
+    return pivot
 end
 
 ---Rotates the objects around their center by offsets (radians, applied z, then y, then x)
@@ -311,6 +324,8 @@ local function scaleBy(selectedObjects, scale)
         writeVectorProperty(p.obj, "pos", p.pos)
         writeVectorProperty(p.obj, "sides", p.sides)
     end
+    -- same as moving: the camera follows, backing off only if the group no longer fits on screen
+    if MGE.Camera.followMoves then MGE.Camera.focus(selectedObjects, true) end
     finishTransform(selectedObjects, scalePos)
     refreshMeasured()
 end
@@ -859,17 +874,24 @@ local function setVisible(visible)
     refreshProperties()
 end
 
--- Two panels sharing the editor area, picked by the window's tab row (Main.applyTab -> editor.applyPanel):
---   core:     transforms and look: Pos/Move, Angle/Rotate, Size/Scale, Color, Mass, Shape, Visible
---   advanced: physics: Friction, Bounce, Flags, Model, then Ids (Reindex)
+-- Panels sharing the editor area, picked by the window's tab row (Main.applyTab -> editor.applyPanel):
+--   core:     transforms and look: Pos/Move, Angle/Rotate, Size/Scale, Color, Mass, Shape, Visible, Flags
+--   advanced: physics: Friction, Bounce, Model, Ids (Reindex), then under a Thrust header
+--             Frames, Direction, Axes (World / Object / Off)
 -- Both have input fields, the reset button is shown under either.
 -- Every block of rows has its own holder. Move/Rotate/Resize are built once (typed values stay), the
 -- other blocks are rebuilt when the selection or the objects change, so their placeholders /
 -- highlights show current values (typed text is carried over the rebuild).
 local ROW_H = 30
+local HEADER_H = ROW_H -- section name inside a panel (Thrust), a full row so both panels are 8 rows tall
+local THRUST_Y = 4 * ROW_H + HEADER_H -- thrust rows in the advanced panel, under Ids and the header
+local FOOTER_GAP = 4
+local FOOTER_H = 24 -- reset button
+-- panel heights, kept equal so the reset button doesn't move between tabs. The editor area in
+-- ui/main.lua fits them with the reset button under them
 local PANELS = {
-    core = { rows = 7 },
-    advanced = { rows = 5 },
+    core = { height = 8 * ROW_H },
+    advanced = { height = THRUST_Y + 3 * ROW_H },
 }
 ---@type table<string, UIElement>
 local panels = {}
@@ -928,7 +950,7 @@ function editor.applyPanel(id)
     applyTransformModes() -- after the panel, rebuilt rows start visible
     if inputFooter and not inputFooter.destroyed then
         inputFooter:show(true)
-        inputFooter:moveTo(nil, panel.rows * ROW_H + 8)
+        inputFooter:moveTo(nil, panel.height + FOOTER_GAP)
     end
 end
 
@@ -975,8 +997,8 @@ local function buildMeasuredRows(holder, selected)
     local any = #selected > 0
     local function switch(key) return function() toggleTransformMode(key) end end
     inwuts.position, transformRows.move.absolute = createInputRow("Pos", holder, function(_, i) positionSelected(i) end,
-        any and formatHints({ getSelectionPivot(selected) }) or zeros,
-        "Moves selected objects so their center is at X, Y or Z.\nShows the current center. Enter applies the field you typed in." ..
+        any and formatHints(shownPosition(selected)) or zeros,
+        "Moves selected objects so their center is at X, Y or Z.\n0 0 0 is the middle of the dojo. Shows the current center.\nEnter applies the field you typed in." ..
         SWITCH_HELP .. "Move (move by an offset).", switch("move"))
     local angles = any and groupAngles(selected) or { 0, 0, 0 }
     for i = 1, 3 do angles[i] = math.deg(angles[i]) end
@@ -1056,7 +1078,7 @@ local function buildLooks(holder, selected)
         "Hidden objects aren't drawn but still collide.")
 end
 
----Flags row (advanced panel)
+---Flags row (core panel)
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
 local function buildFlags(holder, selected)
@@ -1130,7 +1152,15 @@ local function buildModel(holder, selected)
     local modelW = contentW - 4 - gap - noneW
     Widgets.button(row, { x = contentX + 2, y = 2, w = modelW, h = row.size.h - 4 }, label, function()
         if #getSelected() == 0 then return end
-        MGE.ModelPicker.open(type(current) == "string" and current or nil, setModel)
+        MGE.FilePicker.open({
+            title = "Pick Model",
+            root = "data/mod_assets",
+            rootLabel = "mod_assets",
+            extension = "obj",
+            selected = type(current) == "string" and current or nil,
+            confirmLabel = "Use model",
+            onConfirm = setModel,
+        })
     end, nil, Widgets.PANEL_STYLE)
     local none = Widgets.button(row, { x = contentX + 2 + modelW + gap, y = 2, w = noneW, h = row.size.h - 4 }, "None",
         function() setModel(nil) end, nil, Widgets.PANEL_STYLE)
@@ -1165,21 +1195,135 @@ local function buildIdRows(holder)
         "joints follow their objects.")
 end
 
--- rebuilt blocks: builder and where they sit { panel, first row, rows }
+-- Thrust: "thrust <frames> <x> <y> <z> <space>" pushes the object along x y z every <frames> frames.
+-- <space> picks the axes the direction uses. No line means no thrust. The game has no live thrust
+-- setter, changes are applied by saving
+---@class Thrust
+---@field frames integer
+---@field dir number[] x y z
+---@field space integer see THRUST_SPACES
+
+-- values of <space>
+local THRUST_SPACES = {
+    { label = "World", value = 1 },
+    { label = "Object", value = 0 }, -- turns with the object
+}
+-- used for the parts of a thrust that an object doesn't have yet (turning it on, typing one field)
+local THRUST_DEFAULT = { frames = 1, dir = { 0, 0, 0 }, space = 0 }
+
+---@param obj FileParserEnvObj
+---@return Thrust? nil when the object has no thrust
+local function getThrust(obj)
+    if not obj.props.thrust then return nil end
+    local n = {}
+    for v in obj.props.thrust:gmatch("%S+") do table.insert(n, tonumber(v) or 0) end
+    return {
+        frames = math.floor(n[1] or THRUST_DEFAULT.frames),
+        dir = { n[2] or 0, n[3] or 0, n[4] or 0 },
+        space = (n[5] or THRUST_DEFAULT.space) ~= 0 and 1 or 0,
+    }
+end
+
+---@param thrust Thrust
+---@return string
+local function formatThrust(thrust)
+    return thrust.frames .. " " .. FileHandler.formatNumbers(thrust.dir[1], thrust.dir[2], thrust.dir[3]) ..
+        " " .. thrust.space
+end
+
+---Changes the thrust of every selected object and saves when any of them changed
+---@param edit fun(thrust: Thrust): Thrust? gets a copy of the object's thrust (defaults when it has none), nil removes it
+local function editThrust(edit)
+    local changed = false
+    for _, v in ipairs(getSelected()) do
+        local had = getThrust(v)
+        local current = had or THRUST_DEFAULT
+        local thrust = edit({ frames = current.frames, dir = { current.dir[1], current.dir[2], current.dir[3] },
+            space = current.space })
+        local value = thrust and formatThrust(thrust) or nil
+        -- compared as values, the file may write the same thrust differently ("1.00" / "1")
+        if value ~= (had and formatThrust(had) or nil) then
+            v.props.thrust = value
+            changed = true
+        end
+    end
+    if not changed then return end
+    History.commit()
+    MGE.save()
+end
+
+---Applies a typed thrust field: 1 frames, 2-4 direction x y z
+---@param index integer
+local function setThrustField(index)
+    local input = (inwuts.thrust or {})[index]
+    local value = input and tonumber(input.textfieldstr[1])
+    if not value then return end
+    editThrust(function(thrust)
+        if index == 1 then
+            thrust.frames = math.max(1, math.floor(value + 0.5)) -- whole frames, 0 would never fire
+        else
+            thrust.dir[index - 1] = value
+        end
+        return thrust
+    end)
+end
+
+---Thrust panel: frames, direction and its axes (or Off). Placeholders and highlights show the selection's
+---values ("mixed" when they differ), objects without thrust show the defaults that typing a value gives
+---@param holder UIElement
+---@param selected FileParserEnvObj[]
+local function buildThrust(holder, selected)
+    totalHeight = 0
+    local function shown(read)
+        return sharedChoice(selected, function(obj) return read(getThrust(obj) or THRUST_DEFAULT) end)
+    end
+    local frames = shown(function(t) return tostring(t.frames) end) or tostring(THRUST_DEFAULT.frames)
+    local dir = {}
+    for i = 1, 3 do
+        dir[i] = shown(function(t) return string.format("%.2f", t.dir[i]) end) or "0.00"
+    end
+    local framesInputs = createInputRow("Frames", holder, function() setThrustField(1) end, { frames },
+        "Thrust is applied every this many frames, 1 is every frame.")
+    local dirInputs = createInputRow("Direction", holder, function(_, i) setThrustField(i + 1) end, dir,
+        "Push applied each time, along X, Y and Z of the axes below.\n" ..
+        "Enter applies the field you typed in. Turns thrust on\nfor selected objects without it.")
+    inwuts.thrust = { framesInputs[1], dirInputs[1], dirInputs[2], dirInputs[3] }
+
+    -- the axes choices plus Off, objects without thrust count as Off
+    local choices = {}
+    for i, space in ipairs(THRUST_SPACES) do choices[i] = space end
+    table.insert(choices, { label = "Off", value = "off" })
+    local current = sharedChoice(selected, function(obj)
+        local thrust = getThrust(obj)
+        return thrust and thrust.space or "off"
+    end)
+    createChoiceRow("Axes", holder, choices, current, function(space)
+        editThrust(function(thrust)
+            if space == "off" then return nil end
+            thrust.space = space
+            return thrust
+        end)
+    end, "World: the direction uses the world's X, Y and Z.\nObject: it uses the object's own axes, so it turns with the object.\n" ..
+        "Off: no thrust. World or Object turns it on: every frame, no direction yet.")
+end
+
+-- rebuilt blocks: builder and where they sit { panel, first row (or y in pixels), rows }
 local BLOCKS = {
     measured = { build = buildMeasuredRows, panel = "core", row = 0, rows = 3 },
     coreProps = { build = buildCoreProps, panel = "core", row = 3, rows = 2 },
     looks = { build = buildLooks, panel = "core", row = 5, rows = 2 },
     advancedProps = { build = buildAdvancedProps, panel = "advanced", row = 0, rows = 2 },
-    flags = { build = buildFlags, panel = "advanced", row = 2, rows = 1 },
-    model = { build = buildModel, panel = "advanced", row = 3, rows = 1 },
+    flags = { build = buildFlags, panel = "core", row = 7, rows = 1 },
+    model = { build = buildModel, panel = "advanced", row = 2, rows = 1 },
+    thrust = { build = buildThrust, panel = "advanced", y = THRUST_Y, rows = 3 },
 }
 -- fixed build order (pairs() order isn't defined)
-local BLOCK_ORDER = { "measured", "coreProps", "looks", "advancedProps", "flags", "model" }
+local BLOCK_ORDER = { "measured", "coreProps", "looks", "advancedProps", "flags", "model", "thrust" }
 
 -- input lists in inwuts: all of them are cleared by "Reset inputs", the rebuilt ones keep typed text
-local ALL_INPUTS = { "pos", "rot", "scale", "position", "angle", "size", "color", "coreProps", "advancedProps" }
-local REBUILT_INPUTS = { "position", "angle", "size", "color", "coreProps", "advancedProps" }
+local ALL_INPUTS = { "pos", "rot", "scale", "position", "angle", "size", "color", "coreProps", "advancedProps",
+    "thrust" }
+local REBUILT_INPUTS = { "position", "angle", "size", "color", "coreProps", "advancedProps", "thrust" }
 
 ---Empties all input fields, placeholders show again
 local function clearInputs()
@@ -1277,7 +1421,7 @@ function editor.create(parent)
     for id, panel in pairs(PANELS) do
         panels[id] = parent:addChild({
             pos = { 0, 0 },
-            size = { parent.size.w, panel.rows * ROW_H },
+            size = { parent.size.w, panel.height },
         })
     end
     -- offset rows sit in the same slot as the measured (absolute) rows, applyTransformModes shows one
@@ -1287,15 +1431,20 @@ function editor.create(parent)
         size = { parent.size.w, 3 * ROW_H },
     }))
     buildIdRows(panels.advanced:addChild({
-        pos = { 0, 4 * ROW_H },
+        pos = { 0, 3 * ROW_H },
         size = { parent.size.w, ROW_H },
     }))
+    -- section name above the thrust rows
+    panels.advanced:addChild({
+        pos = { 5, 4 * ROW_H },
+        size = { parent.size.w - 10, HEADER_H },
+    }):addAdaptedText(true, "Thrust", nil, nil, FONTS.MEDIUM, LEFTMID, 0.65)
     blocks = {}
     local selected = getSelected()
     for _, name in ipairs(BLOCK_ORDER) do
         local block = BLOCKS[name]
         blocks[name] = panels[block.panel]:addChild({
-            pos = { 0, block.row * ROW_H },
+            pos = { 0, block.y or block.row * ROW_H },
             size = { parent.size.w, block.rows * ROW_H },
         })
         block.build(blocks[name], selected)
@@ -1305,9 +1454,9 @@ function editor.create(parent)
     -- window's Save as row. The Enter shortcut is explained in the window's shortcut help (ui/main.lua)
     inputFooter = parent:addChild({
         pos = { 0, 0 },
-        size = { parent.size.w, ROW_H },
+        size = { parent.size.w, FOOTER_H },
     })
-    Widgets.buttonRow(inputFooter, 0, ROW_H, { { label = "Reset inputs", onClick = clearInputs } }, 0, nil, Widgets.PANEL_STYLE)
+    Widgets.buttonRow(inputFooter, 0, FOOTER_H, { { label = "Reset inputs", onClick = clearInputs } }, 0, nil, Widgets.PANEL_STYLE)
     -- Duplicate/Delete are in the object list's bottom bar (ui/obj_selector.lua), Save as in the
     -- bottom row (ui/main.lua). Positions and visibility are applied by Main.applyTab after create
 end

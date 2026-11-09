@@ -17,9 +17,12 @@ local Widgets = dofile(MGE.scriptPath .. "ui/widgets.lua") -- MGE.Widgets, share
 
 local defaultPos = { 0, 0 }
 local margin = 10
-local function updateContentHeight(height)
-    local h = height or 0
-    defaultPos[2] = defaultPos[2] + h + 10 --10 margin
+local SECTION_GAP = 6 -- space between window sections
+---Moves the next section's position under one that is height tall
+---@param height number?
+---@param gap number? space before the next section, defaults to SECTION_GAP
+local function updateContentHeight(height, gap)
+    defaultPos[2] = defaultPos[2] + (height or 0) + (gap or SECTION_GAP)
 end
 
 local windowContainer
@@ -27,7 +30,7 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 721
+    h = 692
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
@@ -109,8 +112,8 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "(objects appear at the spawn point, a player model replaces the picked player's), double click imports\n" ..
     "Players list: click a player to pick it\n" ..
     "Drag / mouse wheel: orbit / zoom the camera after looking at objects\n" ..
-    "Camera button: camera follows the selection when moving and looks at objects\n" ..
-    "selected in the list (highlighted when on)\n" ..
+    "Camera button: camera follows the selection when moving or scaling and looks at\n" ..
+    "objects selected in the list or with Select All / Ctrl + A (highlighted when on)\n" ..
     "Mouse button: click objects in the world to select them (highlighted when on),\n" ..
     "turn off to play the mod without selecting")
 updateContentHeight(menuH)
@@ -137,7 +140,7 @@ local listHeader = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 26 },
 })
-updateContentHeight(listHeader.size.h - margin) -- no gap, the list panel starts right under the tabs
+updateContentHeight(listHeader.size.h, 0) -- no gap, the list panel starts right under the tabs
 local listTabNames = {
     { id = "objects", label = function()
         return "Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS
@@ -154,7 +157,7 @@ for i, btn in ipairs(Widgets.buttonRow(listHeader, 0, listHeader.size.h, listTab
 end
 
 -- the list sits in a panel like the editor's: panel color, padding, the active list tab touches it
-local listH = 200
+local listH = 175 -- the list's bars and rows, ScrollList.rowHeight (25) each
 local listPanel = content:addChild({
     pos = defaultPos,
     size = { content.size.w, listH + TAB_PADDING * 2 },
@@ -175,7 +178,7 @@ local tabRow = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 30 },
 })
-updateContentHeight(tabRow.size.h - margin) -- no gap, the panel starts right under the tabs
+updateContentHeight(tabRow.size.h, 0) -- no gap, the panel starts right under the tabs
 
 -- editor panels for objects. Players have no controls here yet, the tab row and panel are hidden
 -- for them (Main.applyTab)
@@ -193,9 +196,9 @@ for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, TAB_G
     tabButtons[tabNames[i].id] = btn
 end
 
--- the editor area inside the tab panel (250 fits the 7 rows of the Core panel with the reset button
--- under them)
-local areaH = 250
+-- the editor area inside the tab panel: fits the panels (8 rows each, see PANELS in ui/editor.lua)
+-- with the reset button under them
+local areaH = 268
 local tabPanel = content:addChild({
     pos = defaultPos,
     size = { content.size.w, areaH + TAB_PADDING * 2 },
@@ -213,7 +216,7 @@ updateContentHeight(tabPanel.size.h)
 -- named copy of the mod, under the editor area
 local saveAsRow = content:addChild({
     pos = defaultPos,
-    size = { content.size.w, 30 },
+    size = { content.size.w, 24 },
 })
 Widgets.buttonRow(saveAsRow, 0, saveAsRow.size.h, {
     { label = "Save as", onClick = function() dofile(MGE.scriptPath .. "ui/save_overlay.lua") end },
@@ -230,16 +233,15 @@ local function addFooterRow(text)
         bgColor = { 0, 0, 0, 0 }
     })
     if text then Widgets.infoText(row, text) end
-    updateContentHeight(row.size.h - margin)
+    updateContentHeight(row.size.h, 0)
     return row
 end
 local limitsRow = addFooterRow() -- dynamic id and joint usage, set by setDynamicStrings
 addFooterRow("Project Mod Group Editor by joopez")
 
 
-dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by the lists and the list overlay
-dofile(MGE.scriptPath .. "ui/list_overlay.lua") -- MGE.ListOverlay, popup list: asset import, model picker
-dofile(MGE.scriptPath .. "ui/model_picker.lua") -- MGE.ModelPicker, model_name from data/mod_assets
+dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by the lists and the file picker
+dofile(MGE.scriptPath .. "ui/file_picker.lua") -- MGE.FilePicker, folder browser: asset import, Model row
 dofile(MGE.scriptPath .. "ui/assets.lua") -- MGE.Assets, export / import overlay for the lists' buttons
 local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
 local player_list = dofile(MGE.scriptPath .. "ui/player_list.lua")
@@ -355,6 +357,8 @@ function Main.toggleSelectAll(value)
         obj.selected = value or nil
     end
     Main.updateWindow()
+    -- selecting everything frames it when the camera button is on, like selecting in the list
+    if value and #objects > 0 and MGE.Camera.followMoves then MGE.Camera.focus(objects) end
 end
 
 function Main.resetWindow()

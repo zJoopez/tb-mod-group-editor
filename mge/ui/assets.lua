@@ -10,7 +10,9 @@ local ScrollList = MGE.ScrollList
 local FileHandler = MGE.FileHandler
 local SHAPE = MGE.SHAPE
 
-local selectedAssetName = nil -- last picked asset, the default name for the next export
+local selectedAssetName = nil -- last picked asset's file name, the default name for the next export
+---@type table<string, string> last imported path per kind (relative to its folder), selected when Import opens
+local lastImported = {}
 
 local ASSET_DIR = MGE.scriptPath .. "assets" -- scriptPath ends with "/"
 -- object groups and player models are kept in their own folders, the list shows one kind at a time
@@ -42,6 +44,14 @@ local function getAssetPath(name)
     return ASSET_DIR .. "/" .. ASSET_FOLDERS[assetKind] .. "/" .. fileName
 end
 
+---Path of an asset picked in the import popup: relative to the kind's folder, may be in subfolders
+---@param relative string e.g. "vehicles/scooter.tbm"
+---@return string?
+local function getImportPath(relative)
+    if relative:find("%.%.") then return nil end -- stays inside the asset folder
+    return ASSET_DIR .. "/" .. ASSET_FOLDERS[assetKind] .. "/" .. relative
+end
+
 ---Distance from object center to its lowest point in world space, accounts for rotation
 ---@param id integer 0-based object id
 ---@return number?
@@ -60,22 +70,6 @@ local function getObjHalfHeight(id)
         return zz * sy / 2 + sx -- x radius, y length of the straight part along local z, caps add radius
     end
     return (zx * sx + zy * sy + zz * sz) / 2 -- box: projected half extents
-end
-
----@type table<string, string[]> cached folder listing per kind, search filters this instead of reading the folder per key
-local assetFiles = {}
-
----@return string[] asset file names of the shown kind, sorted
-local function getAssetFiles()
-    if assetFiles[assetKind] then return assetFiles[assetKind] end
-    local files = {}
-    assetFiles[assetKind] = files
-    for _, fileName in ipairs(get_files("data/script/" .. ASSET_DIR .. "/" .. ASSET_FOLDERS[assetKind], "")) do
-        local name = tostring(fileName):gsub("^.*[/\\]", "")
-        if name:match("%.tbm$") then table.insert(files, name) end
-    end
-    table.sort(files)
-    return files
 end
 
 local function saveSelectedToAsset()
@@ -136,7 +130,6 @@ local function saveSelectedToAsset()
             end
             if FileHandler.WriteMod(parser, path) then
                 print("asset saved: " .. path)
-                assetFiles[assetKind] = nil -- re-read the folder to show the new asset
                 return true
             end
             print("failed to save asset")
@@ -186,7 +179,7 @@ end
 
 ---@param assetName string
 local function importAssetFromFile(assetName)
-    local path = getAssetPath(assetName)
+    local path = getImportPath(assetName)
     if not path or not Files.Exists(path) then
         print("Asset not found")
         return
@@ -231,7 +224,6 @@ local function savePlayerToAsset()
             for _, line in ipairs(parts) do table.insert(lines, line) end
             if FileHandler.WriteMod({ env_obj = {}, env_obj_joint = {}, ignores = lines }, path) then
                 print("player model saved: " .. path)
-                assetFiles[assetKind] = nil -- re-read the folder to show the new asset
                 return true
             end
             print("failed to save player model")
@@ -244,7 +236,7 @@ end
 ---Replaces the mod's `player N` section with the selected player asset (added if the mod has none)
 ---@param assetName string
 local function replacePlayerFromFile(assetName)
-    local path = getAssetPath(assetName)
+    local path = getImportPath(assetName)
     if not path or not Files.Exists(path) then
         print("Asset not found")
         return
@@ -309,30 +301,20 @@ end
 function assetsView.openImport()
     assetKind = listKind()
     local kind = assetKind
-    assetFiles[kind] = nil -- re-read the folder, files may have been added outside the game
-    MGE.ListOverlay.open({
+    MGE.FilePicker.open({
         title = kind == "obj" and "Import Objects" or ("Import Model to Player " .. Main.selectedPlayer),
+        root = "data/script/" .. ASSET_DIR .. "/" .. ASSET_FOLDERS[kind],
+        rootLabel = "assets/" .. ASSET_FOLDERS[kind],
+        extension = "tbm",
+        keepExtension = true,
+        selected = lastImported[kind],
         confirmLabel = "Import",
-        search = true,
-        getItems = function(searchText)
-            local term = string.lower(searchText)
-            local items = {}
-            for _, name in ipairs(getAssetFiles()) do
-                if term == "" or string.find(string.lower(name), term, 1, true) then
-                    table.insert(items, { label = name, value = name })
-                end
-            end
-            return items
-        end,
-        emptyText = function(searchText)
-            if searchText ~= "" then return "No matching assets" end
-            return "No assets saved yet, Export saves them in " .. ASSET_DIR .. "/" .. ASSET_FOLDERS[kind]
-        end,
-        selected = selectedAssetName,
-        onConfirm = function(name)
-            selectedAssetName = name
+        emptyText = "No folders or assets here, Export saves to assets/" .. ASSET_FOLDERS[kind],
+        onConfirm = function(path)
+            lastImported[kind] = path
+            selectedAssetName = path:gsub("^.*/", "")
             assetKind = kind
-            if kind == "obj" then importAssetFromFile(name) else replacePlayerFromFile(name) end
+            if kind == "obj" then importAssetFromFile(path) else replacePlayerFromFile(path) end
         end,
     })
 end
