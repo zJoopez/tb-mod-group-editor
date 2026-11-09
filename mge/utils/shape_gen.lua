@@ -6,10 +6,11 @@ local Mat3 = MGE.Mat3
 
 -- Shape generator (Generate tab): a chain of boxes along X that bends up (toward Z) as it goes.
 -- Angle is how far it turns in total: 0 is a straight line, 90 a quarter pipe, 360 a closed loop.
--- The pieces are chords of that arc. They line up and touch along one line: their bottom edge
--- (align "edge") or their middle (align "center"), Gap is the space between them along that line.
+-- The pieces are chords of that arc. They line up and touch along one line: the inside of the bend
+-- (align "in", their top edge), the outside ("out", bottom edge) or their middle ("center"), Gap is
+-- the space between them along that line.
 -- Increment is added to the sides of each next piece, so piece i (from 0) has sides + i * increment:
--- with angle 0, a Z increment and edge alignment the pieces are stairs, adding the same Y increment
+-- with angle 0, a Z increment and out alignment the pieces are stairs, adding the same Y increment
 -- with center alignment makes a stepped pyramid lying along X. Y is always centered.
 
 ---Rotation by t radians around the unit vector u (Rodrigues)
@@ -33,11 +34,14 @@ end
 ---@field frame number[][] MGE's rotation record (#mge_frame), see rotBy
 ---@field sides number[]
 
----@alias GenerateAlign "edge"|"center"
+---@alias GenerateAlign "in"|"out"|"center"
+
+-- where each piece's center sits from the line they touch along, in halves of its thickness (along its Z)
+local ALIGN_LIFT = { ["in"] = -1, out = 1, center = 0 }
 
 ---@class GenerateOptions
 ---@field increment number[]? added to the sides of each next piece, default 0 0 0
----@field align GenerateAlign? default "edge"
+---@field align GenerateAlign? default "out"
 
 ---Sides of piece i (from 0)
 ---@param sides number[]
@@ -75,7 +79,7 @@ end
 local function planGenerate(amount, gap, angle, sides, center, options)
     options = options or {}
     local increment = options.increment or { 0, 0, 0 }
-    local centered = options.align == "center"
+    local liftHalves = ALIGN_LIFT[options.align] or ALIGN_LIFT.out
     local step = math.rad(angle) / amount
     local axis = { 0, -1, 0 } -- turning around -Y tilts X up toward Z
     local vertex = { 0, 0, 0 } -- on the line the pieces touch along, each piece starts where it is
@@ -85,7 +89,7 @@ local function planGenerate(amount, gap, angle, sides, center, options)
         local s = pieceSides(sides, increment, i)
         local turn = rotationAbout(axis, step * (i + 0.5))
         local dir, up = Mat3.apply(turn, { 1, 0, 0 }), Mat3.apply(turn, { 0, 0, 1 })
-        local lift = centered and 0 or s[3] / 2 -- edge: the piece sits on the line
+        local lift = liftHalves * s[3] / 2 -- out: the piece sits on the line, in: hangs under it
         local pos = {}
         for k = 1, 3 do pos[k] = vertex[k] + dir[k] * s[1] / 2 + up[k] * lift end
         for k = 1, 3 do vertex[k] = vertex[k] + dir[k] * (s[1] + gap) end

@@ -14,7 +14,7 @@ local GENERATE_ANGLE = 90
 local MAX_GENERATE = 200 -- more than any mod has room for, stops a typo from planning thousands
 
 ---@type GenerateAlign kept while the script runs
-local align = "edge"
+local align = "out"
 
 ---@return number[] sides of the default object (ui/assets.lua), what empty Size fields use
 local function defaultSides()
@@ -64,14 +64,16 @@ end
 local function buildAlign(holder)
     Rows.begin()
     createChoiceRow("Align", holder, {
-        { label = "Edge", value = "edge" },
+        { label = "In", value = "in" },
+        { label = "Out", value = "out" },
         { label = "Center", value = "center" },
     }, align, function(value)
         align = value
         Rows.refreshBlocks({ "generateAlign" })
     end,
-        "Edge: bottoms flush (Increment Z 0.3: stairs).\n" ..
-        "Center: middles in line (Increment Y, Z 0.3: pyramid).")
+        "Edge the pieces line up on. In: inside of the bend (top).\n" ..
+        "Out: outside (bottom), Increment Z 0.3: stairs.\n" ..
+        "Center: middles, Increment Y, Z 0.3: pyramid.")
 end
 
 ---Generate panel: amount, gap, angle, piece size, increment and the Generate button. Nothing depends
