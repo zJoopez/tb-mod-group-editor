@@ -378,3 +378,6 @@ MGE.MAX_NONSTATIC_OBJECTS = MAX_NONSTATIC_OBJECTS
 MGE.MAX_ENV_JOINTS = MAX_ENV_JOINTS
 -- smallest object side MGE writes, zero sized objects crash the physics engine
 MGE.MIN_SIDE = 0.0001
+-- the dojo center (middle between the players) in mod file / world coordinates. The Pos row shows
+-- positions relative to it, exported assets and generated shapes are centered on it
+MGE.POS_ORIGIN = { 1, -0.1, 0 }

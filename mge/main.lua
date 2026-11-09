@@ -32,6 +32,10 @@
 ---@field History History utils/history.lua
 ---@field Joints Joints utils/joints.lua
 ---@field Mat3 Mat3 utils/mat3.lua
+---@field Transforms table move / rotate / scale for the selection, utils/transforms.lua
+---@field ShapeGen table Generate tab geometry, utils/shape_gen.lua
+---@field EditorRows EditorRows shared editor row widgets, ui/editor_rows.lua
+---@field POS_ORIGIN number[] dojo center, set by utils/mod_export.lua
 ---@field ScrollList ScrollList ui/scroll_list.lua
 ---@field FLAGS table
 ---@field SHAPE table get_obj_shape values
@@ -67,6 +71,8 @@ loadModule("utils/joints.lua")
 loadModule("utils/highlight.lua")
 loadModule("utils/world_select.lua")
 loadModule("utils/camera.lua")
+loadModule("utils/transforms.lua")
+loadModule("utils/shape_gen.lua")
 
 local FileHandler = MGE.FileHandler
 local ModData = MGE.ModData

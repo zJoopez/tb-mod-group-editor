@@ -20,10 +20,6 @@ local ASSET_FOLDERS = { obj = "obj", player = "player" }
 ---@type "obj"|"player"
 local assetKind = "obj" -- set from the list tab when exporting / opening the import overlay
 
--- the game shifts mod file positions by this much when a mod loads (world = file - shift),
--- exported assets subtract it again so they hold the values a mod file would
-local LOAD_SHIFT_X = -1
-local LOAD_SHIFT_Y = 0.1
 
 ---File name for an asset: spaces become _, other unsafe characters are dropped, .tbm is added
 ---@param name string?
@@ -109,10 +105,10 @@ local function saveSelectedToAsset()
                 minZ = minZ and math.min(minZ, z - halfHeight) or z - halfHeight
             end
 
-            -- positions read from the game are shifted from the file values, undo that so the
-            -- asset file holds file coordinates
-            local centerX = totalX / #positions + LOAD_SHIFT_X
-            local centerY = totalY / #positions + LOAD_SHIFT_Y
+            -- the group is stored centered on the dojo center (MGE.POS_ORIGIN) with its lowest point
+            -- at z 0, so imports (which use the file positions as they are) land there
+            local centerX = totalX / #positions - MGE.POS_ORIGIN[1]
+            local centerY = totalY / #positions - MGE.POS_ORIGIN[2]
             for i, obj in ipairs(selectedObjects) do
                 -- frame keeps the group's axes so the asset scales properly after import
                 local assetObj = { kind = "env_obj", id = obj.id, props = ModData.copy(obj.props), frame = obj.frame }
