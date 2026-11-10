@@ -27,8 +27,8 @@ local add, sub, scale, length = GizmoMath.add, GizmoMath.sub, GizmoMath.scale, G
 
 ---@class Gizmo
 local Gizmo = {
-    ---@type GizmoMode active tool, change it with Gizmo.setMode / Gizmo.toggle
-    mode = "none",
+    ---@type GizmoMode active tool, change it with Gizmo.setMode / Gizmo.toggle. Move is on at start
+    mode = "move",
     ---@type fun()[] called after the tool changes: toolbar toggles (ui/main.lua), row name highlights
     ---(ui/editor_core.lua)
     modeListeners = {},

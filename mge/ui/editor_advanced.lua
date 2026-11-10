@@ -134,7 +134,7 @@ local function setModel(model)
     MGE.save()
 end
 
----Model row (advanced panel): the model button opens the picker, None turns the model off
+---Model row (advanced panel): the model button opens the picker, the trash icon turns the model off
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
 local function buildModel(holder, selected)
@@ -142,13 +142,14 @@ local function buildModel(holder, selected)
     local current = sharedChoice(selected, getModel)
     local row, contentX, contentW = createRow("Model", holder,
         "Draws a .obj from data/mod_assets instead of the shape,\n" ..
-        "the shape still collides. None: no model.")
+        "the shape still collides. Trash icon: no model.")
     local labels = { [false] = "Pick model", mixed = "Mixed" }
     local label = current == nil and "-" or labels[current] or tostring(current)
     local gap = 4
-    local noneW = (contentW - 4 - gap) * 0.3
+    local h = row.size.h - 4
+    local noneW = h -- square icon button, the model name gets the rest
     local modelW = contentW - 4 - gap - noneW
-    Widgets.button(row, { x = contentX + 2, y = 2, w = modelW, h = row.size.h - 4 }, label, function()
+    Widgets.button(row, { x = contentX + 2, y = 2, w = modelW, h = h }, label, function()
         if #getSelected() == 0 then return end
         MGE.FilePicker.open({
             title = "Pick Model",
@@ -160,9 +161,10 @@ local function buildModel(holder, selected)
             onConfirm = setModel,
         })
     end, nil, Widgets.PANEL_STYLE)
-    local none = Widgets.button(row, { x = contentX + 2 + modelW + gap, y = 2, w = noneW, h = row.size.h - 4 }, "None",
-        function() setModel(nil) end, nil, Widgets.PANEL_STYLE)
-    if current == false then none.bgColor = TB_MENU_DEFAULT_LIGHTER_COLOR end -- like the current choice
+    -- game's trash icon, like the object list's Delete
+    local none = Widgets.iconButton(row, { x = contentX + 2 + modelW + gap, y = 2, w = noneW, h = h },
+        "../textures/menu/general/buttons/trash.tga", function() setModel(nil) end, Widgets.PANEL_STYLE)
+    TBMenu:displayPopup(none, "No model (remove)")
 end
 
 ---Dynamic objects can end up above id 48 (the footer warns), this moves them down and static
