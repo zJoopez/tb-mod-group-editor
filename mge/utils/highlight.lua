@@ -81,10 +81,69 @@ local function drawObjectHighlight(id)
     end
 end
 
+-- player body part shapes (BodyInfo.shape): sphere x radius, box sides, cylinder (pill) x radius y length
+local BODY_SPHERE, BODY_CYLINDER = 0, 2 -- 1 is a box, the default branch
+
+---Same highlight as objects, on every body part and joint of a player (Players list). With scale (a
+---scale drag, Players.scalePreview) the player is drawn scaled around the pivot in the preview color:
+---the bodies can't be resized live, this shows what the release will make
+---@param player integer 0-based
+---@param scale { pivot: number[], factor: number }?
+local function drawPlayerHighlight(player, scale)
+    local c = scale and Highlight.previewColor or Highlight.color
+    local f = scale and scale.factor or 1
+    ---@param x number
+    ---@param y number
+    ---@param z number
+    ---@return table
+    local function at(x, y, z)
+        if not scale then return { x = x, y = y, z = z } end
+        local q = scale.pivot
+        return { x = q[1] + (x - q[1]) * f, y = q[2] + (y - q[2]) * f, z = q[3] + (z - q[3]) * f }
+    end
+    for _, id in pairs(BODYPARTS) do
+        local b = get_body_info(player, id)
+        local p, rot = at(b.pos.x, b.pos.y, b.pos.z), b.rot
+        local s = { x = b.sides.x * f, y = b.sides.y * f, z = b.sides.z * f }
+        set_color(c[1], c[2], c[3], Highlight.fillAlpha)
+        if b.shape == BODY_SPHERE then
+            draw_sphere_m(p.x, p.y, p.z, s.x + 0.01, rot)
+            set_color(c[1], c[2], c[3], 1.0)
+            draw_sphere_m(p.x, p.y, p.z, -(s.x + 0.02), rot)
+        elseif b.shape == BODY_CYLINDER then
+            draw_capsule_m(p.x, p.y, p.z, s.y + 0.01, s.x + 0.01, rot)
+            set_color(c[1], c[2], c[3], 1.0)
+            draw_capsule_m(p.x, p.y, p.z, -(s.y + 0.02), -(s.x + 0.02), rot)
+        else
+            draw_box_m(p.x, p.y, p.z, s.x + 0.02, s.y + 0.02, s.z + 0.02, rot)
+            set_color(c[1], c[2], c[3], 1.0)
+            draw_box_m(p.x, p.y, p.z, -(s.x + 0.04), -(s.y + 0.04), -(s.z + 0.04), rot)
+        end
+    end
+    set_color(c[1], c[2], c[3], Highlight.fillAlpha)
+    for _, id in pairs(JOINTS) do
+        local x, y, z = get_joint_pos(player, id)
+        if x then
+            local p = at(x, y, z)
+            draw_sphere(p.x, p.y, p.z, (get_joint_radius(player, id) or 0.1) * f + 0.01)
+        end
+    end
+end
+
 add_hook("draw3d", MGE.hookname, function()
     local Main = MGE.Main -- created after this module loads
     if not Main or not Main.window or not Main.window.displayed then return end
     local ok, err = pcall(function()
+        if Main.listTab == "players" then
+            -- the players list: the selected players, not the objects (they aren't what's edited there).
+            -- During a scale drag the scaled players instead
+            local Players = MGE.Players
+            local scale = Players and Players.scalePreview
+            for _, player in ipairs(scale and scale.players or Main.selectedPlayerList()) do
+                if Players and Players.exists(player) then drawPlayerHighlight(player, scale) end
+            end
+            return
+        end
         for _, obj in ipairs(ModData.parsed.env_obj) do
             if obj.selected then
                 drawObjectHighlight(obj.id - 1)

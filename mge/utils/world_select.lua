@@ -1,5 +1,6 @@
 -- Click objects in the world to select them: click selects only that object, Shift + click adds /
--- removes it (ModData.clickSelect, same as the object list).
+-- removes it (ModData.clickSelect, same as the object list). On the Players list a click picks the
+-- player under the cursor instead (pickPlayer).
 --
 -- The click is turned into a camera ray by MGE itself and intersected exactly with every object's
 -- shape (box, sphere, capsule). The nearest hit along the ray wins, so objects in front block the
@@ -224,6 +225,51 @@ function WorldSelect.pick(x, y)
     return best
 end
 
+-- player body part shapes (BodyInfo.shape): sphere x radius, box full sides, cylinder (pill) x radius
+-- y length along its z, like objects
+local BODY_SPHERE, BODY_CYLINDER = 0, 2
+
+---Distance along the ray to a player's body part, nil when missed
+---@param player integer 0-based
+---@param id integer body part
+---@return number?
+local function hitBody(origin, dir, player, id)
+    local b = get_body_info(player, id)
+    local center, s, r = { b.pos.x, b.pos.y, b.pos.z }, b.sides, b.rot
+    if b.shape == BODY_SPHERE then return hitSphere(origin, dir, center, s.x) end
+    local axes = { { r.r0, r.r4, r.r8 }, { r.r1, r.r5, r.r9 }, { r.r2, r.r6, r.r10 } } -- columns: local axes
+    if b.shape == BODY_CYLINDER then
+        local halfAxis = scale(axes[3], s.y / 2)
+        return hitCapsule(origin, dir, sub(center, halfAxis), add(center, halfAxis), s.x)
+    end
+    return hitBox(origin, dir, center, axes, { s.x / 2, s.y / 2, s.z / 2 })
+end
+
+---Player under the screen position (its body parts and joints), nearest along the camera ray. Must be
+---called from draw3d. The Players list picks with this instead of objects
+---@param x number
+---@param y number
+---@return integer? player 0-based
+function WorldSelect.pickPlayer(x, y)
+    local origin, dir = WorldSelect.cameraRay(x, y)
+    if not origin or not dir or not MGE.Players then return nil end
+    local best, bestT = nil, math.huge
+    for player = 0, MGE.Players.count() - 1 do
+        if MGE.Players.exists(player) then
+            for _, id in pairs(BODYPARTS) do
+                local t = hitBody(origin, dir, player, id)
+                if t and t < bestT then best, bestT = player, t end
+            end
+            for _, id in pairs(JOINTS) do
+                local jx, jy, jz = get_joint_pos(player, id)
+                local t = jx and hitSphere(origin, dir, { jx, jy, jz }, get_joint_radius(player, id) or 0.1)
+                if t and t < bestT then best, bestT = player, t end
+            end
+        end
+    end
+    return best
+end
+
 local function isOverUI(x, y)
     return MGE.Widgets.isMouseOverUI(x, y) -- Widgets loads after this module, read on use
 end
@@ -281,6 +327,15 @@ add_hook("draw3d", HOOK_SET, function()
     local click = pendingClick
     if not click then return end
     pendingClick = nil
+    if MGE.Main.listTab == "players" then -- the Players list: clicks pick players, not objects
+        local ok, player = pcall(WorldSelect.pickPlayer, click.x, click.y)
+        if not ok then
+            echo("[MGE] world select error: " .. tostring(player))
+        elseif player then
+            MGE.Main.selectPlayer(player, click.additive) -- Shift + click adds / removes, like objects
+        end
+        return
+    end
     local ok, obj = pcall(WorldSelect.pick, click.x, click.y)
     if not ok then
         echo("[MGE] world select error: " .. tostring(obj))

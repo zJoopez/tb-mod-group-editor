@@ -4,6 +4,7 @@
 --   advanced: ui/editor_advanced.lua  Friction, Bounce, Flags, Model, Ids (Reindex)
 --   thrust:   ui/editor_thrust.lua    Frames, Direction, Axes (World / Object / Off)
 --   generate: ui/editor_generate.lua  Align, Amount, Gap, Angle, Size, Increment, Position, Generate / To view
+--   player:   ui/editor_player.lua    Pos, Rot of the picked player (the Players list, no tab of its own)
 -- Shared row widgets are in ui/editor_rows.lua, the transform math in utils/transforms.lua.
 -- Every block of rows has its own holder. Fixed blocks are built once (typed values stay), the
 -- others are rebuilt when the selection or the objects change, so their placeholders / highlights
@@ -38,6 +39,7 @@ local MODULES = {
     dofile(MGE.scriptPath .. "ui/editor_advanced.lua"),
     dofile(MGE.scriptPath .. "ui/editor_thrust.lua"),
     dofile(MGE.scriptPath .. "ui/editor_generate.lua"),
+    dofile(MGE.scriptPath .. "ui/editor_player.lua"), -- the Players list's panel, no tab of its own
 }
 
 local ROW_H = 30
@@ -51,6 +53,7 @@ local PANELS = {
     advanced = { height = PANEL_H },
     thrust = { height = PANEL_H },
     generate = { height = PANEL_H },
+    player = { height = PANEL_H }, -- shown on the Players list instead of the tabs (Main.applyTab)
 }
 
 -- collected from the modules: fixed and rebuilt blocks, rebuilt block names in build order, input lists
@@ -89,7 +92,7 @@ local function applyTransformModes()
 end
 
 ---Shows one editor panel, called by Main.applyTab
----@param id string "core"|"advanced"|"thrust"|"generate"
+---@param id string "core"|"advanced"|"thrust"|"generate"|"player"
 function editor.applyPanel(id)
     local panel = PANELS[id]
     if not panel then return end

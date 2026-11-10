@@ -35,6 +35,7 @@
 ---@field Transforms table move / rotate / scale for the selection, utils/transforms.lua
 ---@field ShapeGen table Generate tab geometry, utils/shape_gen.lua
 ---@field Gizmo Gizmo drag handles in the world, utils/gizmo.lua
+---@field Players Players players' start positions and rotations (engageplayerpos), utils/players.lua
 ---@field GizmoMath GizmoMath utils/gizmo_math.lua
 ---@field Highlight table selection highlight and generate preview, utils/highlight.lua
 ---@field EditorRows EditorRows shared editor row widgets, ui/editor_rows.lua
@@ -88,6 +89,7 @@ loadModule("utils/world_select.lua")
 loadModule("utils/camera.lua")
 loadModule("utils/transforms.lua")
 loadModule("utils/shape_gen.lua")
+loadModule("utils/players.lua") -- players' start positions (engageplayerpos), after highlight and history
 loadModule("utils/gizmo_math.lua")
 loadModule("utils/gizmo.lua") -- after world_select, highlight and transforms
 
@@ -430,7 +432,8 @@ add_hook("key_down", MGE.hookname, function(key)
         if not overlayOpen() then MGE.saveAs() end -- save under another name
         return 1
     elseif ctrl and not shift and key == string.byte("a") then
-        MGE.Main.toggleSelectAll() -- same as the list's "Select All"
+        -- same as the list's select all icon. On the Players list: the players, not the objects
+        if MGE.Main.listTab == "players" then MGE.Main.toggleSelectAllPlayers() else MGE.Main.toggleSelectAll() end
         return 1
     end
 end)

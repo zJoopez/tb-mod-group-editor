@@ -373,7 +373,13 @@ function FileHandler.setGamerules(parser, values, ruleNames)
             while i <= #list do
                 local line = list[i]
                 local word = firstWord(line)
-                if word and not ruleNames[word] and not word:match("^#") and not word:match("^//") then break end
+                -- the section ends at the next section (player, env_obj...) or an unindented line that
+                -- isn't a rule. Indented words the game's rule list doesn't have (engagespace in some
+                -- mods) are still rules: stopping at them left the rules after them unchanged and
+                -- added a second line above, the game then read the old value from the later line
+                local comment = word and (word:match("^#") or word:match("^//"))
+                if word and not comment and (SECTION_WORDS[word] and word ~= "gamerule"
+                    or (not ruleNames[word] and not line:match("^%s"))) then break end
                 if word and values[word] ~= nil then
                     line = line:match("^(%s*)") .. word .. " " .. values[word]
                     written[word] = true

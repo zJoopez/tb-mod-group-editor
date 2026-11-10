@@ -254,13 +254,22 @@ local function importAssetFromFile(assetName)
     importObjects(parser, false, true)
 end
 
+---The model parts a player uses: its own `player N` section, or parts written for all players
+---(fatkido.tbm style), nil for the default body
+---@param playerId integer
+---@return string[]?
+function assetsView.playerParts(playerId)
+    return FileHandler.getPlayerLines(ModData.parsed, playerId) or FileHandler.getSharedPlayerLines(ModData.parsed)
+end
+
 ---Saves the mod's `player N` section (body/joint parts, the player's model) as a player asset.
----Player values are relative to the player's own spawn, so the section is copied as is
-local function savePlayerToAsset()
+---Player values are relative to the player's own spawn, so the section is copied as is. One player:
+---the export icon on its row in the Players list
+---@param playerId integer? default the last picked player
+local function savePlayerToAsset(playerId)
     Main.getPlayerCount() -- resets a player id the mod doesn't have
-    local playerId = Main.selectedPlayer
-    -- no player section: parts written for all players (fatkido.tbm style) are what this player uses
-    local parts = FileHandler.getPlayerLines(ModData.parsed, playerId) or FileHandler.getSharedPlayerLines(ModData.parsed)
+    playerId = playerId or Main.selectedPlayer
+    local parts = assetsView.playerParts(playerId)
     if not parts then
         print("Player " .. playerId .. " uses the default body, the mod has no body or joint changes for it")
         return
@@ -294,7 +303,8 @@ local function savePlayerToAsset()
     dofile(MGE.scriptPath .. "ui/save_overlay.lua")
 end
 
----Replaces the mod's `player N` section with the selected player asset (added if the mod has none)
+---Replaces the selected players' `player N` sections with the player asset (added if the mod has
+---none), every selected player gets the model, one undo step
 ---@param assetName string
 local function replacePlayerFromFile(assetName)
     local path = getImportPath(assetName)
@@ -311,12 +321,17 @@ local function replacePlayerFromFile(assetName)
         return
     end
 
-    Main.getPlayerCount() -- resets a player id the mod doesn't have
-    local playerId = Main.selectedPlayer
-    FileHandler.setPlayerLines(ModData.parsed, playerId, parts)
+    local players = Main.selectedPlayerList()
+    if #players == 0 then
+        print("Select the players to import the model to first")
+        return
+    end
+    for _, playerId in ipairs(players) do
+        FileHandler.setPlayerLines(ModData.parsed, playerId, parts)
+    end
     History.commit()
     MGE.apply() -- body changes need a reload
-    print("player " .. playerId .. " replaced with " .. assetName)
+    print((#players == 1 and "player " or "players ") .. table.concat(players, ", ") .. " replaced with " .. assetName)
 end
 
 
@@ -370,13 +385,26 @@ function assetsView.export()
     if assetKind == "obj" then saveSelectedToAsset() else savePlayerToAsset() end
 end
 
+---Export icon on a player's row: saves that player's model as a player asset
+---@param playerId integer
+function assetsView.exportPlayer(playerId)
+    assetKind = "player"
+    savePlayerToAsset(playerId)
+end
+
 ---Import button of the object / player list: opens a list of the saved assets of that kind.
----Objects are added at the spawn point, a player model replaces the picked player's model
+---Objects are added in view, a player model replaces the selected players' models
 function assetsView.openImport()
     assetKind = listKind()
     local kind = assetKind
+    local players = kind == "player" and Main.selectedPlayerList() or {}
+    if kind == "player" and #players == 0 then
+        TBMenu:showStatusMessage("Select the players to import the model to first")
+        return
+    end
     MGE.FilePicker.open({
-        title = kind == "obj" and "Import Objects" or ("Import Model to Player " .. Main.selectedPlayer),
+        title = kind == "obj" and "Import Objects"
+            or ("Import Model to Player" .. (#players > 1 and "s " or " ") .. table.concat(players, ", ")),
         root = "data/script/" .. ASSET_DIR .. "/" .. ASSET_FOLDERS[kind],
         rootLabel = "assets/" .. ASSET_FOLDERS[kind],
         extension = "tbm",

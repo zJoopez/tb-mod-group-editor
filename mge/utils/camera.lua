@@ -247,7 +247,14 @@ end
 function Camera.focus(objects, keepDistance)
     local center, radius = Camera.bounds(objects)
     if not center then return end
+    Camera.focusOn(center, radius, keepDistance)
+end
 
+---Points MGE's camera at a sphere from the current viewing direction, far enough that it fits
+---@param center number[]
+---@param radius number
+---@param keepDistance boolean? see Camera.focus
+function Camera.focusOn(center, radius, keepDistance)
     local c = get_camera_info()
     if not Camera.isControlling() then
         -- start from the game's current view direction
@@ -277,6 +284,30 @@ function Camera.followSelection()
     if not Camera.followMoves then return end
     local selected = MGE.ModData.getSelected()
     if #selected > 0 then Camera.focus(selected) end
+end
+
+---Players list (picking players, opening the list): frames the selected players like a selection when
+---camera follow is on, around their shared center (where the gizmo is). MGE's own camera for every
+---player, so orbit and zoom work the same as for objects (the game's tori / uke cameras would take
+---those away and only exist for two players)
+---@param players integer|integer[] 0-based
+function Camera.followPlayer(players)
+    if not Camera.followMoves then return end
+    local Players = MGE.Players
+    if not Players then return end
+    local list = {}
+    for _, player in ipairs(type(players) == "table" and players or { players }) do
+        if Players.exists(player) then table.insert(list, player) end
+    end
+    if #list == 0 then return end
+    local center, radius = Players.groupCenter(list), 0
+    for _, player in ipairs(list) do
+        for _, id in pairs(BODYPARTS) do
+            local p = get_body_info(player, id).pos
+            radius = math.max(radius, math.sqrt((p.x - center[1]) ^ 2 + (p.y - center[2]) ^ 2 + (p.z - center[3]) ^ 2))
+        end
+    end
+    Camera.focusOn(center, math.min(radius + 0.5, Camera.maxObjectRadius))
 end
 
 table.insert(MGE.onQuit, Camera.release)

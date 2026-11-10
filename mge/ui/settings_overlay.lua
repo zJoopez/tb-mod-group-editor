@@ -25,7 +25,7 @@ local Gizmo = MGE.Gizmo
 local SETTINGS = {
     {
         label = "Camera follow",
-        info = "Camera looks at the selection when selecting and moving",
+        info = "Camera looks at the selection, or the picked player",
         get = function() return Camera.followMoves end,
         set = function(on) Camera.followMoves = on end,
     },
@@ -56,8 +56,8 @@ local SHORTCUTS = table.concat({
     "F1: show / hide window",
     "Esc: close the open prompt / popup / settings",
     "Ctrl + S: save   Ctrl + Shift + S: rename",
-    "Ctrl + A: select / deselect all",
-    "Click object or id: select it, Shift + click: add / remove",
+    "Ctrl + A: select / deselect all (players on the Players list)",
+    "Click object, id or player: select it, Shift + click: add / remove",
     "Ctrl + N / D: new object / duplicate selected",
     "Delete: delete selected (asks first)",
     "Shift + Z / Y: undo / redo",

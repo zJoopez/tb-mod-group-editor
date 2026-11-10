@@ -1,5 +1,6 @@
--- Players tab of the list area: one row per player, click picks the player Export saves and
--- Import replaces (Main.selectedPlayer)
+-- Players tab of the list area: one row per player, its export icon saves that player's model. Click
+-- picks the player the players panel works on (Main.selectedPlayer), Shift + click adds more players
+-- (Main.selectedPlayers): the gizmo, the highlight and Import (the bottom bar) work on all of them
 
 local player_list = {}
 
@@ -35,7 +36,8 @@ function player_list.create(view)
         pos = { 0, 0 },
         size = { view.size.w, view.size.h },
     })
-    -- same bottom bar as the object list: Import opens the player model list, Export saves the picked player
+    -- same bottom bar as the object list: Import gives every selected player the picked model. Export is
+    -- one model, so it's on each player's row instead
     local barH = ScrollList.rowHeight
     local botBar = toReload:addChild({
         pos = { 0, -barH },
@@ -44,31 +46,32 @@ function player_list.create(view)
         interactive = true,
     })
     MGE.Widgets.barButtons(botBar, {
-        { label = "Import", icon = MGE.scriptPath .. "textures/import.tga", wide = true,
+        { label = "Import model to the selected players", icon = MGE.scriptPath .. "textures/import.tga", wide = true,
             onClick = function() MGE.Assets.openImport() end },
-        { label = "Export", icon = MGE.scriptPath .. "textures/export.tga", wide = true,
-            onClick = function() MGE.Assets.export() end },
     })
 
     local ids = {}
     for i = 0, Main.getPlayerCount() - 1 do table.insert(ids, i) end
 
-    local rows = {}
-    ScrollList.create(view, { x = 0, y = 0, w = view.size.w, h = view.size.h - barH }, ids, function(row, id, index)
-        rows[id] = { row = row, index = index }
+    ScrollList.create(view, { x = 0, y = 0, w = view.size.w, h = view.size.h - barH }, ids, function(row, id)
         row:addAdaptedText("Player " .. id, 8, nil, nil, LEFTMID, 0.7, nil, nil)
+        -- export icon at the row's end, players with a model only (the default body has nothing to save)
+        local iconSize = row.size.h - 4
+        local exportW = 0
+        if MGE.Assets.playerParts(id) then
+            exportW = iconSize + 6
+            local export = MGE.Widgets.iconButton(row, { x = row.size.w - iconSize - 4, y = 2, w = iconSize, h = iconSize },
+                MGE.scriptPath .. "textures/export.tga", function() MGE.Assets.exportPlayer(id) end)
+            TBMenu:displayPopup(export, "Export player " .. id .. "'s model")
+        end
         local info = row:addChild({
             pos = { row.size.w / 2, 0 },
-            size = { row.size.w / 2 - 8, row.size.h },
+            size = { row.size.w / 2 - 8 - exportW, row.size.h },
         })
         info:addAdaptedText(describeModel(id), nil, nil, nil, RIGHTMID, 0.6, nil, nil)
-        if id == Main.selectedPlayer then row.bgColor = ScrollList.selectedColor end
-        row:addMouseUpHandler(function()
-            local previous = rows[Main.selectedPlayer]
-            if previous then previous.row.bgColor = ScrollList.getRowColor(previous.index) end
-            Main.selectedPlayer = id
-            row.bgColor = ScrollList.selectedColor
-        end)
+        if Main.selectedPlayers[id] then row.bgColor = ScrollList.selectedColor end
+        -- click picks the player, Shift + click adds / removes it (Main.selectPlayer rebuilds the list)
+        row:addMouseUpHandler(function() Main.selectPlayer(id, get_keyboard_shift() ~= 0) end)
     end, toReload)
 end
 

@@ -7,8 +7,11 @@ require("toriui.uielement")
 ---@field toggleAll boolean
 ---@field activeTab "core"|"advanced"|"thrust"|"generate" editor panel, kept while the Players list hides the editor
 ---@field listTab "objects"|"players" what the list area shows
----@field selectedPlayer integer player Export / Import act on, picked in the Players list
-local Main = { page = 1, pageSize = 120, toggleAll = false, activeTab = "core", listTab = "objects", selectedPlayer = 0 }
+---@field selectedPlayer integer last picked player: the players panel shows it (also when none is selected)
+---@field selectedPlayers table<integer, boolean> selected players (Shift adds), the gizmo moves them together
+---@field selectPlayer fun(id: integer, additive: boolean?) picks a player (list row, world click)
+local Main = { page = 1, pageSize = 120, toggleAll = false, activeTab = "core", listTab = "objects", selectedPlayer = 0,
+    selectedPlayers = { [0] = true } }
 MGE.Main = Main -- registered before UI modules load so they can alias it
 
 local ModData = MGE.ModData
@@ -159,8 +162,8 @@ local tabRow = content:addChild({
 })
 updateContentHeight(tabRow.size.h, 0) -- no gap, the panel starts right under the tabs
 
--- editor panels for objects. Players have no controls here yet, the tab row and panel are hidden
--- for them (Main.applyTab)
+-- editor panels for objects. The Players list hides the tab row and shows its own panel in the
+-- same area (Main.applyTab, ui/editor_player.lua)
 local tabNames = {
     { id = "core", label = "Core" },
     { id = "advanced", label = "Advanced" },
@@ -253,12 +256,14 @@ local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
 local player_list = dofile(MGE.scriptPath .. "ui/player_list.lua")
 local editor = dofile(MGE.scriptPath .. "ui/editor.lua")
 
----Shows the tab row and the active editor panel. Players have no editor controls yet, their list
----shows without the tab area. hide(true) keeps hidden parts hidden when the window is re-shown (F1)
+---Shows the tab row and the active editor panel. The Players list has no tabs, the players panel
+---shows instead. hide(true) keeps hidden parts hidden when the window is re-shown (F1)
 function Main.applyTab()
     if Main.listTab == "players" then
+        -- the players' own panel (ui/editor_player.lua) instead of the object tabs
         tabRow:hide(true)
-        tabPanel:hide(true)
+        tabPanel:show(true)
+        editor.applyPanel("player")
         return
     end
     tabRow:show(true)
@@ -276,12 +281,26 @@ function Main.setTab(id)
     Main.applyTab()
 end
 
----Players in the current mod (numplayers gamerule), keeps the selected player in range
+---Players in the current mod (numplayers gamerule), keeps the selected players in range
 ---@return integer
 function Main.getPlayerCount()
     local count = math.max(tonumber(get_game_rules().numplayers) or 2, 1)
-    if Main.selectedPlayer >= count then Main.selectedPlayer = 0 end -- picked in a mod with more players
+    for id in pairs(Main.selectedPlayers) do
+        if id >= count then Main.selectedPlayers[id] = nil end -- picked in a mod with more players
+    end
+    if Main.selectedPlayer >= count then Main.selectedPlayer = 0 end
     return count
+end
+
+---Selected players in order, what the gizmo, the highlight, Import, Resize and camera follow work on.
+---Can be empty (Ctrl + A on all, Shift + click on the last one)
+---@return integer[]
+function Main.selectedPlayerList()
+    Main.getPlayerCount() -- in range
+    local list = {}
+    for id in pairs(Main.selectedPlayers) do table.insert(list, id) end
+    table.sort(list)
+    return list
 end
 
 local function applyListTab()
@@ -290,14 +309,57 @@ local function applyListTab()
     end
 end
 
+---Picks a player (its row in the Players list, a click on it in the world): the list, the players panel
+---and the highlight show it, camera follow frames the selection. Shift (additive) adds it to the
+---selected players or takes it out, like objects, the selection can end up empty. The panel shows the
+---last picked one (Main.selectedPlayer), also when nothing is selected
+---@param id integer 0-based
+---@param additive boolean?
+function Main.selectPlayer(id, additive)
+    if not additive then
+        Main.selectedPlayers = { [id] = true }
+        Main.selectedPlayer = id
+    elseif Main.selectedPlayers[id] then
+        Main.selectedPlayers[id] = nil
+        if id == Main.selectedPlayer then -- the panel moves to another selected player, if any
+            for p in pairs(Main.selectedPlayers) do Main.selectedPlayer = p break end
+        end
+    else
+        Main.selectedPlayers[id] = true
+        Main.selectedPlayer = id
+    end
+    Main.updateWindow() -- list row highlights, panel values
+    MGE.Camera.followPlayer(Main.selectedPlayerList())
+end
+
+---Ctrl + A on the Players list: every player, or none when all are selected already (like objects)
+function Main.toggleSelectAllPlayers()
+    local count = Main.getPlayerCount()
+    local all = true
+    for id = 0, count - 1 do
+        if not Main.selectedPlayers[id] then all = false break end
+    end
+    Main.selectedPlayers = {}
+    if not all then
+        for id = 0, count - 1 do Main.selectedPlayers[id] = true end
+        MGE.Camera.followPlayer(Main.selectedPlayerList())
+    end
+    Main.updateWindow()
+end
+
 ---Switches the list area between objects and players, the top level choice: the editor tabs are
 ---only there for objects
 ---@param id "objects"|"players"
 function Main.setListTab(id)
+    local changed = Main.listTab ~= id
     Main.listTab = id
     applyListTab()
     Main.applyTab()
     Main.updateWindow()
+    -- with camera follow on: the picked player's camera, back on objects the selection again
+    if changed then
+        if id == "players" then MGE.Camera.followPlayer(Main.selectedPlayerList()) else MGE.Camera.followSelection() end
+    end
 end
 
 ---Why dynamic objects won't fully work yet, nil when they do
