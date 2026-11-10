@@ -1,4 +1,6 @@
--- Gizmo in the world for the transform row used last (Gizmo.mode, set by ui/editor_core.lua):
+-- Gizmo in the world for the active tool (Gizmo.mode). The toolbar's Move / Rotate / Scale toggles
+-- (ui/main.lua) and Shift + Q / W / E (main.lua) switch it with Gizmo.toggle:
+--   none:   no tool on, clicking only selects
 --   move:   arrows (one world axis) and squares (two axes) at the selection's center
 --   rotate: a ring per group axis (the axes Rot shows) around the selection
 --   scale:  a cube handle per group axis (the axes Resize uses) and a white one for all three
@@ -21,12 +23,15 @@ local Mat3 = MGE.Mat3
 local HOOK_SET = MGE.hookname .. "_gizmo"
 local add, sub, scale, length = GizmoMath.add, GizmoMath.sub, GizmoMath.scale, GizmoMath.length
 
----@alias GizmoMode "move"|"rotate"|"scale"
+---@alias GizmoMode "none"|"move"|"rotate"|"scale"
 
 ---@class Gizmo
 local Gizmo = {
-    ---@type GizmoMode transform row used last, the gizmo shown is for it
-    mode = "move",
+    ---@type GizmoMode active tool, change it with Gizmo.setMode / Gizmo.toggle
+    mode = "none",
+    ---@type fun()[] called after the tool changes: toolbar toggles (ui/main.lua), row name highlights
+    ---(ui/editor_core.lua)
+    modeListeners = {},
     size = 0.10,      -- arrow length as a share of the camera distance, keeps the gizmo's size on screen
     moveStep = 0.1,   -- Ctrl while dragging an arrow / square: the offset moves in these steps
     rotateStep = 15,  -- Ctrl while dragging a ring: degrees
@@ -34,6 +39,7 @@ local Gizmo = {
 }
 MGE.Gizmo = Gizmo
 
+---@type table<string, boolean> modes that show a gizmo ("none" doesn't)
 local MODES = { move = true, rotate = true, scale = true }
 
 local COLORS = { { 1.0, 0.25, 0.25 }, { 0.3, 0.9, 0.3 }, { 0.3, 0.5, 1.0 }, { 0.9, 0.9, 0.9 } } -- x y z, all
@@ -380,6 +386,24 @@ function Gizmo.cancel()
     local objects, baseSides = drag.objects, drag.baseSides
     drag = nil
     MGE.Transforms.restoreLive(objects, baseSides)
+end
+
+---Picks the tool. A drag in progress is cancelled. A gizmo tool turns world clicking back on, a
+---gizmo can't be used without it
+---@param mode GizmoMode
+function Gizmo.setMode(mode)
+    if mode ~= "none" and not MODES[mode] then return end
+    if MODES[mode] and not WorldSelect.enabled then WorldSelect.setEnabled(true) end
+    if mode == Gizmo.mode then return end
+    Gizmo.cancel()
+    Gizmo.mode = mode
+    for _, listener in ipairs(Gizmo.modeListeners) do listener() end
+end
+
+---Turns a tool on, or off when it's the active one (back to only selecting)
+---@param mode GizmoMode
+function Gizmo.toggle(mode)
+    Gizmo.setMode(Gizmo.mode == mode and "none" or mode)
 end
 
 add_hook("mouse_move", HOOK_SET, function(x, y)

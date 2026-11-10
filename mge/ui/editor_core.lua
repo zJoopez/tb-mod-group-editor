@@ -13,18 +13,15 @@ local createChoiceRow = Rows.createChoiceRow
 local function refreshProperties() Rows.refreshProperties() end
 
 local Transforms = MGE.Transforms
-
----The world gizmo is for the transform row used last (Enter in it or a click on its name)
----@param mode GizmoMode
-local function useGizmo(mode) MGE.Gizmo.mode = mode end
+local Gizmo = MGE.Gizmo
 
 -- Enter in a transform field applies that field only (only = its index)
-local function moveSelected(only) useGizmo("move") Transforms.move(readInputs(inwuts.pos, only)) end
-local function rotSelected(only) useGizmo("rotate") Transforms.rotate(readInputs(inwuts.rot, only)) end
-local function scaleSelected(only) useGizmo("scale") Transforms.scale(readInputs(inwuts.scale, only)) end
-local function positionSelected(only) useGizmo("move") Transforms.positionTo(readInputs(inwuts.position, only)) end
-local function angleSelected(only) useGizmo("rotate") Transforms.angleTo(readInputs(inwuts.angle, only)) end
-local function sizeSelected(only) useGizmo("scale") Transforms.sizeTo(readInputs(inwuts.size, only)) end
+local function moveSelected(only) Transforms.move(readInputs(inwuts.pos, only)) end
+local function rotSelected(only) Transforms.rotate(readInputs(inwuts.rot, only)) end
+local function scaleSelected(only) Transforms.scale(readInputs(inwuts.scale, only)) end
+local function positionSelected(only) Transforms.positionTo(readInputs(inwuts.position, only)) end
+local function angleSelected(only) Transforms.angleTo(readInputs(inwuts.angle, only)) end
+local function sizeSelected(only) Transforms.sizeTo(readInputs(inwuts.size, only)) end
 local shownPosition, groupAngles, groupExtents = Transforms.shownPosition, Transforms.groupAngles, Transforms.groupExtents
 
 -- Each transform row has two modes, switched by clicking the row's name. Both rows exist in the same
@@ -37,6 +34,18 @@ local TRANSFORMS = { "move", "rotate", "scale" }
 local transformModes = { move = "absolute", rotate = "absolute", scale = "absolute" }
 ---@type table<string, table<TransformMode, UIElement>>
 local transformRows = { move = {}, rotate = {}, scale = {} }
+---@type table<string, table<TransformMode, UIElement?>> name buttons of the transform rows, the one of the
+---active tool is highlighted (both modes, only one is shown)
+local transformLabels = { move = {}, rotate = {}, scale = {} }
+
+---Highlights the transform row names that belong to the active gizmo tool (toolbar toggles, ui/main.lua).
+---The rows themselves don't change the tool
+local function highlightTransformLabels()
+    for key, labels in pairs(transformLabels) do
+        for _, label in pairs(labels) do Rows.setHighlighted(label, key == Gizmo.mode) end
+    end
+end
+table.insert(Gizmo.modeListeners, highlightTransformLabels)
 
 ---Shows each transform row in its current mode and hides the other one. hide(true) keeps the hidden
 ---row hidden when the panel is shown again (tab switch, F1). The shown row only needs showing while
@@ -60,7 +69,6 @@ end
 
 ---@param key "move"|"rotate"|"scale"
 local function toggleTransformMode(key)
-    useGizmo(key)
     transformModes[key] = transformModes[key] == "absolute" and "offset" or "absolute"
     applyTransformModes(true) -- the label clicked is on the shown core panel
 end
@@ -72,18 +80,23 @@ local SWITCH_HELP = "\nClick the name: "
 local function buildTransformRows(holder)
     Rows.begin()
     transformRows = { move = {}, rotate = {}, scale = {} } -- built before the measured rows
+    transformLabels = { move = {}, rotate = {}, scale = {} }
     local zeros = { "0.00", "0.00", "0.00" }
     local function switch(key) return function() toggleTransformMode(key) end end
     -- Enter applies only the field it's pressed in (index i), the row's other fields are ignored
-    inwuts.pos, transformRows.move.offset = createInputRow("Move", holder, function(_, i) moveSelected(i) end, zeros,
+    inwuts.pos, transformRows.move.offset, transformLabels.move.offset = createInputRow("Move", holder,
+        function(_, i) moveSelected(i) end, zeros,
         "Moves the selection by X, Y, Z." ..
         SWITCH_HELP .. "Pos (move to).", switch("move"))
-    inwuts.rot, transformRows.rotate.offset = createInputRow("Rotate", holder, function(_, i) rotSelected(i) end, zeros,
+    inwuts.rot, transformRows.rotate.offset, transformLabels.rotate.offset = createInputRow("Rotate", holder,
+        function(_, i) rotSelected(i) end, zeros,
         "Turns the selection around its center by degrees." ..
         SWITCH_HELP .. "Rot (turn to).", switch("rotate"))
-    inwuts.scale, transformRows.scale.offset = createInputRow("Resize", holder, function(_, i) scaleSelected(i) end, zeros,
+    inwuts.scale, transformRows.scale.offset, transformLabels.scale.offset = createInputRow("Resize", holder,
+        function(_, i) scaleSelected(i) end, zeros,
         "Multiplies the group's size along its axes. 0: no change." ..
         SWITCH_HELP .. "Scale (set size).", switch("scale"))
+    highlightTransformLabels()
 end
 
 ---Pos / Rot / Scale rows (absolute), the whole-group versions of Move / Rotate / Resize. Placeholders show the
@@ -95,19 +108,23 @@ local function buildMeasuredRows(holder, selected)
     local zeros = { "0.00", "0.00", "0.00" }
     local any = #selected > 0
     local function switch(key) return function() toggleTransformMode(key) end end
-    inwuts.position, transformRows.move.absolute = createInputRow("Pos", holder, function(_, i) positionSelected(i) end,
+    inwuts.position, transformRows.move.absolute, transformLabels.move.absolute = createInputRow("Pos", holder,
+        function(_, i) positionSelected(i) end,
         any and formatHints(shownPosition(selected)) or zeros,
         "Moves selection to given location." ..
         SWITCH_HELP .. "Name click changes mode.", switch("move"))
     local angles = any and groupAngles(selected) or { 0, 0, 0 }
     for i = 1, 3 do angles[i] = math.deg(angles[i]) end
-    inwuts.angle, transformRows.rotate.absolute = createInputRow("Rot", holder, function(_, i) angleSelected(i) end, formatHints(angles),
+    inwuts.angle, transformRows.rotate.absolute, transformLabels.rotate.absolute = createInputRow("Rot", holder,
+        function(_, i) angleSelected(i) end, formatHints(angles),
         "Turns selection to given angles." ..
         SWITCH_HELP .. "Name click changes mode.", switch("rotate"))
-    inwuts.size, transformRows.scale.absolute = createInputRow("Scale", holder, function(_, i) sizeSelected(i) end,
+    inwuts.size, transformRows.scale.absolute, transformLabels.scale.absolute = createInputRow("Scale", holder,
+        function(_, i) sizeSelected(i) end,
         any and formatHints(groupExtents(selected)) or zeros,
         "Sets the selection's size." ..
         SWITCH_HELP .. "Name click changes mode.", switch("scale"))
+    highlightTransformLabels() -- rebuilt rows start with the panel look
 end
 
 -- empty color fields count as these (0-255), shown as the fields' placeholders

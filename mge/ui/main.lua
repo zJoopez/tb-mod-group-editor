@@ -39,7 +39,7 @@ local content = windowContainer:addChild({
 
 -- top menu, same bar style as the list bars:
 --   left:  shortcuts to the game's own mod list and gamerules menus
---   right: save / undo / redo icons, then the shortcut help
+--   right: save, gizmo tool toggles, undo / redo, settings, then the shortcut help
 local menuH = 25
 local helpSize = menuH - 4
 local iconSize = menuH - 4 -- bar buttons have 2px padding top and bottom
@@ -49,43 +49,47 @@ local menuBar = content:addChild({
     size = { content.size.w, menuH },
     bgColor = TB_MENU_DEFAULT_BG_COLOR,
 })
-local iconsW = iconSize * 5 + iconGap * 4
+local ICON_COUNT = 7
+local iconsW = iconSize * ICON_COUNT + iconGap * (ICON_COUNT - 1)
 local iconsX = menuBar.size.w - (helpSize + 4) - iconGap - iconsW
 local iconButtons = menuBar:addChild({
     pos = { iconsX, 0 },
     size = { iconsW, menuH },
 })
-local cameraButton, mouseButton
----Camera button is highlighted while selecting and moving make the camera follow the selection
-local function updateCameraButton()
-    local on = MGE.Camera.followMoves
-    cameraButton.bgColor = on and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
-end
----Mouse button is highlighted while clicking objects in the world selects them
-local function updateMouseButton()
-    mouseButton.bgColor = MGE.WorldSelect.enabled and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
-end
-local icons = Widgets.barButtons(iconButtons, {
+-- gizmo tools: on / off toggles, at most one on (utils/gizmo.lua). Icons in mge/textures/
+local TOOLS = {
+    { mode = "move", label = "Move (Shift + Q)" },
+    { mode = "rotate", label = "Rotate (Shift + W)" },
+    { mode = "scale", label = "Scale (Shift + E)" },
+}
+local TOOL_FIRST = 2 -- index of the first tool in the bar
+local bar = {
     -- working file (same as Ctrl+S), game's save icon
-    { label = "Save", icon = "../textures/menu/general/buttons/savewhite.tga", onClick = function() MGE.save() end },
-    -- camera looks at the selection when selecting and moving, toggled here (game's camera icon)
-    { label = "Camera", icon = "../textures/menu/general/buttons/camera.tga", onClick = function()
-        MGE.Camera.followMoves = not MGE.Camera.followMoves
-        updateCameraButton()
-    end },
-    -- click to select objects in the world, off to play the mod without selecting (mge/textures/mouse.tga)
-    { label = "Select", icon = MGE.scriptPath .. "textures/mouse.tga", onClick = function()
-        MGE.WorldSelect.setEnabled(not MGE.WorldSelect.enabled)
-        updateMouseButton()
-    end },
-    -- game's undo icon, redo is the same icon mirrored (mge/textures/redo.tga)
-    { label = "Undo", icon = "../textures/menu/general/buttons/undo.tga", onClick = function() History.undo() end },
-    { label = "Redo", icon = MGE.scriptPath .. "textures/redo.tga", onClick = function() History.redo() end },
-})
-cameraButton = icons[2]
-mouseButton = icons[3]
-updateCameraButton()
-updateMouseButton()
+    { label = "Save (Ctrl + S)", icon = "../textures/menu/general/buttons/savewhite.tga", onClick = function() MGE.save() end },
+}
+for _, tool in ipairs(TOOLS) do
+    table.insert(bar, { label = tool.label, icon = MGE.scriptPath .. "textures/" .. tool.mode .. ".tga",
+        onClick = function() MGE.Gizmo.toggle(tool.mode) end })
+end
+-- game's undo icon, redo is the same icon mirrored (mge/textures/redo.tga)
+table.insert(bar, { label = "Undo (Shift + Z)", icon = "../textures/menu/general/buttons/undo.tga", onClick = function() History.undo() end })
+table.insert(bar, { label = "Redo (Shift + Y)", icon = MGE.scriptPath .. "textures/redo.tga", onClick = function() History.redo() end })
+-- camera follow and world clicking (ui/settings_overlay.lua), game's settings icon
+table.insert(bar, { label = "Settings", icon = "../textures/menu/general/buttons/settingswhite.tga",
+    onClick = function() dofile(MGE.scriptPath .. "ui/settings_overlay.lua") end })
+local icons = Widgets.barButtons(iconButtons, bar)
+
+---The active tool's button is highlighted
+local function updateToolButtons()
+    for i, tool in ipairs(TOOLS) do
+        local btn = icons[TOOL_FIRST + i - 1]
+        if btn and not btn.destroyed then
+            btn.bgColor = MGE.Gizmo.mode == tool.mode and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
+        end
+    end
+end
+table.insert(MGE.Gizmo.modeListeners, updateToolButtons)
+updateToolButtons()
 local menuTextW = 80 -- fixed width, leaves open space between the text and icon groups
 local textButtons = menuBar:addChild({
     pos = { 0, 0 },
@@ -102,14 +106,14 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Ctrl + A: select / deselect all\n" ..
     "Shift + Z / Y: undo / redo\n" ..
     "Enter: apply the typed field\n" ..
+    "Shift + Q / W / E: Move / Rotate / Scale gizmo on / off\n" ..
     "Click Pos / Rot / Scale: switch to Move / Rotate / Resize\n" ..
     "Click object or id: select it, Shift + click: add / remove\n" ..
     "Export / Import: save selection or player as an asset / add one\n" ..
-    "Gizmo (for the Move / Rotate / Resize row used last): drag arrows / squares to move,\n" ..
+    "Gizmo (toolbar toggles): drag arrows / squares to move,\n" ..
     "rings to rotate, cubes to scale, the white cube scales evenly (Ctrl: steps)\n" ..
     "Drag (off the gizmo) / wheel: orbit / zoom camera\n" ..
-    "Camera button: follow the selection\n" ..
-    "Mouse button: click to select in the world (off to play)")
+    "Settings: camera follow, click to select in the world (off to play)")
 updateContentHeight(menuH)
 
 -- tabs for the list area: objects (with how full the mod is) and players. The active tab has the

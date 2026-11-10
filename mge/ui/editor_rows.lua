@@ -109,7 +109,7 @@ end
 ---@param parent UIElement
 ---@param help string? explanation shown when hovering the "?" icon
 ---@param onLabelClick function? makes the label a button (switches a transform row's mode)
----@return UIElement row, number contentX, number contentW
+---@return UIElement row, number contentX, number contentW, UIElement? labelButton only with onLabelClick
 local function createRow(label, parent, help, onLabelClick)
     local row = parent:addChild({
         pos = { 0, totalHeight },
@@ -120,9 +120,10 @@ local function createRow(label, parent, help, onLabelClick)
     local labelW = 80
     local helpSize = 22
     local helpW = help and helpSize + 8 or 0 -- space reserved at the end of the row for the "?" icon
+    local labelButton
     if onLabelClick then
-        Widgets.button(row, { x = 2, y = 2, w = labelW - 4, h = row.size.h - 4 }, label, onLabelClick, nil,
-            Widgets.PANEL_STYLE)
+        labelButton = Widgets.button(row, { x = 2, y = 2, w = labelW - 4, h = row.size.h - 4 }, label, onLabelClick,
+            nil, Widgets.PANEL_STYLE)
     else
         local labelContainer = row:addChild({
             pos = { 0, 0 },
@@ -137,7 +138,7 @@ local function createRow(label, parent, help, onLabelClick)
     end
 
     updateContentHeight(row.size.h)
-    return row, labelW, row.size.w - labelW - helpW
+    return row, labelW, row.size.w - labelW - helpW, labelButton
 end
 
 ---Label column followed by equally sized inputs and an optional "?" help icon at the end
@@ -147,9 +148,9 @@ end
 ---@param placeholders string[] one per input
 ---@param help string? explanation shown when hovering the "?" icon
 ---@param onLabelClick function? see createRow
----@return UIElement[] inputs, UIElement row
+---@return UIElement[] inputs, UIElement row, UIElement? labelButton see createRow
 local function createInputRow(label, parent, func, placeholders, help, onLabelClick)
-    local row, contentX, contentW = createRow(label, parent, help, onLabelClick)
+    local row, contentX, contentW, labelButton = createRow(label, parent, help, onLabelClick)
     local columnSize = contentW / #placeholders
     local inputs = {}
     for i, placeholder in ipairs(placeholders) do
@@ -160,7 +161,16 @@ local function createInputRow(label, parent, func, placeholders, help, onLabelCl
         }, true)
         inputs[i] = createInput(inputContainer, function() func(inputs, i) end, placeholder)
     end
-    return inputs, row
+    return inputs, row, labelButton
+end
+
+---Highlights a button like the current choice in createChoiceRow, or gives it the panel look back
+---@param btn UIElement? nil and destroyed buttons are skipped
+---@param on boolean
+local function setHighlighted(btn, on)
+    if btn and not btn.destroyed then
+        btn.bgColor = on and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.PANEL_STYLE.bg
+    end
 end
 
 ---Label column followed by buttons for a fixed set of values, the current one is highlighted
@@ -170,6 +180,7 @@ end
 ---@param current any value shared by the selection, nil or "mixed" highlights nothing
 ---@param onPick fun(value: any)
 ---@param help string?
+---@return UIElement[] buttons in choice order, highlight a new current one with setHighlighted
 local function createChoiceRow(label, parent, choices, current, onPick, help)
     local row, contentX, contentW = createRow(label, parent, help)
     local holder = row:addChild({
@@ -180,9 +191,11 @@ local function createChoiceRow(label, parent, choices, current, onPick, help)
     for i, choice in ipairs(choices) do
         items[i] = { label = choice.label, onClick = function() onPick(choice.value) end }
     end
-    for i, btn in ipairs(Widgets.buttonRow(holder, 0, holder.size.h, items, 4, nil, Widgets.PANEL_STYLE)) do
-        if choices[i].value == current then btn.bgColor = TB_MENU_DEFAULT_LIGHTER_COLOR end
+    local buttons = Widgets.buttonRow(holder, 0, holder.size.h, items, 4, nil, Widgets.PANEL_STYLE)
+    for i, btn in ipairs(buttons) do
+        if choices[i].value == current then setHighlighted(btn, true) end
     end
+    return buttons
 end
 
 ---Label column followed by on/off buttons (any number can be on), active ones are highlighted
@@ -312,6 +325,7 @@ Rows.createInput = createInput
 Rows.createRow = createRow
 Rows.createInputRow = createInputRow
 Rows.createChoiceRow = createChoiceRow
+Rows.setHighlighted = setHighlighted
 Rows.createToggleButtonRow = createToggleButtonRow
 Rows.buildPropertyRows = buildPropertyRows
 Rows.setSelectedProp = setSelectedProp

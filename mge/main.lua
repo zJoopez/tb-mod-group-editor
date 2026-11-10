@@ -50,6 +50,7 @@
 ---@field confirmOverlay UIElement? open confirmation popup (TBMenu:showConfirmationWindow)
 ---@field saveOverlayContext table? options for the next name prompt
 ---@field pickerOverlay UIElement? open file picker: asset import, Model row (ui/file_picker.lua)
+---@field settingsOverlay UIElement? open settings: camera follow, world clicking (ui/settings_overlay.lua)
 ---@field FilePicker table ui/file_picker.lua
 ---@field Assets table export / import, ui/assets.lua
 MGE = MGE or { scriptPath = "mge/" }
@@ -155,7 +156,8 @@ function MGE.quit(fromWindow)
     for _, callback in ipairs(MGE.onQuit or {}) do
         pcall(callback)
     end
-    for _, overlay in ipairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay }) do
+    -- not ipairs: a nil entry (overlay not open) would stop it before the ones after it
+    for _, overlay in pairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay, MGE.settingsOverlay }) do
         if overlay and not overlay.destroyed then
             pcall(function() overlay:kill() end)
         end
@@ -201,8 +203,16 @@ add_hook("match_begin", MGE.hookname, function()
     MGE.focusAfterReload = nil -- only for the reload it was set for
 end)
 
+-- Shift + Q / W / E: Move / Rotate / Scale gizmo on / off, same as the toolbar toggles (ui/main.lua).
+-- Not R: the game handles Shift + R before this hook can consume it
+local TOOL_KEYS = {
+    [string.byte("q")] = "move",
+    [string.byte("w")] = "rotate",
+    [string.byte("e")] = "scale",
+}
+
 -- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game), Ctrl+S saves the working file,
--- Ctrl+A selects / deselects all objects
+-- Ctrl+A selects / deselects all objects, Shift + Q / W / E toggles a gizmo tool
 add_hook("key_down", MGE.hookname, function(key)
     if TB_MENU_INPUT_ISACTIVE then return end -- typing in a text field
     if get_keyboard_alt() ~= 0 or not MGE.Main.window.displayed then return end
@@ -213,6 +223,9 @@ add_hook("key_down", MGE.hookname, function(key)
             return 1 -- consume so the game doesn't also handle the key
         elseif key == string.byte("y") then
             History.redo()
+            return 1
+        elseif TOOL_KEYS[key] then
+            MGE.Gizmo.toggle(TOOL_KEYS[key])
             return 1
         end
     elseif ctrl and not shift and key == string.byte("s") then
