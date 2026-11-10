@@ -5,7 +5,7 @@
 --                   one goes back to the current step
 --   Shortcuts:      heading with a "?", hovering it lists the keyboard and mouse shortcuts
 -- Kept while the script runs, not saved. Clicking outside the panel, Close or Esc closes it, MGE.quit
--- closes it too (MGE.settingsOverlay). Playing the mod without selecting is the toolbar's Play button.
+-- closes it too (MGE.settingsOverlay).
 if MGE.settingsOverlay and not MGE.settingsOverlay.destroyed then return end
 
 local Widgets = MGE.Widgets
@@ -58,7 +58,6 @@ local SHORTCUTS = table.concat({
     "Shift + Q / W / E: Move / Rotate / Scale gizmo on / off",
     "Ctrl while dragging the gizmo: snap steps (above)",
     "Drag (off the gizmo) / wheel: orbit / zoom camera",
-    "Play (toolbar): clicks and keys go to the game, F1 / Esc still work",
 }, "\n")
 
 local PANEL_W = 340

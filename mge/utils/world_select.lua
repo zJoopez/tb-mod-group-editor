@@ -21,8 +21,6 @@ local HOOK_SET = MGE.hookname .. "_worldselect" -- own set, MGE's draw3d hook is
 ---@class WorldSelect
 local WorldSelect = {
     clickMoveLimit = 4, -- pixels the mouse may move between down and up to still count as a click
-    ---@type boolean off while playing (the toolbar's Play button)
-    enabled = true, -- toggled by the mouse button in the top menu, off lets you play without selecting
 }
 
 ---@type { x: number, y: number }?
@@ -276,25 +274,7 @@ end
 
 local function isActive()
     local Main = MGE.Main -- created after this module loads
-    return WorldSelect.enabled and Main and Main.window and Main.window.displayed and not TB_MENU_INPUT_ISACTIVE
-end
-
----@type fun() called after setEnabled, set by ui/main.lua (the toolbar's Play button, lit while off)
-WorldSelect.onChanged = function() end
-
----Turns click to select on or off. A click already waiting is dropped when turned off. Off also turns
----the gizmo tool off (the gizmo is part of world clicking), a gizmo tool turns it back on
----@param enabled boolean
-function WorldSelect.setEnabled(enabled)
-    WorldSelect.enabled = enabled
-    if not enabled then
-        pressed, pendingClick = nil, nil
-        if MGE.Gizmo then
-            MGE.Gizmo.cancel()
-            MGE.Gizmo.setMode("none")
-        end
-    end
-    WorldSelect.onChanged()
+    return Main and Main.window and Main.window.displayed and not TB_MENU_INPUT_ISACTIVE
 end
 
 -- The gizmo (utils/gizmo.lua, loads after this module) gets the mouse first: a press on one of its

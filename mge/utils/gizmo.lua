@@ -113,7 +113,6 @@ end
 local function gizmoTarget()
     local Main = MGE.Main
     if not MODES[Gizmo.mode] or not Main or not Main.window or not Main.window.displayed then return nil end
-    if not WorldSelect.enabled then return nil end
     -- the gizmo draws in draw2d, on top of everything: hidden (and not grabbable) under an overlay
     if MGE.overlayOpen and MGE.overlayOpen() then return nil end
     if Main.listTab == "players" then
@@ -450,7 +449,6 @@ end
 ---@param mode GizmoMode
 function Gizmo.setMode(mode)
     if mode ~= "none" and not MODES[mode] then return end
-    if MODES[mode] and not WorldSelect.enabled then WorldSelect.setEnabled(true) end
     if mode == Gizmo.mode then return end
     Gizmo.cancel()
     Gizmo.mode = mode

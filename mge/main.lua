@@ -398,7 +398,6 @@ end
 -- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game), Ctrl+S saves the mod (MGE.save),
 -- Ctrl+A selects / deselects all objects, Shift + Q / W / E toggles a gizmo tool,
 -- Ctrl + N / D new / duplicate, Delete deletes the selection (asks first), Esc closes MGE's overlays.
--- While playing (the toolbar's Play) only Esc (and F1, key_up) are MGE's, the rest goes to the game
 add_hook("key_down", MGE.hookname, function(key)
     -- before the text field check: the name prompt focuses its field
     if key == KEY_ESCAPE then
@@ -406,7 +405,6 @@ add_hook("key_down", MGE.hookname, function(key)
         return
     end
     if TB_MENU_INPUT_ISACTIVE then return end -- typing in a text field
-    if not MGE.WorldSelect.enabled then return end -- Play (toolbar): the keys are the game's
     if get_keyboard_alt() ~= 0 or not MGE.Main.window.displayed then return end
     local shift, ctrl = get_keyboard_shift() ~= 0, get_keyboard_ctrl() ~= 0
     if key == KEY_DELETE and not shift and not ctrl then
