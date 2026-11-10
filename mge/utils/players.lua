@@ -301,6 +301,51 @@ function Players.rotateByMatrix(players, m, pivot)
     end)
 end
 
+---Player's current rotation as a matrix: engageplayerrot when the mod sets positions, otherwise how the
+---body is turned now (its groin)
+---@param player integer
+---@return number[][]
+local function currentRotation(player)
+    local rot = Players.hasPositions() and readList(ROT)
+    if rot then
+        local i = player * 3
+        return rotMatrix({ rot[i + 1] or 0, rot[i + 2] or 0, rot[i + 3] or 0 })
+    end
+    return bodyRot(get_body_info(player, BODYPARTS.GROIN))
+end
+
+---Where the players panel shows the player: its center counted from the dojo center (like objects'
+---Pos row, MGE.POS_ORIGIN) and its rotation in degrees (x y z, engageplayerrot's order)
+---@param player integer
+---@return number[] pos, number[] rot
+function Players.shown(player)
+    local c, o = Players.center(player), MGE.POS_ORIGIN or { 0, 0, 0 }
+    local x, y, z = Mat3.toEulerXYZ(currentRotation(player))
+    return { c[1] - o[1], c[2] - o[2], c[3] - o[3] }, { math.deg(x), math.deg(y), math.deg(z) }
+end
+
+---Pos row: moves the player so its center is at the typed axes (counted from the dojo center), the
+---other axes stay
+---@param player integer
+---@param typed (number?)[]
+function Players.setShownPos(player, typed)
+    local shown = Players.shown(player)
+    local offset = {}
+    for k = 1, 3 do offset[k] = typed[k] and typed[k] - shown[k] or 0 end
+    Players.moveBy(player, offset)
+end
+
+---Rot row: turns the player to the typed angles (degrees, the other axes stay) around its center
+---@param player integer
+---@param typed (number?)[]
+function Players.setShownRot(player, typed)
+    local _, shownRot = Players.shown(player)
+    local wanted = {}
+    for k = 1, 3 do wanted[k] = typed[k] or shownRot[k] end
+    -- the world rotation from now to the wanted one, around the center like the Rotate gizmo
+    Players.rotateByMatrix(player, Mat3.mul(rotMatrix(wanted), Mat3.transpose(currentRotation(player))))
+end
+
 ---Turns a player around z by degrees, around its center
 ---@param player integer
 ---@param degrees number
@@ -460,6 +505,120 @@ local function scaleSection(player, factor)
         end
     end
     FH.setPlayerLines(ModData.parsed, player, sectionLines(section))
+end
+
+-- defaults for parts without the line, from the game's own modmaker.tbm (data/mod): every body part
+-- 0.25 density, joint strengths per joint, every body part and joint 0.3 friction and 0.1 bounce
+local DEFAULT_DENSITY = 0.25
+local DEFAULT_STRENGTH = {
+    neck = 1, chest = 4, lumbar = 3, abs = 3, r_pecs = 3, r_shoulder = 4, r_elbow = 2, l_pecs = 3,
+    l_shoulder = 4, l_elbow = 2, r_wrist = 2, l_wrist = 2, r_glute = 4, l_glute = 4, r_hip = 2, l_hip = 2,
+    r_knee = 4, l_knee = 4, r_ankle = 1, l_ankle = 1,
+}
+-- which parts have the line (body parts / joints) and its default per part name
+local PART_KEYS = {
+    density = { body = true, default = function() return DEFAULT_DENSITY end },
+    strength = { joint = true, default = function(name) return DEFAULT_STRENGTH[name] or 1 end },
+    friction = { body = true, joint = true, default = function() return 0.3 end },
+    bounce = { body = true, joint = true, default = function() return 0.1 end },
+}
+
+---Calls fn(part, value) for every part a key applies to in a parsed player section, value being the
+---line's number or the default. With create, parts missing from the section are added
+---@param section table parseSection result
+---@param key "density"|"strength"|"friction"|"bounce"
+---@param create boolean
+---@param fn fun(part: table|nil, value: number, name: string)
+local function eachPart(section, key, create, fn)
+    local spec = PART_KEYS[key]
+    for _, kind in ipairs({ "body", "joint" }) do
+        if spec[kind] then
+            local byName = {}
+            for _, part in ipairs(section.parts) do
+                if part.kind == kind then byName[part.name] = part end
+            end
+            for name in pairs(kind == "body" and BODYPARTS or JOINTS) do
+                name = name:lower()
+                local part = byName[name]
+                if not part and create then
+                    part = { kind = kind, name = name, props = {} }
+                    table.insert(section.parts, part)
+                end
+                fn(part, part and tonumber(getProp(part, key)) or spec.default(name), name)
+            end
+        end
+    end
+end
+
+---A player's parsed section: its own lines, else the shared ones
+local function playerSection(player)
+    local ModData, FH = MGE.ModData, MGE.FileHandler
+    return parseSection(FH.getPlayerLines(ModData.parsed, player) or FH.getSharedPlayerLines(ModData.parsed) or {})
+end
+
+---Average density of a player's body parts, strength of its joints, or friction / bounce of both, as
+---the mod sets them (parts without the line count with the game's default): what the players panel shows
+---@param player integer
+---@param key "density"|"strength"|"friction"|"bounce"
+---@return number
+function Players.partAverage(player, key)
+    local sum, n = 0, 0
+    eachPart(playerSection(player), key, false, function(_, value)
+        sum, n = sum + value, n + 1
+    end)
+    return n > 0 and sum / n or 0
+end
+
+---Rewrites a value of every part of players with change(value) -> new value, one undo step and a
+---reload. Parts without the line get it, other lines stay. A player using the shared part lines gets its
+---own section. Positions don't change, no correction needed
+local function changeParts(list, key, change)
+    local FH = MGE.FileHandler
+    for _, player in ipairs(list) do
+        local section = playerSection(player)
+        eachPart(section, key, true, function(part, value)
+            setProp(part, key, FH.formatNumber(change(value)))
+        end)
+        FH.setPlayerLines(MGE.ModData.parsed, player, sectionLines(section))
+    end
+    History.commit()
+    MGE.apply() -- body and joint changes need a reload
+end
+
+---Multiplies a value of the parts of players (density: body parts, strength: joints, friction /
+---bounce: both), their ratios stay
+---@param players integer|integer[] 0-based
+---@param key "density"|"strength"|"friction"|"bounce"
+---@param factor number
+function Players.multiplyParts(players, key, factor)
+    local list = asList(players)
+    if #list == 0 or factor < 0 or math.abs(factor - 1) < 1e-9 then return end
+    changeParts(list, key, function(value) return value * factor end)
+end
+
+---Sets a value on every part of players (where a factor can't work: the average is 0)
+---@param players integer|integer[] 0-based
+---@param key "density"|"strength"|"friction"|"bounce"
+---@param value number
+function Players.setParts(players, key, value)
+    local list = asList(players)
+    if #list == 0 then return end
+    changeParts(list, key, function() return value end)
+end
+
+---Height of a player: lowest to highest point of its body parts in the world. Uniform scaling scales
+---it by exactly the factor, so a typed height gives the factor
+---@param player integer
+---@return number
+function Players.height(player)
+    local lo, hi = math.huge, -math.huge
+    for _, id in pairs(BODYPARTS) do
+        local b = get_body_info(player, id)
+        local s = b.sides
+        local half = b.shape == 0 and s.x or (b.shape == 2 and s.y / 2 + s.x) or math.max(s.x, s.y, s.z) / 2
+        lo, hi = math.min(lo, b.pos.z - half), math.max(hi, b.pos.z + half)
+    end
+    return hi > lo and hi - lo or 0
 end
 
 ---Scales players uniformly around pivot (default: their center) as one group, one undo step: every

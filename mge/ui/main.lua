@@ -78,7 +78,6 @@ local function togglePlay()
         WorldSelect.setEnabled(false) -- also turns the tool off and ends a drag
         for _, obj in ipairs(ModData.parsed.env_obj) do obj.selected = nil end
         Main.toggleAll = false
-        Main.selectedPlayers = {}
         Main.updateWindow() -- list highlights and the editor's values follow
     else
         WorldSelect.setEnabled(true)
@@ -343,14 +342,18 @@ local function applyListTab()
 end
 
 ---Picks a player (its row in the Players list, a click on it in the world): the list, the players panel
----and the highlight show it, camera follow frames the selection. Shift (additive) adds it to the
----selected players or takes it out, like objects, the selection can end up empty. The panel shows the
----last picked one (Main.selectedPlayer), also when nothing is selected
+---and the highlight show it, camera follow frames the selection. Like objects (ModData.clickSelect): a
+---click selects only that player, clicking the only selected one deselects it, Shift (additive) adds
+---it or takes it out. The panel shows the last picked one (Main.selectedPlayer), also with none selected
 ---@param id integer 0-based
 ---@param additive boolean?
 function Main.selectPlayer(id, additive)
     if not additive then
-        Main.selectedPlayers = { [id] = true }
+        local onlySelected = Main.selectedPlayers[id] == true
+        for p in pairs(Main.selectedPlayers) do
+            if p ~= id then onlySelected = false end
+        end
+        Main.selectedPlayers = onlySelected and {} or { [id] = true }
         Main.selectedPlayer = id
     elseif Main.selectedPlayers[id] then
         Main.selectedPlayers[id] = nil
