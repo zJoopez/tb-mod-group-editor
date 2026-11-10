@@ -12,6 +12,7 @@ local Mat3 = MGE.Mat3
 -- Increment is added to the sides of each next piece, so piece i (from 0) has sides + i * increment:
 -- with angle 0, a Z increment and out alignment the pieces are stairs, adding the same Y increment
 -- with center alignment makes a stepped pyramid lying along X. Y is always centered.
+-- The Generate tab then moves the shape in front of the camera (viewPlacement, moveTo).
 
 ---Rotation by t radians around the unit vector u (Rodrigues)
 ---@param u number[]
@@ -68,6 +69,10 @@ local function maxPieces(sides, increment)
     return most
 end
 
+---@class GenerateBounds box around the whole shape, world axes
+---@field min number[]
+---@field max number[]
+
 ---Where the pieces go: the shape's lowest point at z 0, centered on `center` in x and y
 ---@param amount integer
 ---@param gap number
@@ -75,7 +80,7 @@ end
 ---@param sides number[] box sides of the first piece: length (x), width (y), thickness (z)
 ---@param center number[] x y
 ---@param options GenerateOptions?
----@return GeneratePiece[]
+---@return GeneratePiece[] pieces, GenerateBounds bounds where the pieces ended up
 local function planGenerate(amount, gap, angle, sides, center, options)
     options = options or {}
     local increment = options.increment or { 0, 0, 0 }
@@ -117,7 +122,56 @@ local function planGenerate(amount, gap, angle, sides, center, options)
     for _, piece in ipairs(pieces) do
         for k = 1, 3 do piece.pos[k] = piece.pos[k] + shift[k] end
     end
-    return pieces
+    for k = 1, 3 do
+        min[k], max[k] = min[k] + shift[k], max[k] + shift[k]
+    end
+    return pieces, { min = min, max = max }
+end
+
+-- Placing a shape in view (Generate tab): it should be on screen and about as far from the camera as
+-- framing it would put the camera (utils/camera.lua's fitDistance), not at the dojo center
+ShapeGen.GROUND_Z = 0          -- the floor, shapes are put on it when the view meets it close enough
+ShapeGen.GROUND_NEAR = 0.6     -- the view meeting the floor between these shares of the framing distance
+ShapeGen.GROUND_FAR = 1.6      -- counts as close enough
+
+---Where a shape goes in front of the camera: on the floor where the view line meets it, when that's
+---about the distance that fits the shape on screen, otherwise centered on the view line at that
+---distance (not below the floor)
+---@param bounds GenerateBounds the shape's bounds, any position
+---@param origin number[] camera position
+---@param dir number[] unit view direction
+---@param fitDistance fun(radius: number): number camera distance that fits this radius on screen
+---@return number[] point x y: the shape's center there, z: its lowest point
+function ShapeGen.viewPlacement(bounds, origin, dir, fitDistance)
+    local size = {}
+    for k = 1, 3 do size[k] = bounds.max[k] - bounds.min[k] end
+    local radius = math.sqrt(size[1] ^ 2 + size[2] ^ 2 + size[3] ^ 2) / 2
+    local distance = fitDistance(radius)
+    local groundZ = ShapeGen.GROUND_Z
+    if dir[3] < -1e-3 then -- looking down: where the view meets the floor
+        local t = (groundZ - origin[3]) / dir[3]
+        if t >= distance * ShapeGen.GROUND_NEAR and t <= distance * ShapeGen.GROUND_FAR then
+            return { origin[1] + dir[1] * t, origin[2] + dir[2] * t, groundZ }
+        end
+    end
+    local p = {}
+    for k = 1, 3 do p[k] = origin[k] + dir[k] * distance end
+    return { p[1], p[2], math.max(groundZ, p[3] - size[3] / 2) }
+end
+
+---Moves planned pieces so the shape's center (x y) and lowest point (z) are at point
+---@param pieces GeneratePiece[]
+---@param bounds GenerateBounds where the pieces are now
+---@param point number[] from viewPlacement
+function ShapeGen.moveTo(pieces, bounds, point)
+    local shift = {
+        point[1] - (bounds.min[1] + bounds.max[1]) / 2,
+        point[2] - (bounds.min[2] + bounds.max[2]) / 2,
+        point[3] - bounds.min[3],
+    }
+    for _, piece in ipairs(pieces) do
+        for k = 1, 3 do piece.pos[k] = piece.pos[k] + shift[k] end
+    end
 end
 
 

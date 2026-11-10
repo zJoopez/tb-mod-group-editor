@@ -1,4 +1,5 @@
--- Generate tab: lines, ramps, loops, stairs and pyramids made of default objects (geometry in utils/shape_gen.lua)
+-- Generate tab: lines, ramps, loops, stairs and pyramids made of default objects (geometry in utils/shape_gen.lua),
+-- placed in front of the camera
 local Rows = MGE.EditorRows
 local inwuts = Rows.inputs
 local formatHints = Rows.formatHints
@@ -23,6 +24,20 @@ local function defaultSides()
     return sides
 end
 
+-- Where the shape goes: in front of the camera (ShapeGen.viewPlacement), along the view line taken
+-- when the tab opens or To view is clicked. Kept fixed in between so the camera can orbit around the
+-- preview. A bigger shape moves further along the line, so it still fits on screen
+---@type { origin: number[], dir: number[] }?
+local anchor = nil
+local anchorVersion = 0 -- part of the preview's key: a new view line plans the preview again
+
+---Takes the camera's current view line as the place for the shape
+local function anchorToView()
+    local origin, dir = MGE.Camera.viewRay()
+    anchor = { origin = origin, dir = dir }
+    anchorVersion = anchorVersion + 1
+end
+
 ---Pieces for the typed values (empty fields use their placeholders), same for the preview and Generate
 ---@return GeneratePiece[]? pieces, string? error why nothing can be generated
 local function planFromFields()
@@ -42,18 +57,24 @@ local function planFromFields()
     if most and amount > most then
         return nil, "the increment shrinks pieces to nothing after " .. most .. " pieces, use fewer or a smaller increment"
     end
-    return MGE.ShapeGen.plan(amount, typed(2) or 0, typed(3) or GENERATE_ANGLE, sides,
-        { MGE.POS_ORIGIN[1], MGE.POS_ORIGIN[2] }, { increment = increment, align = align })
+    local ShapeGen = MGE.ShapeGen
+    local pieces, bounds = ShapeGen.plan(amount, typed(2) or 0, typed(3) or GENERATE_ANGLE, sides,
+        { 0, 0 }, { increment = increment, align = align })
+    if not anchor then anchorToView() end
+    ---@cast anchor -nil
+    ShapeGen.moveTo(pieces, bounds, ShapeGen.viewPlacement(bounds, anchor.origin, anchor.dir, MGE.Camera.fitDistance))
+    return pieces
 end
 
 -- Preview: the pieces Generate would add, drawn by utils/highlight.lua while the Generate tab is open.
--- Planned again only when a field's text or Align changes, the draw hook asks every frame
+-- Planned again only when a field's text, Align or the view line changes, the draw hook asks every frame
 local previewKey, previewPieces
+local previewShown = false -- false while the tab is closed, opening it takes the view line again
 
 ---@return string everything the plan depends on
 local function fieldsKey()
     ---@type string[]
-    local parts = { align }
+    local parts = { align .. "#" .. anchorVersion }
     for i, field in ipairs(inwuts.generate or {}) do
         parts[i + 1] = field.destroyed and "" or field.textfieldstr[1]
     end
@@ -62,7 +83,14 @@ end
 
 MGE.Highlight.preview = function()
     local Main = MGE.Main
-    if Main.activeTab ~= "generate" or Main.listTab == "players" or not inwuts.generate then return nil end
+    if Main.activeTab ~= "generate" or Main.listTab == "players" or not inwuts.generate then
+        previewShown = false
+        return nil
+    end
+    if not previewShown then -- the tab just opened: the shape goes where the camera looks now
+        previewShown = true
+        anchorToView()
+    end
     local key = fieldsKey()
     if key ~= previewKey then
         previewKey = key
@@ -133,7 +161,9 @@ local function buildGenerate(holder)
 
     createToggleButtonRow("", holder, {
         { label = "Generate", active = false, onClick = generate },
-    }, "Adds the orange preview as static pieces and selects them.")
+        { label = "To view", active = false, onClick = anchorToView },
+    }, "Generate: adds the orange preview as static pieces\nand selects them.\n" ..
+        "To view: moves the preview in front of the camera\n(also done when this tab opens).")
 end
 
 

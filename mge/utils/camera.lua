@@ -94,6 +94,32 @@ function Camera.bounds(objects)
     return center, radius
 end
 
+---Camera distance that fits a sphere of this radius on screen, the same framing Camera.focus uses
+---@param radius number
+---@return number
+function Camera.fitDistance(radius)
+    return math.min(math.max(radius * Camera.fitFactor + Camera.margin, Camera.minDistance), Camera.zoomMax)
+end
+
+---Where the camera is and the unit direction it looks in, MGE's own camera or the game's
+---@return number[] origin, number[] dir
+function Camera.viewRay()
+    local origin, lookat
+    if Camera.distance and Camera.target then
+        local t, d, cp = Camera.target, Camera.distance, math.cos(Camera.pitch)
+        origin = { t[1] + math.cos(Camera.yaw) * cp * d, t[2] + math.sin(Camera.yaw) * cp * d,
+            t[3] + math.sin(Camera.pitch) * d }
+        lookat = t
+    else
+        local c = get_camera_info()
+        origin, lookat = { c.pos.x, c.pos.y, c.pos.z }, { c.lookat.x, c.lookat.y, c.lookat.z }
+    end
+    local dir = { lookat[1] - origin[1], lookat[2] - origin[2], lookat[3] - origin[3] }
+    local len = math.sqrt(dir[1] ^ 2 + dir[2] ^ 2 + dir[3] ^ 2)
+    if len < 1e-6 then return origin, { 0, 1, 0 } end
+    return origin, { dir[1] / len, dir[2] / len, dir[3] / len }
+end
+
 ---Places the camera from target, yaw, pitch and distance
 local function place()
     local t, d = Camera.target, Camera.distance
@@ -183,8 +209,7 @@ function Camera.focus(objects, keepDistance)
         Camera.distance = len
     end
 
-    local distance = math.max(radius * Camera.fitFactor + Camera.margin, Camera.minDistance)
-    distance = math.min(distance, Camera.zoomMax)
+    local distance = Camera.fitDistance(radius)
     if keepDistance then distance = math.max(distance, Camera.distance) end
 
     set_camera_mode(4)
