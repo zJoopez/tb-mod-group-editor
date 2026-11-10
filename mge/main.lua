@@ -52,6 +52,7 @@
 ---@field pickerOverlay UIElement? open file picker: asset import, Model row (ui/file_picker.lua)
 ---@field settingsOverlay UIElement? open settings: camera follow, world clicking (ui/settings_overlay.lua)
 ---@field closeTopOverlay fun(): boolean Esc: closes the topmost of the overlays above
+---@field overlayOpen fun(): boolean one of the overlays above, or a game overlay, is open
 ---@field apply fun() writes the working copy and reloads it (shows edits), not a save of the mod
 ---@field save fun() Save button / Ctrl + S: writes the mod to saveTarget()
 ---@field saveAs fun() Rename: asks the name to save the mod as
@@ -351,15 +352,17 @@ local OBJECT_KEYS = {
     [string.byte("d")] = function() MGE.Editor.duplicate() end,
 }
 
----True while a prompt, popup or picker of MGE's is open: object shortcuts wait until it's closed,
----so a key doesn't change the list behind it
+---True while a prompt, popup or picker of MGE's is open, or one of the game's overlays
+---(TBMenu:spawnWindowOverlay sets TB_MENU_POPUPS_DISABLED while it's up): object shortcuts wait
+---until it's closed, so a key doesn't change the list behind it, and the gizmo isn't drawn over it
 ---@return boolean
 local function overlayOpen()
     for _, overlay in pairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay, MGE.settingsOverlay }) do
         if not overlay.destroyed then return true end
     end
-    return false
+    return TB_MENU_POPUPS_DISABLED == true
 end
+MGE.overlayOpen = overlayOpen
 
 local KEY_ESCAPE = 27
 local escFrame = nil -- UIElement.frameIndex of the last Esc close

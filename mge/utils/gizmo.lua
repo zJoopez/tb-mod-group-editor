@@ -74,6 +74,8 @@ local function gizmoObjects()
     local Main = MGE.Main
     if not MODES[Gizmo.mode] or not Main or not Main.window or not Main.window.displayed then return nil end
     if not WorldSelect.enabled or Main.listTab == "players" then return nil end
+    -- the gizmo draws in draw2d, on top of everything: hidden (and not grabbable) under an overlay
+    if MGE.overlayOpen and MGE.overlayOpen() then return nil end
     local objects = {}
     for _, obj in ipairs(ModData.getSelected()) do
         if get_obj_pos(obj.id - 1) ~= nil then table.insert(objects, obj) end
@@ -456,6 +458,7 @@ end)
 -- on top of the world: objects don't hide the gizmo
 add_hook("draw2d", HOOK_SET, function()
     if not shapes then return end
+    if MGE.overlayOpen and MGE.overlayOpen() then return end -- also mid drag: not over an overlay
     local ok, err = pcall(function()
         for _, shape in ipairs(shapes) do drawShape(shape, true) end
         for _, shape in ipairs(shapes) do drawShape(shape, false) end

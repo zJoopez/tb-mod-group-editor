@@ -207,10 +207,14 @@ local function takeControl()
         return 1 -- skip the game's camera update, it would put the camera back at its own distance
     end)
     add_hook("mouse_button_down", HOOK_SET, function(button, x, y)
-        if overUI(x, y) then return end
         if button == 4 or button == 5 then -- wheel: 4 up = closer
+            -- the wheel's x, y aren't the cursor: check toriui's tracked cursor (MOUSE_X / Y), so scrolling
+            -- a list (ours or the game's) doesn't zoom. No zoom under an overlay either (Mods, file picker)
+            if overUI(MOUSE_X or x, MOUSE_Y or y) or (MGE.overlayOpen and MGE.overlayOpen()) then return end
             local factor = button == 4 and 1 / Camera.zoomStep or Camera.zoomStep
             Camera.distance = math.min(math.max(Camera.distance * factor, Camera.zoomMin), Camera.zoomMax)
+        elseif overUI(x, y) then
+            return
         elseif Camera.orbitButtons[button] and not gizmoBusy() then
             -- dragging orbits, a short left click still selects (world_select.lua)
             drag = { x = x, y = y, dragging = false, button = button }
