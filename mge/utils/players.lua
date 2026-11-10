@@ -45,10 +45,11 @@ end
 ---Precise like everything MGE writes (FileHandler.formatNumber), "2.50" style would round off up to
 ---0.005 on every edit and the rotation's center keeping would drift
 ---@param list number[]
+---@param count integer? players, default numplayers (given while numplayers is being changed)
 ---@return string
-local function formatList(list)
+local function formatList(list, count)
     local parts = {}
-    for i = 1, Players.count() * 3 do parts[i] = MGE.FileHandler.formatNumber(list[i] or 0) end
+    for i = 1, (count or Players.count()) * 3 do parts[i] = MGE.FileHandler.formatNumber(list[i] or 0) end
     return table.concat(parts, ",")
 end
 
@@ -159,9 +160,10 @@ end
 ---Writes the lists as gamerules, then into the mod data as one undo step, and reloads
 ---@param pos number[]
 ---@param rot number[]
-local function commit(pos, rot)
-    set_gamerule(POS, formatList(pos))
-    set_gamerule(ROT, formatList(rot))
+---@param count integer? players, see formatList
+local function commit(pos, rot, count)
+    set_gamerule(POS, formatList(pos, count))
+    set_gamerule(ROT, formatList(rot, count))
     MGE.syncGamerules()
     History.commit()
     MGE.apply()
@@ -314,36 +316,50 @@ local function currentRotation(player)
     return bodyRot(get_body_info(player, BODYPARTS.GROIN))
 end
 
----Where the players panel shows the player: its center counted from the dojo center (like objects'
----Pos row, MGE.POS_ORIGIN) and its rotation in degrees (x y z, engageplayerrot's order)
----@param player integer
+---Where the players panel shows the players, like objects' Pos / Rot rows for a selection: the group's
+---center counted from the dojo center (MGE.POS_ORIGIN), and the rotation in degrees (x y z,
+---engageplayerrot's order) of the first one, the group's frame (the picked player)
+---@param players integer|integer[] first: the one whose rotation is shown
 ---@return number[] pos, number[] rot
-function Players.shown(player)
-    local c, o = Players.center(player), MGE.POS_ORIGIN or { 0, 0, 0 }
-    local x, y, z = Mat3.toEulerXYZ(currentRotation(player))
+function Players.shown(players)
+    local list = asList(players)
+    local c, o = Players.groupCenter(list), MGE.POS_ORIGIN or { 0, 0, 0 }
+    local x, y, z = Mat3.toEulerXYZ(currentRotation(list[1]))
     return { c[1] - o[1], c[2] - o[2], c[3] - o[3] }, { math.deg(x), math.deg(y), math.deg(z) }
 end
 
----Pos row: moves the player so its center is at the typed axes (counted from the dojo center), the
----other axes stay
----@param player integer
+---Pos row: moves the players so their group's center is at the typed axes (counted from the dojo
+---center), the other axes stay. They move together, the distances between them stay
+---@param players integer|integer[]
 ---@param typed (number?)[]
-function Players.setShownPos(player, typed)
-    local shown = Players.shown(player)
+function Players.setShownPos(players, typed)
+    local shown = Players.shown(players)
     local offset = {}
     for k = 1, 3 do offset[k] = typed[k] and typed[k] - shown[k] or 0 end
-    Players.moveBy(player, offset)
+    Players.moveBy(players, offset)
 end
 
----Rot row: turns the player to the typed angles (degrees, the other axes stay) around its center
----@param player integer
+---Rot row: turns the players so the first one has the typed angles (degrees, the other axes stay),
+---all of them as one rigid group around their center like the Rotate gizmo
+---@param players integer|integer[] first: the one the angles are for
 ---@param typed (number?)[]
-function Players.setShownRot(player, typed)
-    local _, shownRot = Players.shown(player)
+function Players.setShownRot(players, typed)
+    local list = asList(players)
+    local _, shownRot = Players.shown(list)
     local wanted = {}
     for k = 1, 3 do wanted[k] = typed[k] or shownRot[k] end
-    -- the world rotation from now to the wanted one, around the center like the Rotate gizmo
-    Players.rotateByMatrix(player, Mat3.mul(rotMatrix(wanted), Mat3.transpose(currentRotation(player))))
+    -- the world rotation from the first one's now to the wanted one
+    Players.rotateByMatrix(list, Mat3.mul(rotMatrix(wanted), Mat3.transpose(currentRotation(list[1]))))
+end
+
+---Average of partAverage over players: what the players panel shows for a selection
+---@param players integer|integer[]
+---@param key "density"|"strength"|"friction"|"bounce"
+---@return number
+function Players.groupPartAverage(players, key)
+    local list, sum = asList(players), 0
+    for _, player in ipairs(list) do sum = sum + Players.partAverage(player, key) end
+    return #list > 0 and sum / #list or 0
 end
 
 ---Turns a player around z by degrees, around its center
@@ -606,19 +622,22 @@ function Players.setParts(players, key, value)
     changeParts(list, key, function() return value end)
 end
 
----Height of a player: lowest to highest point of its body parts in the world. Uniform scaling scales
----it by exactly the factor, so a typed height gives the factor
+---World bounds of a player's body parts (each part as a box / sphere / capsule's reach around its
+---center, rotation ignored: close enough to put a player on the floor)
 ---@param player integer
----@return number
-function Players.height(player)
-    local lo, hi = math.huge, -math.huge
+---@return { min: number[], max: number[] }
+function Players.bounds(player)
+    local lo, hi = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
     for _, id in pairs(BODYPARTS) do
         local b = get_body_info(player, id)
         local s = b.sides
         local half = b.shape == 0 and s.x or (b.shape == 2 and s.y / 2 + s.x) or math.max(s.x, s.y, s.z) / 2
-        lo, hi = math.min(lo, b.pos.z - half), math.max(hi, b.pos.z + half)
+        local p = { b.pos.x, b.pos.y, b.pos.z }
+        for k = 1, 3 do
+            lo[k], hi[k] = math.min(lo[k], p[k] - half), math.max(hi[k], p[k] + half)
+        end
     end
-    return hi > lo and hi - lo or 0
+    return { min = lo, max = hi }
 end
 
 ---Scales players uniformly around pivot (default: their center) as one group, one undo step: every
@@ -642,6 +661,142 @@ function Players.scaleBy(players, factor, pivot)
             local rot = readList(ROT) or {}
             commit(correctedPositions(targets), rot) -- the sections and the corrected positions, one undo step
         end)
+    end)
+end
+
+-- adding and removing players -----------------------------------------------------------------------
+
+Players.MAX = 4 -- the game's gamerules menu goes from one to four players
+local NUMPLAYERS = "numplayers"
+local DUPLICATE_GAP = 0.3 -- between the copied players and their copies, along x
+
+---@return boolean room for n more players (says why not in chat)
+local function haveRoom(n)
+    if Players.count() + n <= Players.MAX then return true end
+    echo("^04[MGE] a mod can have at most " .. Players.MAX .. " players")
+    return false
+end
+
+---@param list integer[]
+---@return { min: number[], max: number[] }
+local function groupBounds(list)
+    local lo, hi = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
+    for _, player in ipairs(list) do
+        local b = Players.bounds(player)
+        for k = 1, 3 do lo[k], hi[k] = math.min(lo[k], b.min[k]), math.max(hi[k], b.max[k]) end
+    end
+    return { min = lo, max = hi }
+end
+
+---Adds players after the last one, one undo step. Every entry is a copy of a player (its own part
+---lines, rotation and position + shift) or false for a default body (nothing in the section, shared
+---part lines still apply) whose position is first a guess. After the reload each new player is
+---measured and corrected: copies to their source's center + shift, new bodies onto the floor at
+---spawnPoint. Calls done(new ids) after the first reload, when the mod has them
+---@param sources (integer|false)[]
+---@param shift number[] for copies
+---@param spawnPoint number[]? for default bodies (floor point), default in front of player 0
+---@param done fun(ids: integer[])?
+local function addPlayers(sources, shift, spawnPoint, done)
+    if #sources == 0 or not haveRoom(#sources) then return end
+    ensurePositions(function()
+        if not haveRoom(#sources) then return end
+        local ModData, FH = MGE.ModData, MGE.FileHandler
+        local first = Players.count()
+        local pos, rot = readList(POS) or {}, readList(ROT) or {}
+        local targets, fresh, ids = {}, {}, {}
+        for i, src in ipairs(sources) do
+            local id = first + i - 1
+            ids[i] = id
+            if src then
+                local c = Players.center(src)
+                targets[id] = { c[1] + shift[1], c[2] + shift[2], c[3] + shift[3] }
+                for k = 1, 3 do
+                    pos[id * 3 + k] = (pos[src * 3 + k] or 0) + shift[k]
+                    rot[id * 3 + k] = rot[src * 3 + k] or 0
+                end
+                local own = FH.getPlayerLines(ModData.parsed, src)
+                if own then FH.setPlayerLines(ModData.parsed, id, own) else FH.renumberPlayers(ModData.parsed, { [id] = false }) end
+            else
+                -- a leftover section with this id (past the old numplayers) would give it that model
+                FH.renumberPlayers(ModData.parsed, { [id] = false })
+                local p = spawnPoint or Players.head(0)
+                fresh[id] = p
+                pos[id * 3 + 1], pos[id * 3 + 2], pos[id * 3 + 3] = p[1], p[2], p[3] + 1
+                rot[id * 3 + 1], rot[id * 3 + 2], rot[id * 3 + 3] = 0, 0, 0
+            end
+        end
+        local count = first + #sources
+        set_gamerule(NUMPLAYERS, tostring(count))
+        set_gamerule(POS, formatList(pos, count))
+        set_gamerule(ROT, formatList(rot, count))
+        afterReload(function()
+            for id, p in pairs(fresh) do
+                local b, c = Players.bounds(id), Players.center(id)
+                local d = MGE.Camera.spawnShift(b, p) -- center over the point, lowest part on the floor
+                targets[id] = { c[1] + d[1], c[2] + d[2], c[3] + d[3] }
+            end
+            if done then done(ids) end -- the mod has them now (numplayers loaded)
+            commit(correctedPositions(targets), readList(ROT) or {}) -- one undo step for all of it
+        end)
+    end)
+end
+
+---New player with the default body (or the mod's shared part lines), standing on the floor at point
+---@param point number[]? floor point, default in front of player 0
+---@param done fun(ids: integer[])? called with the new id
+function Players.addNew(point, done)
+    addPlayers({ false }, { 0, 0, 0 }, point, done)
+end
+
+---Copies of players (their part lines, rotation), placed next to them along x as one group
+---@param players integer|integer[] 0-based
+---@param done fun(ids: integer[])? called with the copies' ids
+function Players.duplicate(players, done)
+    local list = asList(players)
+    if #list == 0 then return end
+    local b = groupBounds(list)
+    addPlayers(list, { b.max[1] - b.min[1] + DUPLICATE_GAP, 0, 0 }, nil, done)
+end
+
+---Removes players, one undo step: their sections go, later players move down to fill the ids (their
+---sections, positions and rotations with them), numplayers follows. At least one player stays.
+---Positions are filled in first, so the players left stay where they are
+---@param players integer|integer[] 0-based
+---@param done fun(map: table<integer, integer|false>)? old id -> new id, false for removed
+function Players.remove(players, done)
+    local removed = {}
+    for _, p in ipairs(asList(players)) do
+        if p >= 0 and p < Players.count() then removed[p] = true end
+    end
+    local n = 0
+    for _ in pairs(removed) do n = n + 1 end
+    if n == 0 then return end
+    if n >= Players.count() then
+        echo("^04[MGE] a mod needs at least one player")
+        return
+    end
+    ensurePositions(function()
+        local count = Players.count()
+        local pos, rot = readList(POS) or {}, readList(ROT) or {}
+        local map, newPos, newRot, kept = {}, {}, {}, 0
+        for p = 0, count - 1 do
+            if removed[p] then
+                map[p] = false
+            else
+                map[p] = kept
+                for k = 1, 3 do
+                    newPos[kept * 3 + k] = pos[p * 3 + k] or 0
+                    newRot[kept * 3 + k] = rot[p * 3 + k] or 0
+                end
+                kept = kept + 1
+            end
+        end
+        -- one pass: every header is renamed from its old id, a rename never meets a renamed one
+        MGE.FileHandler.renumberPlayers(MGE.ModData.parsed, map)
+        set_gamerule(NUMPLAYERS, tostring(kept))
+        if done then done(map) end
+        commit(newPos, newRot, kept)
     end)
 end
 

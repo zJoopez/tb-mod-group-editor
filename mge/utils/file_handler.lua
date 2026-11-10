@@ -243,6 +243,23 @@ end
 -- section words that belong inside a player section (player 0 > body head, joint neck)
 local PLAYER_PART_WORDS = { body = true, joint = true }
 
+---Last line of the player section whose header is lines[first] (see findPlayerSection)
+---@param lines string[]
+---@param first integer
+---@return integer
+local function sectionLast(lines, first)
+    local last = first
+    for j = first + 1, #lines do
+        local l = lines[j]
+        if not l:match("^%s*$") then
+            local word = firstWord(l) or ""
+            if not l:match("^%s") or (SECTION_WORDS[word] and not PLAYER_PART_WORDS[word]) then break end
+            last = j
+        end
+    end
+    return last
+end
+
 ---Line range of a `player N` section: its header to its last non blank line. The section ends at an
 ---unindented line or another section header (player 1, env_obj...), indented body/joint lines are its parts
 ---@param lines string[]
@@ -254,16 +271,7 @@ local function findPlayerSection(lines, playerId)
     for i, line in ipairs(lines) do
         local id = tonumber(line:match("^%s*player%s+(%d+)%s*$"))
         if id and (playerId == nil or id == playerId) then
-            local last = i
-            for j = i + 1, #lines do
-                local l = lines[j]
-                if not l:match("^%s*$") then
-                    local word = firstWord(l) or ""
-                    if not l:match("^%s") or (SECTION_WORDS[word] and not PLAYER_PART_WORDS[word]) then break end
-                    last = j
-                end
-            end
-            return i, last, id
+            return i, sectionLast(lines, i), id
         end
     end
     return nil, nil, nil
@@ -347,8 +355,44 @@ function FileHandler.setPlayerLines(parser, playerId, parts)
     parser.trailer = lines
 end
 
+---Renumbers player sections: map[old id] is the new id, false removes the section (with a blank line
+---before it, so no double blanks stay), ids not in the map stay. The shared part lines aren't touched.
+---ignores/trailer are replaced with new tables, not modified: history states share them
+---@param parser FileParserResult
+---@param map table<integer, integer|false>
+function FileHandler.renumberPlayers(parser, map)
+    for _, key in ipairs(PLAYER_LISTS) do
+        local list = parser[key]
+        if list then
+            local lines, i = {}, 1
+            while i <= #list do
+                local line = list[i]
+                local id = tonumber(line:match("^%s*player%s+(%d+)%s*$"))
+                if id and map[id] == false then
+                    if #lines > 0 and lines[#lines]:match("^%s*$") then table.remove(lines) end
+                    i = sectionLast(list, i) + 1
+                    if #lines == 0 then -- it was first: its blank after goes instead
+                        while list[i] and list[i]:match("^%s*$") do i = i + 1 end
+                    end
+                else
+                    if id and map[id] then line = line:gsub("(player%s+)%d+", "%1" .. map[id], 1) end
+                    table.insert(lines, line)
+                    i = i + 1
+                end
+            end
+            parser[key] = lines
+        end
+    end
+end
+
+-- numplayers goes first in the section, like in the game's own mods: the game reads the rules in
+-- order, and the per-player lists after it (engageplayerpos / engageplayerrot) are read for that many
+-- players. Written after them, a one-player mod's 3-number positions were read for two players and lost
+local FIRST_RULE = "numplayers"
+
 ---Writes gamerule values into the `gamerule` section: existing lines get the new value (indentation
 ---kept), missing rules are added at the end of the section, the section is added when the mod has none.
+---The numplayers line is moved / added right after the header (FIRST_RULE).
 ---The section is its rule lines, blanks and comments after the header (some mods don't indent rules).
 ---ignores/trailer are replaced with new tables, not modified: history states share them
 ---@param parser FileParserResult
@@ -357,7 +401,10 @@ end
 function FileHandler.setGamerules(parser, values, ruleNames)
     local pending = {}
     for name in pairs(values) do table.insert(pending, name) end
-    table.sort(pending)
+    table.sort(pending, function(a, b)
+        if (a == FIRST_RULE) ~= (b == FIRST_RULE) then return a == FIRST_RULE end
+        return a < b
+    end)
 
     for _, key in ipairs(PLAYER_LISTS) do
         local list = parser[key] or {}
@@ -369,6 +416,7 @@ function FileHandler.setGamerules(parser, values, ruleNames)
             local lines, last = {}, header
             for i = 1, header do table.insert(lines, list[i]) end
             local written = {}
+            local firstLine -- the numplayers line, put back right after the header at the end
             local i = header + 1
             while i <= #list do
                 local line = list[i]
@@ -384,16 +432,24 @@ function FileHandler.setGamerules(parser, values, ruleNames)
                     line = line:match("^(%s*)") .. word .. " " .. values[word]
                     written[word] = true
                 end
-                table.insert(lines, line)
-                if word then last = #lines end
+                if word == FIRST_RULE and not firstLine then
+                    firstLine = line
+                else
+                    table.insert(lines, line)
+                    if word then last = #lines end
+                end
                 i = i + 1
             end
             -- new rules go right after the last rule line, blank lines stay after them
             local added = {}
             for _, name in ipairs(pending) do
-                if not written[name] then table.insert(added, indent .. name .. " " .. values[name]) end
+                if not written[name] then
+                    local line = indent .. name .. " " .. values[name]
+                    if name == FIRST_RULE then firstLine = line else table.insert(added, line) end
+                end
             end
             for n, line in ipairs(added) do table.insert(lines, last + n, line) end
+            if firstLine then table.insert(lines, header + 1, firstLine) end
             for j = i, #list do table.insert(lines, list[j]) end
             parser[key] = lines
             return

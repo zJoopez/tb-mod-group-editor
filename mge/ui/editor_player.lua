@@ -1,13 +1,14 @@
--- Players panel (editor area on the Players list), Enter in a field applies it:
---   Pos / Rot:  where the picked player is (Main.selectedPlayer): its center from the dojo center and
---               its rotation, placeholders the current values also in mods without positions. Saved as
---               the engageplayerpos / engageplayerrot gamerules (utils/players.lua)
---   Scale:      a factor for the selected players' size, like the Scale gizmo's white cube
---   Density:    the picked player's average body part density, a typed value sets that average for
---               the selected players (all parts scaled together, their ratios stay)
+-- Players panel (editor area on the Players list), Enter in a field applies it. Every row shows and
+-- changes the selected players, like the object rows a selection (with none selected: the picked
+-- player, Main.selectedPlayer, the one the list shows last):
+--   Pos / Rot:  the group's center from the dojo center, and the picked player's rotation (the group
+--               turns as one around its center), placeholders the current values also in mods without
+--               positions. Saved as the engageplayerpos / engageplayerrot gamerules (utils/players.lua)
+--   Scale:      a factor for the size, like the Scale gizmo's white cube
+--   Density:    the average body part density of the players, a typed value sets that average (all
+--               parts of all of them scaled together, their ratios stay)
 --   Strength:   the same for the average joint strength (neck 1 / knees 4 differences stay)
 --   Friction / Bounce: the same for body parts and joints together
--- With several players selected the part rows apply the picked player's factor to all of them.
 -- The Move / Rotate / Scale gizmos do the same in the world.
 local Rows = MGE.EditorRows
 local inwuts = Rows.inputs
@@ -24,15 +25,40 @@ local function hint(v)
     return string.format("%.3g", v)
 end
 
----Applies a typed part value to the selected players: as a factor of the picked player's current
----average (ratios between parts stay), or set on every part when that average is 0
+---Players the panel works on: the selected ones with the picked player first (its rotation is the
+---one shown), or only the picked player when none are selected. Players not in the world left out
+---@return integer[]
+local function panelPlayers()
+    local Main, Players = MGE.Main, MGE.Players
+    local selected = Main.selectedPlayerList()
+    local list = {}
+    if Players.exists(Main.selectedPlayer) and (#selected == 0 or Main.selectedPlayers[Main.selectedPlayer]) then
+        table.insert(list, Main.selectedPlayer)
+    end
+    for _, id in ipairs(selected) do
+        if id ~= Main.selectedPlayer and Players.exists(id) then table.insert(list, id) end
+    end
+    return list
+end
+
+---"player 2" or "the 3 selected players", for the help texts
+---@param list integer[]
+---@return string
+local function whom(list)
+    if #list == 1 then return "player " .. list[1] end
+    return "the " .. #list .. " selected players"
+end
+
+---Applies a typed part value to the players: as a factor of their current average (ratios between
+---parts and players stay), or set on every part when that average is 0
 ---@param inputs UIElement[]
 ---@param key "density"|"strength"|"friction"|"bounce"
----@param current number the picked player's average now
-local function applyTyped(inputs, key, current)
+---@param list integer[] the players
+---@param current number their average now
+local function applyTyped(inputs, key, list, current)
     local typed = tonumber(inputs[1].textfieldstr[1])
-    if not typed or typed < 0 then return end
-    local Players, list = MGE.Players, MGE.Main.selectedPlayerList()
+    if not typed or typed < 0 or #list == 0 then return end
+    local Players = MGE.Players
     if current <= 1e-9 then
         Players.setParts(list, key, typed)
     else
@@ -40,27 +66,36 @@ local function applyTyped(inputs, key, current)
     end
 end
 
----Pos / Rot rows for the picked player, rebuilt when the player, the gamerules or the mod change
+---Pos / Rot rows for the players, rebuilt when the selection, the gamerules or the mod change
 ---(placeholders show the current values)
 ---@param holder UIElement
 local function buildPlayer(holder)
     Rows.begin()
     local Players = MGE.Players
-    local player = MGE.Main.selectedPlayer
+    local list = panelPlayers()
     local pos, rot
-    if Players.exists(player) then pos, rot = Players.shown(player) end
+    if #list > 0 then pos, rot = Players.shown(list) end
+    local posHelp, rotHelp
+    if #list > 1 then
+        posHelp = "Center of " .. whom(list) .. ", from the\n" ..
+            "dojo center (like objects' Pos), they move together.\n"
+        rotHelp = "Player " .. list[1] .. "'s rotation in degrees, the others\n" ..
+            "turn with it as one group around their center,\n"
+    else
+        posHelp = "Center of " .. whom(list) .. ", from the dojo center\n" ..
+            "(like objects' Pos). "
+        rotHelp = "Rotation of " .. whom(list) .. " in degrees, turned around\n" ..
+            "its center, "
+    end
     inwuts.playerPos = createInputRow("Pos", holder, function(_, i)
-        Players.setShownPos(player, readInputs(inwuts.playerPos, i))
+        if #list > 0 then Players.setShownPos(list, readInputs(inwuts.playerPos, i)) end
     end, pos and formatHints(pos) or NOT_SET,
-        "Player " .. player .. "'s center, from the dojo center\n" ..
-        "(like objects' Pos). Saved as engageplayerpos: a mod\n" ..
+        posHelp .. "Saved as engageplayerpos: a mod\n" ..
         "without it gets it for every player on the first change.")
     inwuts.playerRot = createInputRow("Rot", holder, function(_, i)
-        Players.setShownRot(player, readInputs(inwuts.playerRot, i))
+        if #list > 0 then Players.setShownRot(list, readInputs(inwuts.playerRot, i)) end
     end, rot and formatHints(rot) or NOT_SET,
-        "Player " .. player .. "'s rotation in degrees, turned around\n" ..
-        "its center like the Rotate gizmo. Saved as\n" ..
-        "engageplayerrot.")
+        rotHelp .. "like the Rotate gizmo. Saved as engageplayerrot.")
 end
 
 ---Scale row: multiplies the selected players' size (all of them, a factor is relative), like the
@@ -71,7 +106,7 @@ local function buildScale(holder)
     inwuts.playerScale = createInputRow("Scale", holder, function()
         local factor = tonumber(inwuts.playerScale[1].textfieldstr[1])
         if not factor or factor <= 0 then return end
-        MGE.Players.scaleBy(MGE.Main.selectedPlayerList(), factor)
+        MGE.Players.scaleBy(panelPlayers(), factor)
     end, { "1.00" },
         "Multiplies the selected players' size (body parts,\n" ..
         "joints and the distances between them), around\n" ..
@@ -98,18 +133,18 @@ local PART_ROWS = {
         "every part scaled together." },
 }
 
----Density / Strength / Friction / Bounce rows for the picked player, rebuilt like Pos / Rot
----(placeholders show the averages)
+---Density / Strength / Friction / Bounce rows for the players, rebuilt like Pos / Rot (placeholders
+---show their averages)
 ---@param holder UIElement
 local function buildParts(holder)
     Rows.begin()
-    local player = MGE.Main.selectedPlayer
+    local list = panelPlayers()
     for _, row in ipairs(PART_ROWS) do
         local name, key = row[1], row[3]
-        local current = MGE.Players.partAverage(player, key)
+        local current = MGE.Players.groupPartAverage(list, key)
         inwuts[name] = createInputRow(row[2], holder, function()
-            applyTyped(inwuts[name], key, current)
-        end, { hint(current) }, row[4])
+            applyTyped(inwuts[name], key, list, current)
+        end, { #list > 0 and hint(current) or "-" }, row[4])
     end
 end
 

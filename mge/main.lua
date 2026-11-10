@@ -348,10 +348,15 @@ local TOOL_KEYS = {
 
 local KEY_DELETE = 127 -- SDLK_DELETE (toriui's text fields use the same code)
 
--- Ctrl + N / D: new object / duplicate selected, the object list's New and Duplicate buttons
+-- Ctrl + N / D: new / duplicate selected, the list's New and Duplicate buttons: objects, or players on
+-- the Players list (ui/player_list.lua)
 local OBJECT_KEYS = {
-    [string.byte("n")] = function() MGE.Assets.newObject() end,
-    [string.byte("d")] = function() MGE.Editor.duplicate() end,
+    [string.byte("n")] = function()
+        if MGE.Main.listTab == "players" then MGE.PlayerList.newPlayer() else MGE.Assets.newObject() end
+    end,
+    [string.byte("d")] = function()
+        if MGE.Main.listTab == "players" then MGE.PlayerList.duplicate() else MGE.Editor.duplicate() end
+    end,
 }
 
 ---True while a prompt, popup or picker of MGE's is open, or one of the game's overlays
@@ -408,7 +413,9 @@ add_hook("key_down", MGE.hookname, function(key)
     if get_keyboard_alt() ~= 0 or not MGE.Main.window.displayed then return end
     local shift, ctrl = get_keyboard_shift() ~= 0, get_keyboard_ctrl() ~= 0
     if key == KEY_DELETE and not shift and not ctrl then
-        if not overlayOpen() then MGE.Editor.deleteSelected() end -- confirmation popup
+        if not overlayOpen() then -- confirmation popup
+            if MGE.Main.listTab == "players" then MGE.PlayerList.deleteSelected() else MGE.Editor.deleteSelected() end
+        end
         return 1
     elseif ctrl and not shift and OBJECT_KEYS[key] then
         if not overlayOpen() then OBJECT_KEYS[key]() end
