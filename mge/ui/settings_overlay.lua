@@ -1,17 +1,15 @@
 -- Settings overlay, opened by the toolbar's settings button (ui/main.lua):
 --   Camera follow: the camera looks at the selection when selecting and moving (MGE.Camera.followMoves)
---   World select:  clicking objects in the world selects them, off to play the mod (MGE.WorldSelect)
 --   Gizmo snapping: the steps a gizmo drag snaps to while Ctrl is held (Gizmo.moveStep / rotateStep /
 --                   scaleStep). A typed step applies on Enter or when the overlay closes, an invalid
 --                   one goes back to the current step
 --   Shortcuts:      heading with a "?", hovering it lists the keyboard and mouse shortcuts
 -- Kept while the script runs, not saved. Clicking outside the panel, Close or Esc closes it, MGE.quit
--- closes it too (MGE.settingsOverlay).
+-- closes it too (MGE.settingsOverlay). Playing the mod without selecting is the toolbar's Play button.
 if MGE.settingsOverlay and not MGE.settingsOverlay.destroyed then return end
 
 local Widgets = MGE.Widgets
 local Rows = MGE.EditorRows
-local WorldSelect = MGE.WorldSelect
 local Camera = MGE.Camera
 local Gizmo = MGE.Gizmo
 
@@ -28,12 +26,6 @@ local SETTINGS = {
         info = "Camera looks at the selection, or the picked player",
         get = function() return Camera.followMoves end,
         set = function(on) Camera.followMoves = on end,
-    },
-    {
-        label = "World select",
-        info = "Click objects in the world to select. Off: play the mod",
-        get = function() return WorldSelect.enabled end,
-        set = function(on) WorldSelect.setEnabled(on) end,
     },
 }
 
@@ -66,6 +58,7 @@ local SHORTCUTS = table.concat({
     "Shift + Q / W / E: Move / Rotate / Scale gizmo on / off",
     "Ctrl while dragging the gizmo: snap steps (above)",
     "Drag (off the gizmo) / wheel: orbit / zoom camera",
+    "Play (toolbar): clicks and keys go to the game, F1 / Esc still work",
 }, "\n")
 
 local PANEL_W = 340
@@ -119,7 +112,6 @@ overlay.killAction = function()
     for _, entry in ipairs(snapInputs) do applySnap(entry) end -- typed but not entered still counts
     if defaultKillAction then defaultKillAction() end
     Widgets.releaseKeyboard(overlay) -- the step fields would otherwise stay in toriui's keyboard list
-    WorldSelect.onChanged = function() end -- the buttons it updates are gone
     if MGE then MGE.settingsOverlay = nil end
 end
 
@@ -237,6 +229,4 @@ y = y + SECTION_H
 Widgets.button(panel, { x = PAD, y = panelH - PAD - CLOSE_H, w = PANEL_W - PAD * 2, h = CLOSE_H }, "Close",
     function() overlay:kill() end)
 
--- a gizmo tool (Shift + Q / W / E) turns world clicking back on, keep the buttons right while open
-WorldSelect.onChanged = refresh
 refresh()

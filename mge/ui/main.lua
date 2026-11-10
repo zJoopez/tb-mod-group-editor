@@ -42,7 +42,7 @@ local content = windowContainer:addChild({
 
 -- top menu, same bar style as the list bars:
 --   left:  shortcuts to the game's own mod list and gamerules menus
---   right: gizmo tool toggles, undo / redo, settings (Save is in the row above the footer)
+--   right: play, gizmo tool toggles, undo / redo, settings (Save is in the row above the footer)
 local menuH = 25
 local iconSize = menuH - 4 -- bar buttons have 2px padding top and bottom
 local iconGap = 4
@@ -51,7 +51,7 @@ local menuBar = content:addChild({
     size = { content.size.w, menuH },
     bgColor = TB_MENU_DEFAULT_BG_COLOR,
 })
-local ICON_COUNT = 6
+local ICON_COUNT = 7
 local iconsW = iconSize * ICON_COUNT + iconGap * (ICON_COUNT - 1)
 local iconsX = menuBar.size.w - iconsW
 local iconButtons = menuBar:addChild({
@@ -64,8 +64,31 @@ local TOOLS = {
     { mode = "rotate", label = "Rotate (Shift + W)" },
     { mode = "scale", label = "Scale (Shift + E)" },
 }
-local TOOL_FIRST = 1 -- index of the first tool in the bar
-local bar = {}
+local TOOL_FIRST = 2 -- index of the first tool in the bar, after Play
+
+-- Play: the game gets the clicks and keys, no selecting, no gizmo, MGE's shortcuts off (F1 and Esc
+-- still work), everything deselected so no highlight is left. Playing is world clicking off
+-- (WorldSelect.enabled), a gizmo tool turns it back on. Leaving with the button brings back the tool
+-- used before
+local toolBeforePlay = nil
+local function togglePlay()
+    local WorldSelect = MGE.WorldSelect
+    if WorldSelect.enabled then
+        toolBeforePlay = MGE.Gizmo.mode
+        WorldSelect.setEnabled(false) -- also turns the tool off and ends a drag
+        for _, obj in ipairs(ModData.parsed.env_obj) do obj.selected = nil end
+        Main.toggleAll = false
+        Main.selectedPlayers = {}
+        Main.updateWindow() -- list highlights and the editor's values follow
+    else
+        WorldSelect.setEnabled(true)
+        if toolBeforePlay and toolBeforePlay ~= "none" then MGE.Gizmo.setMode(toolBeforePlay) end
+        toolBeforePlay = nil
+    end
+end
+-- play triangle (mge/textures/play.tga, the game's playpause.tga has both symbols)
+local bar = { { label = "Play: clicks and keys go to the game", icon = MGE.scriptPath .. "textures/play.tga",
+    onClick = togglePlay } }
 for _, tool in ipairs(TOOLS) do
     table.insert(bar, { label = tool.label, icon = MGE.scriptPath .. "textures/" .. tool.mode .. ".tga",
         onClick = function() MGE.Gizmo.toggle(tool.mode) end })
@@ -73,7 +96,7 @@ end
 -- game's undo icon, redo is the same icon mirrored (mge/textures/redo.tga)
 table.insert(bar, { label = "Undo (Shift + Z)", icon = "../textures/menu/general/buttons/undo.tga", onClick = function() History.undo() end })
 table.insert(bar, { label = "Redo (Shift + Y)", icon = MGE.scriptPath .. "textures/redo.tga", onClick = function() History.redo() end })
--- camera follow and world clicking (ui/settings_overlay.lua), game's settings icon
+-- camera follow, gizmo snapping, shortcuts (ui/settings_overlay.lua), game's settings icon
 table.insert(bar, { label = "Settings", icon = "../textures/menu/general/buttons/settingswhite.tga",
     onClick = function() dofile(MGE.scriptPath .. "ui/settings_overlay.lua") end })
 local icons = Widgets.barButtons(iconButtons, bar)
@@ -89,6 +112,16 @@ local function updateToolButtons()
 end
 table.insert(MGE.Gizmo.modeListeners, updateToolButtons)
 updateToolButtons()
+
+---The Play button is lit while playing (world clicking off)
+local function updatePlayButton()
+    local btn = icons[1]
+    if btn and not btn.destroyed then
+        btn.bgColor = MGE.WorldSelect.enabled and Widgets.STYLE.bg or TB_MENU_DEFAULT_LIGHTER_COLOR
+    end
+end
+MGE.WorldSelect.onChanged = updatePlayButton
+updatePlayButton()
 local menuTextW = 80 -- fixed width, leaves open space between the text and icon groups
 local textButtons = menuBar:addChild({
     pos = { 0, 0 },

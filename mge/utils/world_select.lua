@@ -21,7 +21,7 @@ local HOOK_SET = MGE.hookname .. "_worldselect" -- own set, MGE's draw3d hook is
 ---@class WorldSelect
 local WorldSelect = {
     clickMoveLimit = 4, -- pixels the mouse may move between down and up to still count as a click
-    ---@type boolean
+    ---@type boolean off while playing (the toolbar's Play button)
     enabled = true, -- toggled by the mouse button in the top menu, off lets you play without selecting
 }
 
@@ -279,7 +279,7 @@ local function isActive()
     return WorldSelect.enabled and Main and Main.window and Main.window.displayed and not TB_MENU_INPUT_ISACTIVE
 end
 
----@type fun() called after setEnabled, set while the settings overlay is open (ui/settings_overlay.lua)
+---@type fun() called after setEnabled, set by ui/main.lua (the toolbar's Play button, lit while off)
 WorldSelect.onChanged = function() end
 
 ---Turns click to select on or off. A click already waiting is dropped when turned off. Off also turns
