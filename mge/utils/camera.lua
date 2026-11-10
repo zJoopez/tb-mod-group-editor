@@ -120,6 +120,54 @@ function Camera.viewRay()
     return origin, { dir[1] / len, dir[2] / len, dir[3] / len }
 end
 
+-- Spawning in view (Generate tab, imports, New): new things go on screen, about as far from the camera
+-- as framing them would put it, not at the dojo center
+Camera.GROUND_Z = 0          -- the floor, things are put on it when the view meets it close enough
+Camera.GROUND_NEAR = 0.6     -- the view meeting the floor between these shares of the framing distance
+Camera.GROUND_FAR = 1.6      -- counts as close enough,
+Camera.GROUND_MAX = 25       -- and so does any distance up to this: small things frame close, but on the
+                             -- floor a usual editing view away they're still easy to see
+
+---@class SpawnBounds box around what is spawned, world axes, any position
+---@field min number[]
+---@field max number[]
+
+---Where something goes in front of the camera: on the floor where the view line meets it, when that's
+---about the distance that fits it on screen (or within GROUND_MAX), otherwise centered on the view line
+---at that distance (not below the floor)
+---@param bounds SpawnBounds
+---@param origin number[]? view line to use (Generate keeps one), defaults to Camera.viewRay()
+---@param dir number[]? unit direction of that line
+---@return number[] point x y: the center goes there, z: the lowest point
+function Camera.spawnPoint(bounds, origin, dir)
+    if not origin or not dir then origin, dir = Camera.viewRay() end
+    local size = {}
+    for k = 1, 3 do size[k] = bounds.max[k] - bounds.min[k] end
+    local distance = Camera.fitDistance(math.sqrt(size[1] ^ 2 + size[2] ^ 2 + size[3] ^ 2) / 2)
+    local groundZ = Camera.GROUND_Z
+    if dir[3] < -1e-3 then -- looking down: where the view meets the floor
+        local t = (groundZ - origin[3]) / dir[3]
+        if t >= distance * Camera.GROUND_NEAR and t <= math.max(distance * Camera.GROUND_FAR, Camera.GROUND_MAX) then
+            return { origin[1] + dir[1] * t, origin[2] + dir[2] * t, groundZ }
+        end
+    end
+    local p = {}
+    for k = 1, 3 do p[k] = origin[k] + dir[k] * distance end
+    return { p[1], p[2], math.max(groundZ, p[3] - size[3] / 2) }
+end
+
+---Offset that moves bounds so their center (x y) and lowest point (z) are at point
+---@param bounds SpawnBounds
+---@param point number[] from Camera.spawnPoint
+---@return number[]
+function Camera.spawnShift(bounds, point)
+    return {
+        point[1] - (bounds.min[1] + bounds.max[1]) / 2,
+        point[2] - (bounds.min[2] + bounds.max[2]) / 2,
+        point[3] - bounds.min[3],
+    }
+end
+
 ---Places the camera from target, yaw, pitch and distance
 local function place()
     local t, d = Camera.target, Camera.distance

@@ -137,10 +137,71 @@ local function saveSelectedToAsset()
     dofile(MGE.scriptPath .. "ui/save_overlay.lua")
 end
 
+---Numbers of a vector property line ("1 -0.1 0.25"), nil when it isn't three numbers
+---@param line string?
+---@return number[]?
+local function readVector(line)
+    local x, y, z = (line or ""):match("(%S+)%s+(%S+)%s+(%S+)")
+    x, y, z = tonumber(x), tonumber(y), tonumber(z)
+    if x and y and z then return { x, y, z } end
+    return nil
+end
+
+---Box around objects as their props have them (assets aren't in the world yet), rotation included
+---like getObjHalfHeight. Objects without a pos line are left out
+---@param objects FileParserEnvObj[]
+---@return SpawnBounds?
+local function propsBounds(objects)
+    local min, max = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
+    local any = false
+    for _, obj in ipairs(objects) do
+        local pos = readVector(obj.props.pos)
+        if pos then
+            any = true
+            local s = readVector(obj.props.sides) or { 0.5, 0.5, 0.5 }
+            local shape = (obj.props.shape or "box"):lower()
+            local rot = MGE.Transforms.orientationOf(obj) -- rot[k][j]: world axis k of the object's axis j
+            for k = 1, 3 do
+                local extent
+                if shape == "sphere" then
+                    extent = s[1] -- x is the radius
+                elseif shape == "cylinder" then -- capsule: x radius, y length along the object's z
+                    extent = math.abs(rot[k][3]) * s[2] / 2 + s[1]
+                else
+                    extent = (math.abs(rot[k][1]) * s[1] + math.abs(rot[k][2]) * s[2] + math.abs(rot[k][3]) * s[3]) / 2
+                end
+                min[k] = math.min(min[k], pos[k] - extent)
+                max[k] = math.max(max[k], pos[k] + extent)
+            end
+        end
+    end
+    return any and { min = min, max = max } or nil
+end
+
+---Moves asset objects and their joints in front of the camera (Camera.spawnPoint), the same way the
+---Generate tab places its shapes, keeping their layout. Changes the parser's props in place
+---@param parser FileParserResult
+local function placeInView(parser)
+    local bounds = propsBounds(parser.env_obj)
+    if not bounds then return end
+    local shift = MGE.Camera.spawnShift(bounds, MGE.Camera.spawnPoint(bounds))
+    for _, obj in ipairs(parser.env_obj) do
+        local pos = readVector(obj.props.pos)
+        if pos then
+            obj.props.pos = FileHandler.formatNumbers(pos[1] + shift[1], pos[2] + shift[2], pos[3] + shift[3])
+        end
+    end
+    for _, joint in ipairs(parser.env_obj_joint) do
+        Joints.transformPos(joint, function(x, y, z) return x + shift[1], y + shift[2], z + shift[3] end)
+    end
+end
+
 ---Adds an asset's objects (and joints between them) to the mod, selected, then saves and reloads
 ---@param parser FileParserResult asset contents, positions relative to the spawn point
 ---@param keepTab boolean? stay on the shown editor tab instead of switching to Core
-local function importObjects(parser, keepTab)
+---@param inView boolean? move them in front of the camera first (imports, New), otherwise they keep
+---their positions (Generate places its own)
+local function importObjects(parser, keepTab, inView)
     -- only joints with both objects in the asset are imported, so only those objects need low ids
     local linkedJoints = Joints.getLinked(Joints.idSet(parser.env_obj), parser.env_obj_joint)
     if not Joints.haveRoom(#linkedJoints) then return end
@@ -151,6 +212,7 @@ local function importObjects(parser, keepTab)
     end
     local ids = ModData.allocateIds(plans) -- all or nothing
     if not ids then return end
+    if inView then placeInView(parser) end
 
     -- selection moves to the imported objects so they can be moved right away
     for _, obj in ipairs(ModData.parsed.env_obj) do
@@ -168,8 +230,8 @@ local function importObjects(parser, keepTab)
 
     ModData.sortObjects()
     History.commit()
-    -- imports land at the spawn point, which doesn't move: show the editor to move them right away and
-    -- look at them once they're in the world (after the reload, if the camera button is on)
+    -- show the editor to move them right away and look at them once they're in the world (after the
+    -- reload, if camera follow is on)
     if not keepTab then MGE.Main.setTab("core") end
     MGE.focusAfterReload = true
     MGE.save() -- the reload refreshes the window
@@ -189,7 +251,7 @@ local function importAssetFromFile(assetName)
         print("Asset file contains no objects")
         return
     end
-    importObjects(parser)
+    importObjects(parser, false, true)
 end
 
 ---Saves the mod's `player N` section (body/joint parts, the player's model) as a player asset.
@@ -284,16 +346,17 @@ function assetsView.defaultProps()
     return props
 end
 
----Adds objects like an import: new ids, selected, saved. Used by the Generate tab
+---Adds objects like an import: new ids, selected, saved. Used by the Generate tab and New
 ---@param objects FileParserEnvObj[]
 ---@param keepTab boolean? see importObjects
-function assetsView.addObjects(objects, keepTab)
-    importObjects({ env_obj = objects, env_obj_joint = {}, ignores = {} }, keepTab)
+---@param inView boolean? see importObjects
+function assetsView.addObjects(objects, keepTab, inView)
+    importObjects({ env_obj = objects, env_obj_joint = {}, ignores = {} }, keepTab, inView)
 end
 
----New button of the object list: adds DEFAULT_OBJECT, placed like an imported asset
+---New button of the object list: adds DEFAULT_OBJECT in front of the camera, like an import
 function assetsView.newObject()
-    assetsView.addObjects({ { kind = "env_obj", id = 1, props = assetsView.defaultProps() } })
+    assetsView.addObjects({ { kind = "env_obj", id = 1, props = assetsView.defaultProps() } }, false, true)
 end
 
 ---@return "obj"|"player" asset kind for what the list shows
@@ -329,6 +392,8 @@ function assetsView.openImport()
         end,
     })
 end
+
+assetsView.placeInView = placeInView -- for the offline tests
 
 MGE.Assets = assetsView
 return assetsView

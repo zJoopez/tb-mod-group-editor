@@ -24,7 +24,7 @@ local function defaultSides()
     return sides
 end
 
--- Where the shape goes: in front of the camera (ShapeGen.viewPlacement), along the view line taken
+-- Where the shape goes: in front of the camera (Camera.spawnPoint), along the view line taken
 -- when the tab opens or To view is clicked. Kept fixed in between so the camera can orbit around the
 -- preview. A bigger shape moves further along the line, so it still fits on screen
 ---@type { origin: number[], dir: number[] }?
@@ -62,7 +62,7 @@ local function planFromFields()
         { 0, 0 }, { increment = increment, align = align })
     if not anchor then anchorToView() end
     ---@cast anchor -nil
-    ShapeGen.moveTo(pieces, bounds, ShapeGen.viewPlacement(bounds, anchor.origin, anchor.dir, MGE.Camera.fitDistance))
+    ShapeGen.moveTo(pieces, bounds, MGE.Camera.spawnPoint(bounds, anchor.origin, anchor.dir))
     return pieces
 end
 
