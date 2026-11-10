@@ -51,6 +51,7 @@
 ---@field saveOverlayContext table? options for the next name prompt
 ---@field pickerOverlay UIElement? open file picker: asset import, Model row (ui/file_picker.lua)
 ---@field settingsOverlay UIElement? open settings: camera follow, world clicking (ui/settings_overlay.lua)
+---@field closeTopOverlay fun(): boolean Esc: closes the topmost of the overlays above
 ---@field FilePicker table ui/file_picker.lua
 ---@field Assets table export / import, ui/assets.lua
 MGE = MGE or { scriptPath = "mge/" }
@@ -229,10 +230,44 @@ local function overlayOpen()
     return false
 end
 
+local KEY_ESCAPE = 27
+local escFrame = nil -- UIElement.frameIndex of the last Esc close
+
+---Closes MGE's topmost overlay, for Esc: the delete confirmation (like its Cancel), else the name
+---prompt, the file picker, the settings. Esc reaches both this module's key hook and the overlay's
+---focused text field (Widgets.closeOnEscape), so one press closes only one overlay: a second call in
+---the same frame does nothing
+---@return boolean handled an overlay was open (and is closed now)
+function MGE.closeTopOverlay()
+    local frame = UIElement and UIElement.frameIndex
+    if frame and frame == escFrame then return true end
+    local confirm = MGE.confirmOverlay
+    if confirm and not confirm.destroyed then
+        confirm:kill()
+        MGE.confirmOverlay = nil -- what its Cancel callback does, killing it doesn't call that
+        escFrame = frame
+        return true
+    end
+    for _, key in ipairs({ "saveOverlay", "pickerOverlay", "settingsOverlay" }) do
+        local overlay = MGE[key]
+        if overlay and not overlay.destroyed then
+            overlay:kill() -- their killActions clean up (keyboard, MGE.*Overlay, camera movement)
+            escFrame = frame
+            return true
+        end
+    end
+    return false
+end
+
 -- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game), Ctrl+S saves the working file,
 -- Ctrl+A selects / deselects all objects, Shift + Q / W / E toggles a gizmo tool,
--- Ctrl + N / D new / duplicate, Delete deletes the selection (asks first)
+-- Ctrl + N / D new / duplicate, Delete deletes the selection (asks first), Esc closes MGE's overlays
 add_hook("key_down", MGE.hookname, function(key)
+    -- before the text field check: the name prompt focuses its field
+    if key == KEY_ESCAPE then
+        if MGE.closeTopOverlay() then return 1 end -- consumed, the game doesn't open its menu too
+        return
+    end
     if TB_MENU_INPUT_ISACTIVE then return end -- typing in a text field
     if get_keyboard_alt() ~= 0 or not MGE.Main.window.displayed then return end
     local shift, ctrl = get_keyboard_shift() ~= 0, get_keyboard_ctrl() ~= 0

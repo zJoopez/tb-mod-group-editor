@@ -97,6 +97,15 @@ end
 ---@field wide boolean? icon buttons are square unless wide, wide ones share the width like text buttons
 ---@field onClick function?
 
+---Esc in an overlay's text field closes the overlay (MGE.closeTopOverlay). A focused field takes every
+---key first, MGE's key hook may not see the Esc then. Keeps the field's other key handlers
+---@param field UIElement text field inside an MGE overlay
+function Widgets.closeOnEscape(field)
+    field:addKeyboardHandlers(function(key)
+        if key == 27 and MGE and MGE.closeTopOverlay then MGE.closeTopOverlay() end
+    end)
+end
+
 ---Runs func every frame before the element draws, after anything already set to run there. An
 ---element has one such slot (addCustomDisplay with drawBefore) and the hover popups of icon buttons
 ---(TBMenu:displayPopup) use it, setting it directly would replace them

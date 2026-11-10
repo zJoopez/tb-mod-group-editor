@@ -120,6 +120,8 @@ local function save(newname)
     closeOverlay()
 end
 
+MGE.Widgets.closeOnEscape(replayNameInput) -- Esc cancels, like the Cancel button
+
 replayNameInput:addEnterAction(function()
     save(replayNameInput.textfieldstr[1])
 end)

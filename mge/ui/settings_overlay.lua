@@ -4,7 +4,7 @@
 --   Gizmo snapping: the steps a gizmo drag snaps to while Ctrl is held (Gizmo.moveStep / rotateStep /
 --                   scaleStep). A typed step applies on Enter or when the overlay closes, an invalid
 --                   one goes back to the current step
--- Kept while the script runs, not saved. Clicking outside the panel or Close closes it, MGE.quit
+-- Kept while the script runs, not saved. Clicking outside the panel, Close or Esc closes it, MGE.quit
 -- closes it too (MGE.settingsOverlay).
 if MGE.settingsOverlay and not MGE.settingsOverlay.destroyed then return end
 
@@ -189,6 +189,7 @@ for _, step in ipairs(SNAP_STEPS) do
     local content = addRow(y, step.label)
     local entry = { step = step }
     entry.input = Rows.createInput(content, function() applySnap(entry) end, formatStep(currentStep(step)))
+    Widgets.closeOnEscape(entry.input) -- Esc while typing a step closes too (applies it, like Close)
     table.insert(snapInputs, entry)
     applySnap(entry) -- fills the field with the current step
     y = y + ROW_H + ROW_GAP

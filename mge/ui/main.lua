@@ -106,6 +106,7 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Ctrl + A: select / deselect all\n" ..
     "Ctrl + N / D: new object / duplicate selected\n" ..
     "Delete: delete selected (asks first)\n" ..
+    "Esc: close the open prompt / popup / settings\n" ..
     "Shift + Z / Y: undo / redo\n" ..
     "Enter: apply the typed field\n" ..
     "Shift + Q / W / E: Move / Rotate / Scale gizmo on / off\n" ..
