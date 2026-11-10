@@ -66,26 +66,24 @@ local function objectRadius(id)
 end
 
 ---Center and radius of a sphere around the objects, each object counting with at most
----Camera.maxObjectRadius (huge ground objects)
+---Camera.maxObjectRadius (huge ground objects). The center is the selection pivot the gizmo, Rotate,
+---Resize and the Pos row use (Transforms.getSelectionPivot: average of the file positions), so the
+---gizmo sits in the middle of the screen. The middle of the objects' box was used before: for an uneven
+---selection (Select All) it's somewhere else and the gizmo ended up off center
 ---@param objects FileParserEnvObj[]
 ---@return number[]? center, number radius
 function Camera.bounds(objects)
+    local Transforms = MGE.Transforms
     local positions = {}
-    local min, max = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
     for _, obj in ipairs(objects) do
-        local x, y, z = get_obj_pos(obj.id - 1)
-        if x then
-            local p = { x, y, z }
+        if get_obj_pos(obj.id - 1) ~= nil then -- in the world, position as the file has it (like the pivot)
             local radius = math.min(objectRadius(obj.id - 1), Camera.maxObjectRadius)
-            table.insert(positions, { pos = p, radius = radius })
-            for i = 1, 3 do
-                if p[i] < min[i] then min[i] = p[i] end
-                if p[i] > max[i] then max[i] = p[i] end
-            end
+            table.insert(positions, { pos = Transforms.positionOf(obj), radius = radius })
         end
     end
     if #positions == 0 then return nil, 0 end
-    local center = { (min[1] + max[1]) / 2, (min[2] + max[2]) / 2, (min[3] + max[3]) / 2 }
+    local cx, cy, cz = Transforms.getSelectionPivot(objects)
+    local center = { cx, cy, cz }
     local radius = 0
     for _, entry in ipairs(positions) do
         local d = math.sqrt((entry.pos[1] - center[1]) ^ 2 + (entry.pos[2] - center[2]) ^ 2 + (entry.pos[3] - center[3]) ^ 2)

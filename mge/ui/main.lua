@@ -30,7 +30,7 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 662
+    h = 692
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
@@ -198,9 +198,9 @@ for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, TAB_G
     tabButtons[tabNames[i].id] = btn
 end
 
--- the editor area inside the tab panel: fits the panels (7 rows each, see PANELS in ui/editor.lua)
+-- the editor area inside the tab panel: fits the panels (8 rows each, see PANELS in ui/editor.lua)
 -- with the reset button under them
-local areaH = 238
+local areaH = 268
 local tabPanel = content:addChild({
     pos = defaultPos,
     size = { content.size.w, areaH + TAB_PADDING * 2 },

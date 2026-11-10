@@ -1,5 +1,5 @@
 -- Generate tab: lines, ramps, loops, stairs and pyramids made of default objects (geometry in utils/shape_gen.lua),
--- placed in front of the camera
+-- placed in front of the camera, or where the Position row says
 local Rows = MGE.EditorRows
 local inwuts = Rows.inputs
 local formatHints = Rows.formatHints
@@ -38,8 +38,31 @@ local function anchorToView()
     anchorVersion = anchorVersion + 1
 end
 
----Pieces for the typed values (empty fields use their placeholders), same for the preview and Generate
----@return GeneratePiece[]? pieces, string? error why nothing can be generated
+---To view button: back to the automatic place, typed Position values are cleared too
+local function toView()
+    for _, input in ipairs(inwuts.generatePos or {}) do
+        if not input.destroyed then input:clearTextfield() end
+    end
+    anchorToView()
+end
+
+---Center of the pieces, the way the Core tab's Pos row shows a selection: average of the positions
+---@param pieces GeneratePiece[]
+---@return number[]
+local function piecesCenter(pieces)
+    local c = { 0, 0, 0 }
+    for _, piece in ipairs(pieces) do
+        for k = 1, 3 do c[k] = c[k] + piece.pos[k] / #pieces end
+    end
+    return c
+end
+
+---Pieces for the typed values (empty fields use their placeholders), same for the preview and Generate.
+---Placed in front of the camera, then moved on the axes typed in the Position row: those are the
+---center the Pos row would show for the generated pieces, counted from the dojo center (MGE.POS_ORIGIN)
+---@return GeneratePiece[]? pieces
+---@return string? error why nothing can be generated
+---@return number[]? center where the shape is, Pos-row style
 local function planFromFields()
     local fields = inwuts.generate or {}
     local function typed(i) return fields[i] and not fields[i].destroyed and tonumber(fields[i].textfieldstr[1]) end
@@ -63,22 +86,48 @@ local function planFromFields()
     if not anchor then anchorToView() end
     ---@cast anchor -nil
     ShapeGen.moveTo(pieces, bounds, MGE.Camera.spawnPoint(bounds, anchor.origin, anchor.dir))
-    return pieces
+
+    local center = piecesCenter(pieces)
+    local shift, origin = { 0, 0, 0 }, MGE.POS_ORIGIN
+    for k, input in ipairs(inwuts.generatePos or {}) do
+        local value = not input.destroyed and tonumber(input.textfieldstr[1])
+        if value then shift[k] = value + origin[k] - center[k] end
+    end
+    for _, piece in ipairs(pieces) do
+        for k = 1, 3 do piece.pos[k] = piece.pos[k] + shift[k] end
+    end
+    local shown = {}
+    for k = 1, 3 do shown[k] = center[k] + shift[k] - origin[k] end
+    return pieces, nil, shown
 end
 
 -- Preview: the pieces Generate would add, drawn by utils/highlight.lua while the Generate tab is open.
 -- Planned again only when a field's text, Align or the view line changes, the draw hook asks every frame
 local previewKey, previewPieces
 local previewShown = false -- false while the tab is closed, opening it takes the view line again
+---@type string[] placeholders of the Position row: where the shape is, empty fields keep it there
+local positionHints = { "0.00", "0.00", "0.00" }
 
 ---@return string everything the plan depends on
 local function fieldsKey()
     ---@type string[]
     local parts = { align .. "#" .. anchorVersion }
-    for i, field in ipairs(inwuts.generate or {}) do
-        parts[i + 1] = field.destroyed and "" or field.textfieldstr[1]
+    for _, list in ipairs({ inwuts.generate or {}, inwuts.generatePos or {} }) do
+        for _, field in ipairs(list) do
+            table.insert(parts, field.destroyed and "" or field.textfieldstr[1])
+        end
     end
     return table.concat(parts, "|")
+end
+
+---Position row placeholders follow the planned shape (rebuilt block, typed text is kept over it)
+---@param center number[]? Pos-row style center from planFromFields
+local function showPosition(center)
+    if not center then return end
+    local hints = formatHints(center)
+    if hints[1] == positionHints[1] and hints[2] == positionHints[2] and hints[3] == positionHints[3] then return end
+    positionHints = hints
+    Rows.refreshBlocks({ "generatePos" })
 end
 
 MGE.Highlight.preview = function()
@@ -94,7 +143,9 @@ MGE.Highlight.preview = function()
     local key = fieldsKey()
     if key ~= previewKey then
         previewKey = key
-        previewPieces = planFromFields() -- nil when the values can't be generated, nothing is drawn
+        local center
+        previewPieces, _, center = planFromFields() -- nil when the values can't be generated, nothing is drawn
+        showPosition(center)
     end
     return previewPieces
 end
@@ -139,8 +190,8 @@ local function buildAlign(holder)
         "Center: middles, Increment Y, Z 0.3: pyramid.")
 end
 
----Generate panel: amount, gap, angle, piece size, increment and the Generate button. Nothing depends
----on the selection, placeholders show the values empty fields use
+---Generate panel: amount, gap, angle, piece size and increment. Nothing depends on the selection,
+---placeholders show the values empty fields use
 ---@param holder UIElement
 local function buildGenerate(holder)
     Rows.begin()
@@ -158,18 +209,39 @@ local function buildGenerate(holder)
     add(createInputRow("Increment", holder, apply, { "0.00", "0.00", "0.00" },
         "Added to each next piece's size, negative shrinks."))
     inwuts.generate = inputs
+end
 
+---Position row (rebuilt when the shape moves): placeholders show where the shape is now
+---@param holder UIElement
+local function buildPosition(holder)
+    Rows.begin()
+    inwuts.generatePos = createInputRow("Position", holder, function() generate() end, positionHints,
+        "Shape's center like Pos shows it (from the dojo center).\n" ..
+        "Empty: in front of the camera, typed axes stay put.\n" ..
+        "To view clears it.")
+end
+
+---Generate and To view buttons
+---@param holder UIElement
+local function buildButtons(holder)
+    Rows.begin()
     createToggleButtonRow("", holder, {
         { label = "Generate", active = false, onClick = generate },
-        { label = "To view", active = false, onClick = anchorToView },
+        { label = "To view", active = false, onClick = toView },
     }, "Generate: adds the orange preview as static pieces\nand selects them.\n" ..
-        "To view: moves the preview in front of the camera\n(also done when this tab opens).")
+        "To view: moves the preview in front of the camera\n(also done when this tab opens), clears Position.")
 end
 
 
 ---@type EditorPanelModule
 return {
-    fixed = { { build = buildGenerate, panel = "generate", row = 1, rows = 6 } },
-    blocks = { { name = "generateAlign", build = buildAlign, panel = "generate", row = 0, rows = 1 } },
-    inputs = { fixed = { "generate" } },
+    fixed = {
+        { build = buildGenerate, panel = "generate", row = 1, rows = 5 },
+        { build = buildButtons, panel = "generate", row = 7, rows = 1 },
+    },
+    blocks = {
+        { name = "generateAlign", build = buildAlign, panel = "generate", row = 0, rows = 1 },
+        { name = "generatePos", build = buildPosition, panel = "generate", row = 6, rows = 1 },
+    },
+    inputs = { fixed = { "generate" }, rebuilt = { "generatePos" } },
 }

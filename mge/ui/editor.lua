@@ -3,7 +3,7 @@
 --   core:     ui/editor_core.lua      Pos/Move, Rot/Rotate, Scale/Resize, Color, Mass, Shape, Visible
 --   advanced: ui/editor_advanced.lua  Friction, Bounce, Flags, Model, Ids (Reindex)
 --   thrust:   ui/editor_thrust.lua    Frames, Direction, Axes (World / Object / Off)
---   generate: ui/editor_generate.lua  Amount, Gap, Angle, Size, Generate button
+--   generate: ui/editor_generate.lua  Align, Amount, Gap, Angle, Size, Increment, Position, Generate / To view
 -- Shared row widgets are in ui/editor_rows.lua, the transform math in utils/transforms.lua.
 -- Every block of rows has its own holder. Fixed blocks are built once (typed values stay), the
 -- others are rebuilt when the selection or the objects change, so their placeholders / highlights
@@ -43,9 +43,9 @@ local MODULES = {
 local ROW_H = 30
 local FOOTER_GAP = 4
 local FOOTER_H = 24 -- reset button
--- panel heights, all as tall as the tallest (Core, 7 rows) so the reset button stays in place
+-- panel heights, all as tall as the tallest (Generate, 8 rows) so the reset button stays in place
 -- between tabs. The editor area in ui/main.lua fits them with the reset button under them
-local PANEL_H = 7 * ROW_H
+local PANEL_H = 8 * ROW_H
 local PANELS = {
     core = { height = PANEL_H },
     advanced = { height = PANEL_H },
