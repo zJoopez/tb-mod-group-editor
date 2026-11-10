@@ -95,7 +95,7 @@ local function finishTransform(selected, posFn, axisFn)
         if axisFn then Joints.transformAxis(joint, axisFn) end
     end
     History.commit()
-    if #linked > 0 then MGE.save() end
+    if #linked > 0 then MGE.apply() end
 end
 
 ---@param selectedObjects FileParserEnvObj[]

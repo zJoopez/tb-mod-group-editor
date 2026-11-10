@@ -75,7 +75,7 @@ local function setStatic(static)
     end
     if not changed then return end
     History.commit()
-    MGE.save()
+    MGE.apply()
 end
 
 ---Flags row (advanced panel)
@@ -131,7 +131,7 @@ local function setModel(model)
     end
     if not changed then return end
     History.commit()
-    MGE.save()
+    MGE.apply()
 end
 
 ---Model row (advanced panel): the model button opens the picker, the trash icon turns the model off
@@ -180,7 +180,7 @@ local function reindex()
         return
     end
     History.commit()
-    MGE.save()
+    MGE.apply()
     print("reindex moved " .. moved .. " objects")
 end
 

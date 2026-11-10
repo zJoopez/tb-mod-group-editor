@@ -266,7 +266,7 @@ local function setProperty(key, input)
     if property.setter then
         refreshProperties()
     else
-        MGE.save() -- reload rebuilds the editor with the new value
+        MGE.apply() -- reload rebuilds the editor with the new value
     end
 end
 
@@ -313,7 +313,7 @@ local function setSelectedProp(key, value)
     end
     if not changed then return end
     History.commit()
-    MGE.save()
+    MGE.apply()
 end
 
 

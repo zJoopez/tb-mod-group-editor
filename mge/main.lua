@@ -52,6 +52,15 @@
 ---@field pickerOverlay UIElement? open file picker: asset import, Model row (ui/file_picker.lua)
 ---@field settingsOverlay UIElement? open settings: camera follow, world clicking (ui/settings_overlay.lua)
 ---@field closeTopOverlay fun(): boolean Esc: closes the topmost of the overlays above
+---@field apply fun() writes the working copy and reloads it (shows edits), not a save of the mod
+---@field save fun() Save button / Ctrl + S: writes the mod to saveTarget()
+---@field saveAs fun() Rename: asks the name to save the mod as
+---@field setSource fun(path: string?, text: string?) the data belongs to that file now
+---@field saveTarget fun(): string? where Save writes, under data/mod, always in saveFolder
+---@field hasUnsavedChanges fun(): boolean
+---@field saveFolder string Save only writes here (under data/mod), "modmaker/" like the game's modmaker
+---@field sourcePath string? file the data belongs to (loaded or last written), path under data/mod
+---@field savedText string? that file's text, compared for unsaved changes
 ---@field FilePicker table ui/file_picker.lua
 ---@field Assets table export / import, ui/assets.lua
 MGE = MGE or { scriptPath = "mge/" }
@@ -127,11 +136,34 @@ function MGE.syncGamerules()
     print("gamerules saved: " .. table.concat(names, ", "))
 end
 
-function MGE.save()
+-- Saving. Edits are applied to a working copy that the game loads (MGE.apply: mge-modmaker.tbm and
+-- mge-modmaker1.tbm, alternating so lm reloads it), many edits do that to show their result. The
+-- mod itself is only written by Save and Rename, always into data/mod/modmaker/ (MGE.saveFolder) so
+-- other mods are never replaced.
+--   MGE.sourcePath: the file the data belongs to, the loaded mod or the last one written
+--   MGE.savedText:  that file's text, the footer compares it with the data for "unsaved changes"
+--   Save (MGE.save, Ctrl + S): writes MGE.saveTarget(): the source itself when it's in modmaker/,
+--                   otherwise a copy there with its name. Asks the name only when there's no source,
+--                   or that copy would replace an existing file
+--   Rename (MGE.saveAs, Ctrl + Shift + S): asks the name, the written file becomes the source
+-- A file counts as ours (overwritten without asking) only when it's the source.
+
+---@type { path: string, text: string }? the source, kept over a script restart (MGE is rebuilt, this
+---isn't): the working copy loaded then doesn't say which mod it is
+MGE_SOURCE = MGE_SOURCE
+
+---@param path string?
+---@return boolean
+local function isSaveOutput(path)
+    local name = tostring(path):gsub("^.*[/\\]", "")
+    return name == MGE.outputName or name == MGE.secondaryOutputName
+end
+
+---Writes the working copy and reloads it, so the game shows the edits. Not a save of the mod (MGE.save)
+function MGE.apply()
     local outputName = MGE.modName == MGE.outputName and MGE.secondaryOutputName or MGE.outputName  --bypass for lm not loaading updates without mod swap
     MGE.syncGamerules()
     FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. outputName)
-    print("save complete")
     MGE.reloadPending = true -- keeps undo history and selection over the reload caused by our own save
     MGE.keptSelection = {}
     for _, obj in ipairs(ModData.parsed.env_obj) do
@@ -140,11 +172,106 @@ function MGE.save()
     MGE.loadMod(outputName)
 end
 
+---Folder part of a path under data/mod ("" or "folder/") and the file name without .tbm
 ---@param path string?
+---@return string folder, string name
+local function splitModPath(path)
+    local folder, file = tostring(path or ""):match("^(.-)([^/\\]*)$")
+    return folder or "", ((file or ""):gsub("%.tbm$", ""))
+end
+
+-- Save only writes into data/mod/modmaker/, like the game's own modmaker: mods elsewhere (the game's,
+-- downloaded ones) are never replaced, saving one makes a copy there
+MGE.saveFolder = "modmaker/"
+
+---Where Save writes: the source itself when it's in the save folder, otherwise a file with its name
+---there, nil without a source
+---@return string?
+function MGE.saveTarget()
+    local path = MGE.sourcePath
+    if not path then return nil end
+    if path:sub(1, #MGE.saveFolder) == MGE.saveFolder then return path end
+    local _, name = splitModPath(path)
+    return MGE.saveFolder .. name .. ".tbm"
+end
+
+---The data belongs to the file at path now (loaded, or just written): Save goes there (or to its copy
+---in modmaker/), and the data counts as saved
+---@param path string? under data/mod, nil: no file (Save asks the name)
+---@param text string? the file's text, default the current data's
+function MGE.setSource(path, text)
+    MGE.sourcePath = path
+    MGE.savedText = path and (text or FileHandler.modText(ModData.parsed)) or nil
+    MGE_SOURCE = path and { path = path, text = MGE.savedText } or nil -- global: kept over a script restart
+end
+
+---True when the data differs from the source file (always, without one)
 ---@return boolean
-local function isSaveOutput(path)
-    local name = tostring(path):gsub("^.*[/\\]", "")
-    return name == MGE.outputName or name == MGE.secondaryOutputName
+function MGE.hasUnsavedChanges()
+    return MGE.savedText == nil or MGE.savedText ~= FileHandler.modText(ModData.parsed)
+end
+
+---Writes the mod to path (in the save folder), which becomes the source, then applies (reload)
+---@param path string
+local function writeMod(path)
+    MGE.syncGamerules() -- rules changed in the game's menu
+    -- models written for the file's folder, the data keeps them for data/mod (ModData.parsedFor)
+    if not FileHandler.WriteMod(ModData.parsedFor(path), MGE.modFolder .. path) then
+        echo("^04[MGE] couldn't save " .. path)
+        return
+    end
+    MGE.setSource(path)
+    echo("^04[MGE] saved " .. path)
+    -- the saved mod is what gets shared, say so if dynamic objects won't fully work in it
+    local warning = MGE.Main and MGE.Main.dynamicWarning()
+    if warning then echo("^04[MGE] saved with " .. warning) end
+    MGE.apply()
+end
+
+---True when writing path would replace a file that isn't ours (the source): an earlier copy or
+---another mod
+---@param path string
+---@return boolean
+local function wouldReplace(path)
+    return path ~= MGE.sourcePath and Files.Exists(MGE.modFolder .. path)
+end
+
+---Rename (Ctrl + Shift + S), and Save when it can't write directly: asks the name (prefilled with
+---where Save writes), saves into the save folder. Replacing a file that isn't ours asks first. The
+---old file stays
+function MGE.saveAs()
+    local folder = MGE.saveFolder
+    local _, defaultName = splitModPath(MGE.saveTarget())
+    MGE.saveOverlayContext = {
+        title = "Save mod (" .. folder .. ")",
+        placeholder = "Mod name",
+        defaultName = defaultName,
+        onSave = function(name)
+            local path = folder .. name .. ".tbm"
+            if wouldReplace(path) then
+                MGE.confirmOverlay = TBMenu:showConfirmationWindow(name .. ".tbm already exists. Overwrite it?",
+                    function()
+                        MGE.confirmOverlay = nil
+                        writeMod(path)
+                    end, function() MGE.confirmOverlay = nil end)
+            else
+                writeMod(path)
+            end
+            return true -- the prompt closes
+        end,
+    }
+    dofile(MGE.scriptPath .. "ui/save_overlay.lua")
+end
+
+---Save button / Ctrl + S: writes the mod where MGE.saveTarget says. Asks the name instead when
+---there's no source, or the copy would replace a file that isn't ours
+function MGE.save()
+    local target = MGE.saveTarget()
+    if not target or wouldReplace(target) then
+        MGE.saveAs()
+    else
+        writeMod(target)
+    end
 end
 
 ---Removes hooks, UI and the MGE global. Safe to call more than once and on a partially started script
@@ -181,7 +308,11 @@ add_hook("match_begin", MGE.hookname, function()
     MGE.updateSource()
     -- saves alternate between the two output files, that isn't a mod switch
     local switchedMod = path ~= MGE.modPath and not (isSaveOutput(path) and isSaveOutput(MGE.modPath))
-    if switchedMod then set_camera_mode(0) end
+    if switchedMod then
+        set_camera_mode(0)
+        -- a mod file was loaded (not our working copy): the data belongs to it now
+        if not isSaveOutput(MGE.modPath) then MGE.setSource(MGE.modPath) end
+    end
     -- a mod file was loaded: its rules are the new baseline. Applying gamerules in the game's menu
     -- also starts a new match, that one keeps the old baseline so the change is saved later
     if switchedMod or MGE.reloadPending then MGE.snapshotGamerules() end
@@ -259,7 +390,7 @@ function MGE.closeTopOverlay()
     return false
 end
 
--- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game), Ctrl+S saves the working file,
+-- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game), Ctrl+S saves the mod (MGE.save),
 -- Ctrl+A selects / deselects all objects, Shift + Q / W / E toggles a gizmo tool,
 -- Ctrl + N / D new / duplicate, Delete deletes the selection (asks first), Esc closes MGE's overlays
 add_hook("key_down", MGE.hookname, function(key)
@@ -290,7 +421,10 @@ add_hook("key_down", MGE.hookname, function(key)
             return 1
         end
     elseif ctrl and not shift and key == string.byte("s") then
-        MGE.save() -- writes live edits to the working file and reloads it
+        MGE.save() -- writes the mod into modmaker/, then reloads
+        return 1
+    elseif ctrl and shift and key == string.byte("s") then
+        if not overlayOpen() then MGE.saveAs() end -- save under another name
         return 1
     elseif ctrl and not shift and key == string.byte("a") then
         MGE.Main.toggleSelectAll() -- same as the list's "Select All"
@@ -313,5 +447,12 @@ end)
 MGE.updateSource()
 MGE.snapshotGamerules()
 History.reset()
+-- source: the loaded mod. Started on a working copy (script restarted after editing): the source from
+-- before the restart, compared with its text
+if MGE.modPath and not isSaveOutput(MGE.modPath) then
+    MGE.setSource(MGE.modPath)
+elseif MGE_SOURCE then
+    MGE.setSource(MGE_SOURCE.path, MGE_SOURCE.text)
+end
 loadModule("ui/main.lua")
 MGE.running = true -- set last so a failed start isn't treated as running

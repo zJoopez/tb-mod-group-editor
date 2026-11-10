@@ -234,7 +234,7 @@ local function importObjects(parser, keepTab, inView)
     -- reload, if camera follow is on)
     if not keepTab then MGE.Main.setTab("core") end
     MGE.focusAfterReload = true
-    MGE.save() -- the reload refreshes the window
+    MGE.apply() -- the reload refreshes the window
     print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints")
 end
 
@@ -315,7 +315,7 @@ local function replacePlayerFromFile(assetName)
     local playerId = Main.selectedPlayer
     FileHandler.setPlayerLines(ModData.parsed, playerId, parts)
     History.commit()
-    MGE.save() -- body changes need a reload
+    MGE.apply() -- body changes need a reload
     print("player " .. playerId .. " replaced with " .. assetName)
 end
 

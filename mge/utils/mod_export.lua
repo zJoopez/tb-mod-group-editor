@@ -299,12 +299,40 @@ local function splitPath(path)
     return parts
 end
 
----model_name for a model saved by MGE: our files (working file, Save as) are in data/mod itself, so
----their model folder is mod_assets/<mod name>/ and models are one folder up from it
+---model_name for a model: MGE's data keeps them for a file in data/mod itself (the working copies are
+---there), whose model folder is mod_assets/<mod name>/, so models are one folder up from it. With
+---modPath, for a mod file there instead: one more folder up per folder it's in
 ---@param model string model path in mod_assets without .obj, e.g. "Noki/PinTori"
+---@param modPath string? mod file path relative to data/mod, default a file in data/mod itself
 ---@return string
-function ModData.toModelName(model)
-    return "../" .. model
+function ModData.toModelName(model, modPath)
+    return string.rep("../", #splitPath(modPath) > 0 and #splitPath(modPath) or 1) .. model
+end
+
+---The mod data as a file at path (under data/mod) needs it: model_name lines point from that file's
+---model folder. MGE's data has them for data/mod itself (toModelName), a mod saved into a subfolder
+---gets a copy with them rewritten. The data itself isn't changed
+---@param path string
+---@return FileParserResult
+function ModData.parsedFor(path)
+    if #splitPath(path) <= 1 then return ModData.parsed end
+    local copy = {}
+    for k, v in pairs(ModData.parsed) do copy[k] = v end
+    copy.env_obj = {}
+    for i, obj in ipairs(ModData.parsed.env_obj) do
+        local model = obj.props.use_model == "1" and ModData.fromModelName(obj.props.model_name, MGE.outputName)
+        if model then
+            local o = {}
+            for k, v in pairs(obj) do o[k] = v end
+            o.props = {}
+            for k, v in pairs(obj.props) do o.props[k] = v end
+            o.props.model_name = ModData.toModelName(model, path)
+            copy.env_obj[i] = o
+        else
+            copy.env_obj[i] = obj
+        end
+    end
+    return copy
 end
 
 ---Model path in mod_assets (without .obj) that a model_name points to, for the mod file at modPath
@@ -327,8 +355,9 @@ function ModData.fromModelName(modelName, modPath)
     return table.concat(parts, "/")
 end
 
----MGE saves into data/mod itself (working file, Save as), so models of a mod loaded from a subfolder
----would point to the wrong folder after the first save: rewrite them relative to data/mod
+---MGE's working copies are in data/mod itself, so models of a mod loaded from a subfolder would point
+---to the wrong folder after the first apply: rewrite them relative to data/mod (Save into a subfolder
+---writes them back for its folder, ModData.parsedFor)
 local function rebaseModels()
     if not tostring(MGE.modPath or ""):find("[/\\]") then return end
     for _, obj in ipairs(ModData.parsed.env_obj) do

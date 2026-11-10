@@ -3,10 +3,9 @@ if (MGE.saveOverlay ~= nil) then
     return
 end
 
+-- name prompt for MGE.saveAs (the mod's first Save) and asset Export, MGE.saveOverlayContext says
+-- what saving does (onSave), the title, placeholder and default name
 local saveContext = MGE.saveOverlayContext or {}
-
-local ModData = MGE.ModData
-local FileHandler = MGE.FileHandler
 
 local ModSaveOverlay = TBMenu:spawnWindowOverlay()
 MGE.saveOverlay = ModSaveOverlay -- lets MGE.quit close it
@@ -104,20 +103,11 @@ local function save(newname)
             "Mod name must be alphanumeric and can only contain underscores, spaces or dashes as special characters")
         return
     end
-    if saveContext.onSave then
-        local ok = saveContext.onSave(name)
-        if ok ~= false then
-            closeOverlay()
-        end
-        return
+    -- the opener decides what saving means: the mod's Save (MGE.saveAs) or an asset Export
+    local ok = saveContext.onSave and saveContext.onSave(name)
+    if ok ~= false then
+        closeOverlay()
     end
-    MGE.syncGamerules() -- rules changed in the game's menu
-    FileHandler.WriteMod(ModData.parsed, MGE.modFolder .. name .. ".tbm")
-    print("saved as " .. name .. ".tbm")
-    -- the named copy is the one that gets shared, say so if dynamic objects won't fully work in it
-    local warning = MGE.Main and MGE.Main.dynamicWarning()
-    if warning then echo("^04[MGE] saved with " .. warning) end
-    closeOverlay()
 end
 
 MGE.Widgets.closeOnEscape(replayNameInput) -- Esc cancels, like the Cancel button

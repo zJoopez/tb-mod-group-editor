@@ -401,13 +401,10 @@ function FileHandler.setGamerules(parser, values, ruleNames)
     parser.ignores = lines
 end
 
+---Writes the whole mod through file:writeLine (a File, or a collector for modText)
+---@param file { writeLine: fun(self, line: string) }
 ---@param parser FileParserResult
----@param path string
----@return boolean
-function FileHandler.WriteMod(parser, path)
-    local file = Files.Open(path, FILES_MODE_WRITE)
-    if not file or not file.data then return false end
-
+local function writeParser(file, parser)
     -- Write ignored lines first (headers, gamerules, etc.)
     for _, line in ipairs(parser.ignores or {}) do
         file:writeLine(line)
@@ -421,7 +418,26 @@ function FileHandler.WriteMod(parser, path)
     for _, line in ipairs(parser.trailer or {}) do
         file:writeLine(line)
     end
+end
 
+---@param parser FileParserResult
+---@param path string
+---@return boolean
+function FileHandler.WriteMod(parser, path)
+    local file = Files.Open(path, FILES_MODE_WRITE)
+    if not file or not file.data then return false end
+    ---@diagnostic disable-next-line: param-type-mismatch
+    writeParser(file, parser)
     file:close()
     return true
+end
+
+---The mod as WriteMod would write it, without writing anything. Compared with the text of the last
+---save to tell whether there are unsaved changes
+---@param parser FileParserResult
+---@return string
+function FileHandler.modText(parser)
+    local lines = {}
+    writeParser({ writeLine = function(_, line) table.insert(lines, line) end }, parser)
+    return table.concat(lines, "\n")
 end

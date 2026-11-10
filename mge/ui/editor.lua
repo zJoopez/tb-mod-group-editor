@@ -225,7 +225,7 @@ local function duplicate()
     Joints.copyLinked(Joints.getLinked(idMap), idMap)
     ModData.sortObjects()
     History.commit()
-    MGE.save()
+    MGE.apply()
 end
 
 local function delete()
@@ -240,7 +240,7 @@ local function delete()
     end
     Joints.removeLinkedToAny(deleted) -- a joint can't point to a missing object
     History.commit()
-    MGE.save()
+    MGE.apply()
 end
 
 ---Asks for confirmation with Toribash's own popup (TBMenu:showConfirmationWindow) before deleting
@@ -290,15 +290,14 @@ function editor.create(parent)
         block.build(blocks[name], selected)
     end
 
-    -- full width reset button under the input fields (it only clears inputs), same size as the
-    -- window's Save as row. The Enter shortcut is explained in the window's shortcut help (ui/main.lua)
+    -- full width reset button under the input fields (it only clears inputs, Enter in a field applies it)
     inputFooter = parent:addChild({
         pos = { 0, 0 },
         size = { parent.size.w, FOOTER_H },
     })
     Widgets.buttonRow(inputFooter, 0, FOOTER_H, { { label = "Reset inputs", onClick = clearInputs } }, 0, nil, Widgets.PANEL_STYLE)
-    -- Duplicate/Delete are in the object list's bottom bar (ui/obj_selector.lua), Save as in the
-    -- bottom row (ui/main.lua). Positions and visibility are applied by Main.applyTab after create
+    -- Duplicate/Delete are in the object list's bottom bar (ui/obj_selector.lua), Save in the toolbar
+    -- (ui/main.lua). Positions and visibility are applied by Main.applyTab after create
 end
 
 -- used by the object list's Duplicate/Delete buttons

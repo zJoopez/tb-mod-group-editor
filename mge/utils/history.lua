@@ -175,7 +175,7 @@ local function restore(index)
         local Main = MGE.Main -- created after this module loads
         if Main then Main.updateWindow() end
     else
-        MGE.save() -- object list changed, rewrite file and reload
+        MGE.apply() -- object list changed, rewrite file and reload
     end
 end
 

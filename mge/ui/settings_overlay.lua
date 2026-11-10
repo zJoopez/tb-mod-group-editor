@@ -4,6 +4,7 @@
 --   Gizmo snapping: the steps a gizmo drag snaps to while Ctrl is held (Gizmo.moveStep / rotateStep /
 --                   scaleStep). A typed step applies on Enter or when the overlay closes, an invalid
 --                   one goes back to the current step
+--   Shortcuts:      heading with a "?", hovering it lists the keyboard and mouse shortcuts
 -- Kept while the script runs, not saved. Clicking outside the panel, Close or Esc closes it, MGE.quit
 -- closes it too (MGE.settingsOverlay).
 if MGE.settingsOverlay and not MGE.settingsOverlay.destroyed then return end
@@ -50,6 +51,23 @@ local SNAP_STEPS = {
 }
 local SNAP_INFO = "Hold Ctrl while dragging. Move: units, rotate: degrees"
 
+-- shortcut list, shown by the "?" next to the Shortcuts heading (the toolbar used to have it)
+local SHORTCUTS = table.concat({
+    "F1: show / hide window",
+    "Esc: close the open prompt / popup / settings",
+    "Ctrl + S: save   Ctrl + Shift + S: rename",
+    "Ctrl + A: select / deselect all",
+    "Click object or id: select it, Shift + click: add / remove",
+    "Ctrl + N / D: new object / duplicate selected",
+    "Delete: delete selected (asks first)",
+    "Shift + Z / Y: undo / redo",
+    "Enter: apply the typed field",
+    "Click Pos / Rot / Scale: switch to Move / Rotate / Resize",
+    "Shift + Q / W / E: Move / Rotate / Scale gizmo on / off",
+    "Ctrl while dragging the gizmo: snap steps (above)",
+    "Drag (off the gizmo) / wheel: orbit / zoom camera",
+}, "\n")
+
 local PANEL_W = 340
 local PAD = 12
 local TITLE_H = 44
@@ -58,9 +76,10 @@ local ROW_GAP = 4
 local SETTING_H = ROW_H + Widgets.INFO_HEIGHT + 8 -- row, info line, gap
 local SECTION_H = 26 -- section heading
 local SNAP_H = SECTION_H + #SNAP_STEPS * (ROW_H + ROW_GAP) + Widgets.INFO_HEIGHT + 8
+local SHORTCUTS_H = SECTION_H + 4
 local CLOSE_H = 28
 local LABEL_W = 150
-local panelH = TITLE_H + #SETTINGS * SETTING_H + SNAP_H + CLOSE_H + PAD * 2
+local panelH = TITLE_H + #SETTINGS * SETTING_H + SNAP_H + SHORTCUTS_H + CLOSE_H + PAD * 2
 
 local overlay = TBMenu:spawnWindowOverlay(true) -- true: a click on the dark background closes it
 MGE.settingsOverlay = overlay
@@ -195,6 +214,25 @@ for _, step in ipairs(SNAP_STEPS) do
     y = y + ROW_H + ROW_GAP
 end
 addInfo(y, SNAP_INFO)
+y = y + Widgets.INFO_HEIGHT + 8
+
+-- Shortcuts heading with the "?" right after the text, hovering it lists them. Heading and icon are
+-- centered together: the text is measured the way the game's help popups measure theirs
+local HELP_SIZE = 22 -- same as the editor rows' "?" (ui/editor_rows.lua)
+local HELP_GAP = 6
+-- the heading area is one icon (and gap) narrower than the row, so its centered text sits half that
+-- left of the panel's center and the icon fits after it. Not moved left with moveTo: a negative x
+-- counts from the parent's right edge in toriui
+local shortcutsHeading = panel:addChild({
+    pos = { PAD, y },
+    size = { PANEL_W - PAD * 2 - (HELP_SIZE + HELP_GAP), SECTION_H },
+})
+shortcutsHeading:addAdaptedText("Shortcuts", nil, nil, nil, CENTERMID, Widgets.TEXT_SCALE)
+local headingW = get_string_length(shortcutsHeading.dispstr and shortcutsHeading.dispstr[1] or "Shortcuts",
+    shortcutsHeading.textFont) * (shortcutsHeading.textScale or 1)
+Widgets.helpIcon(panel, (PANEL_W + headingW - HELP_SIZE - HELP_GAP) / 2 + HELP_GAP, y + (SECTION_H - HELP_SIZE) / 2,
+    HELP_SIZE, SHORTCUTS)
+y = y + SECTION_H
 
 Widgets.button(panel, { x = PAD, y = panelH - PAD - CLOSE_H, w = PANEL_W - PAD * 2, h = CLOSE_H }, "Close",
     function() overlay:kill() end)

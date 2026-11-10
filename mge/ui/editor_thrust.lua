@@ -63,7 +63,7 @@ local function editThrust(edit)
     end
     if not changed then return end
     History.commit()
-    MGE.save()
+    MGE.apply()
 end
 
 ---Applies a typed thrust field: 1 frames, 2-4 direction x y z

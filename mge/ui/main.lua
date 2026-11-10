@@ -30,7 +30,7 @@ Main.window, windowContainer = TBMenu:spawnMoveableWindow({
     x = margin,
     y = 100,
     w = 400,
-    h = 692
+    h = 710
 })
 local content = windowContainer:addChild({
     pos = { margin, margin },
@@ -39,9 +39,8 @@ local content = windowContainer:addChild({
 
 -- top menu, same bar style as the list bars:
 --   left:  shortcuts to the game's own mod list and gamerules menus
---   right: save, gizmo tool toggles, undo / redo, settings, then the shortcut help
+--   right: gizmo tool toggles, undo / redo, settings (Save is in the row above the footer)
 local menuH = 25
-local helpSize = menuH - 4
 local iconSize = menuH - 4 -- bar buttons have 2px padding top and bottom
 local iconGap = 4
 local menuBar = content:addChild({
@@ -49,9 +48,9 @@ local menuBar = content:addChild({
     size = { content.size.w, menuH },
     bgColor = TB_MENU_DEFAULT_BG_COLOR,
 })
-local ICON_COUNT = 7
+local ICON_COUNT = 6
 local iconsW = iconSize * ICON_COUNT + iconGap * (ICON_COUNT - 1)
-local iconsX = menuBar.size.w - (helpSize + 4) - iconGap - iconsW
+local iconsX = menuBar.size.w - iconsW
 local iconButtons = menuBar:addChild({
     pos = { iconsX, 0 },
     size = { iconsW, menuH },
@@ -62,11 +61,8 @@ local TOOLS = {
     { mode = "rotate", label = "Rotate (Shift + W)" },
     { mode = "scale", label = "Scale (Shift + E)" },
 }
-local TOOL_FIRST = 2 -- index of the first tool in the bar
-local bar = {
-    -- working file (same as Ctrl+S), game's save icon
-    { label = "Save (Ctrl + S)", icon = "../textures/menu/general/buttons/savewhite.tga", onClick = function() MGE.save() end },
-}
+local TOOL_FIRST = 1 -- index of the first tool in the bar
+local bar = {}
 for _, tool in ipairs(TOOLS) do
     table.insert(bar, { label = tool.label, icon = MGE.scriptPath .. "textures/" .. tool.mode .. ".tga",
         onClick = function() MGE.Gizmo.toggle(tool.mode) end })
@@ -99,24 +95,6 @@ Widgets.barButtons(textButtons, {
     { label = "Mods", onClick = function() dofile("system/mods.lua") end },           -- game's mod list
     { label = "Rules", onClick = function() dofile("system/gamerules.lua") end },     -- game's gamerules menu
 })
-Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
-    "Shortcuts\n" ..
-    "F1: show / hide window\n" ..
-    "Ctrl + S: save and reload\n" ..
-    "Ctrl + A: select / deselect all\n" ..
-    "Ctrl + N / D: new object / duplicate selected\n" ..
-    "Delete: delete selected (asks first)\n" ..
-    "Esc: close the open prompt / popup / settings\n" ..
-    "Shift + Z / Y: undo / redo\n" ..
-    "Enter: apply the typed field\n" ..
-    "Shift + Q / W / E: Move / Rotate / Scale gizmo on / off\n" ..
-    "Click Pos / Rot / Scale: switch to Move / Rotate / Resize\n" ..
-    "Click object or id: select it, Shift + click: add / remove\n" ..
-    "Export / Import: save selection or player as an asset / add one\n" ..
-    "Gizmo (toolbar toggles): drag arrows / squares to move,\n" ..
-    "rings to rotate, cubes to scale, the white cube scales evenly (Ctrl: steps)\n" ..
-    "Drag (off the gizmo) / wheel: orbit / zoom camera\n" ..
-    "Settings: camera follow, click to select in the world (off to play), gizmo snap steps")
 updateContentHeight(menuH)
 
 -- tabs for the list area: objects (with how full the mod is) and players. The active tab has the
@@ -216,15 +194,18 @@ updateContentHeight(tabPanel.size.h)
 -- Duplicate/Delete/Import/Export are in the list's bottom bar (ui/obj_selector.lua, ui/player_list.lua),
 -- Reindex in the Advanced panel
 
--- named copy of the mod, under the editor area
-local saveAsRow = content:addChild({
+-- Save and Rename, under the editor area, right above the footer line naming the file they write
+local saveRow = content:addChild({
     pos = defaultPos,
     size = { content.size.w, 24 },
 })
-Widgets.buttonRow(saveAsRow, 0, saveAsRow.size.h, {
-    { label = "Save as", onClick = function() dofile(MGE.scriptPath .. "ui/save_overlay.lua") end },
+local saveButtons = Widgets.buttonRow(saveRow, 0, saveRow.size.h, {
+    { label = "Save", onClick = function() MGE.save() end },     -- Ctrl + S, same as the toolbar icon
+    { label = "Rename", onClick = function() MGE.saveAs() end }, -- Ctrl + Shift + S
 }, margin)
-updateContentHeight(saveAsRow.size.h)
+TBMenu:displayPopup(saveButtons[1], "Saves the mod into mod/" .. MGE.saveFolder .. " (Ctrl + S),\na mod from elsewhere is copied there.")
+TBMenu:displayPopup(saveButtons[2], "Saves under a new name, Save writes there from then on.\nThe old file stays (Ctrl + Shift + S).")
+updateContentHeight(saveRow.size.h)
 
 -- footer: small centered info rows stacked without gaps
 ---@param text string?
@@ -240,7 +221,29 @@ local function addFooterRow(text)
     return row
 end
 local limitsRow = addFooterRow() -- dynamic id and joint usage, set by setDynamicStrings
+local fileRow = addFooterRow() -- the file Save writes and whether there are unsaved changes
 addFooterRow("Project Mod Group Editor by joopez")
+
+-- footer text color while something needs attention (dynamic objects, unsaved changes)
+local WARNING_COLOR = { 0.3, 0.02, 0.02, 1 } -- dark red: reads against the window's red, light pink didn't
+
+-- File row: checked every frame, the mod text is only built again when the data changed (an edit
+-- commits a new undo state, a reload parses new data) or the source changed (load, save). Lua
+-- strings are interned, comparing savedText is cheap
+local shown = {}
+Widgets.addDrawBefore(fileRow, function()
+    local parsed, state, source, saved = ModData.parsed, History.states[History.index], MGE.sourcePath, MGE.savedText
+    if shown.parsed == parsed and shown.state == state and shown.source == source and shown.saved == saved
+        and shown.done then return end
+    shown = { parsed = parsed, state = state, source = source, saved = saved, done = true }
+    local target = MGE.saveTarget()
+    local unsaved = MGE.hasUnsavedChanges()
+    -- where Save writes (a mod from outside modmaker/ is copied there, its original stays as it is)
+    local text = target and "Mod: " .. target .. (unsaved and "  (unsaved changes)" or "")
+        or "Not saved to a mod yet, Save asks the name"
+    fileRow.uiColor = target and not unsaved and UICOLORWHITE or WARNING_COLOR
+    Widgets.infoText(fileRow, text)
+end)
 
 
 dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by the lists and the file picker
@@ -296,9 +299,6 @@ function Main.setListTab(id)
     Main.applyTab()
     Main.updateWindow()
 end
-
--- footer text color while dynamic objects need attention
-local WARNING_COLOR = { 1, 0.45, 0.35, 1 }
 
 ---Why dynamic objects won't fully work yet, nil when they do
 ---@return string?
