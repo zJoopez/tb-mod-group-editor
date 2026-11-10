@@ -97,6 +97,19 @@ end
 ---@field wide boolean? icon buttons are square unless wide, wide ones share the width like text buttons
 ---@field onClick function?
 
+---Runs func every frame before the element draws, after anything already set to run there. An
+---element has one such slot (addCustomDisplay with drawBefore) and the hover popups of icon buttons
+---(TBMenu:displayPopup) use it, setting it directly would replace them
+---@param element UIElement
+---@param func fun()
+function Widgets.addDrawBefore(element, func)
+    local previous = element.customDisplayBefore
+    element:addCustomDisplay(false, function(...)
+        if previous then previous(...) end
+        func()
+    end, true)
+end
+
 ---Buttons filling the parent's width exactly: n buttons and n - 1 gaps between them.
 ---Entries with `icon` show that image instead of the label and are square (h wide) unless `wide`,
 ---the other buttons share the rest of the width equally. Icon buttons show their label on hover

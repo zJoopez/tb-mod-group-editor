@@ -40,18 +40,11 @@ local function create(view, fullList)
         size = { view.size.w, view.size.h }
     })
 
-    local topBar_l = UIElement:new({
+    -- pages, Select All is an icon in the bottom bar
+    local topBar = UIElement:new({
         parent = toReload,
         pos = { 0, 0 },
-        size = { view.size.w / 2, listElementHeight },
-        bgColor = Widgets.TAB_PANEL_SOLID, -- list bars match the tab panel they sit in
-        interactive = true
-    })
-
-    local topBar_r = UIElement:new({
-        parent = toReload,
-        pos = { view.size.w / 2, 0 },
-        size = { view.size.w / 2, listElementHeight },
+        size = { view.size.w, listElementHeight },
         bgColor = Widgets.TAB_PANEL_SOLID, -- list bars match the tab panel they sit in
         interactive = true
     })
@@ -79,9 +72,9 @@ local function create(view, fullList)
     -- list area between top and bottom bars
     ScrollList.create(view, {
         x = 0,
-        y = topBar_l.size.h,
+        y = topBar.size.h,
         w = view.size.w,
-        h = view.size.h - topBar_l.size.h - botBar.size.h
+        h = view.size.h - topBar.size.h - botBar.size.h
     }, gridRows, function(rowElement, objects)
         local cellW = (rowElement.size.w - GRID_GAP * (GRID_COLUMNS + 1)) / GRID_COLUMNS
         for c, obj in ipairs(objects) do
@@ -108,8 +101,12 @@ local function create(view, fullList)
         end
     end, toReload)
 
-    -- same as Ctrl+A: selects all, or deselects all when everything is selected. The label is read
-    -- every frame so it follows clicks on single cells too (those don't rebuild the list)
+    ScrollList.createPager(topBar, { x = 0, y = 0, w = topBar.size.w, h = topBar.size.h }, page, pageCount,
+        function(newPage)
+            Main.page = newPage
+            Main.updateWindow()
+        end)
+
     local function allSelected()
         if #fullList == 0 then return false end
         for _, obj in ipairs(fullList) do
@@ -117,32 +114,34 @@ local function create(view, fullList)
         end
         return true
     end
-    Widgets.barButtons(topBar_l, {
-        { label = function() return allSelected() and "Deselect All" or "Select All" end,
-            onClick = function() Main.toggleSelectAll() end },
-    })
-    ScrollList.createPager(topBar_r, { x = 0, y = 0, w = topBar_r.size.w, h = topBar_r.size.h }, page, pageCount,
-        function(newPage)
-            Main.page = newPage
-            Main.updateWindow()
-        end)
 
     -- New adds the default object, Duplicate/Delete/Export act on selected objects, Import opens the
-    -- asset list (ui/assets.lua). In the list's bar so they're there on every tab (Reindex is in the
-    -- editor's Advanced panel). Icons share the width, their names show on hover.
+    -- asset list (ui/assets.lua), Select All is Ctrl + A. In the list's bar so they're there on every tab
+    -- (Reindex is in the editor's Advanced panel). Icons share the width, their names show on hover.
     -- MGE.Editor loads after this module, so it's looked up on click
-    Widgets.barButtons(botBar, {
-        { label = "New", icon = "../textures/menu/general/buttons/addsign.tga", wide = true,
+    local barIcons = Widgets.barButtons(botBar, {
+        -- selects all, or deselects all when everything is selected
+        { label = "Select / deselect all (Ctrl + A)", icon = MGE.scriptPath .. "textures/selectall.tga", wide = true,
+            onClick = function() Main.toggleSelectAll() end },
+        { label = "New (Ctrl + N)", icon = "../textures/menu/general/buttons/addsign.tga", wide = true,
             onClick = function() MGE.Assets.newObject() end },
-        { label = "Duplicate", icon = MGE.scriptPath .. "textures/duplicate.tga", wide = true,
+        { label = "Duplicate (Ctrl + D)", icon = MGE.scriptPath .. "textures/duplicate.tga", wide = true,
             onClick = function() MGE.Editor.duplicate() end },
-        { label = "Delete", icon = "../textures/menu/general/buttons/trash.tga", wide = true,
-            onClick = function() MGE.Editor.deleteSelected() end }, -- asks first
         { label = "Import", icon = MGE.scriptPath .. "textures/import.tga", wide = true,
             onClick = function() MGE.Assets.openImport() end },
         { label = "Export", icon = MGE.scriptPath .. "textures/export.tga", wide = true,
             onClick = function() MGE.Assets.export() end },
+        -- last, away from the others
+        { label = "Delete (Del)", icon = "../textures/menu/general/buttons/trash.tga", wide = true,
+            onClick = function() MGE.Editor.deleteSelected() end }, -- asks first
     })
+    -- lit while everything is selected (the next click deselects). Checked every frame before the button
+    -- draws, so it follows clicks on single cells too (those don't rebuild the list). Added after the
+    -- button's hover popup, which uses the same per-frame slot
+    local selectAllButton = barIcons[1] --[[@as UIElement]]
+    Widgets.addDrawBefore(selectAllButton, function()
+        selectAllButton.bgColor = allSelected() and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
+    end)
 end
 
 obj_selector.create = create

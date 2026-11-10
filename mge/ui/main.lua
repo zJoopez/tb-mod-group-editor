@@ -104,6 +104,8 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "F1: show / hide window\n" ..
     "Ctrl + S: save and reload\n" ..
     "Ctrl + A: select / deselect all\n" ..
+    "Ctrl + N / D: new object / duplicate selected\n" ..
+    "Delete: delete selected (asks first)\n" ..
     "Shift + Z / Y: undo / redo\n" ..
     "Enter: apply the typed field\n" ..
     "Shift + Q / W / E: Move / Rotate / Scale gizmo on / off\n" ..
@@ -342,7 +344,7 @@ function Main.updateWindow()
     Main.onSelectionChanged() -- called after select all, saves and reloads
 end
 
----Selects or deselects every object ("Select All" checkbox, Ctrl+A)
+---Selects or deselects every object (object list's select all icon, Ctrl+A)
 ---@param value boolean? nil selects all, or deselects all when everything is already selected
 function Main.toggleSelectAll(value)
     local objects = ModData.parsed.env_obj

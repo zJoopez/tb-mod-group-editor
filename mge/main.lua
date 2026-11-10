@@ -211,12 +211,38 @@ local TOOL_KEYS = {
     [string.byte("e")] = "scale",
 }
 
+local KEY_DELETE = 127 -- SDLK_DELETE (toriui's text fields use the same code)
+
+-- Ctrl + N / D: new object / duplicate selected, the object list's New and Duplicate buttons
+local OBJECT_KEYS = {
+    [string.byte("n")] = function() MGE.Assets.newObject() end,
+    [string.byte("d")] = function() MGE.Editor.duplicate() end,
+}
+
+---True while a prompt, popup or picker of MGE's is open: object shortcuts wait until it's closed,
+---so a key doesn't change the list behind it
+---@return boolean
+local function overlayOpen()
+    for _, overlay in pairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay, MGE.settingsOverlay }) do
+        if not overlay.destroyed then return true end
+    end
+    return false
+end
+
 -- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game), Ctrl+S saves the working file,
--- Ctrl+A selects / deselects all objects, Shift + Q / W / E toggles a gizmo tool
+-- Ctrl+A selects / deselects all objects, Shift + Q / W / E toggles a gizmo tool,
+-- Ctrl + N / D new / duplicate, Delete deletes the selection (asks first)
 add_hook("key_down", MGE.hookname, function(key)
     if TB_MENU_INPUT_ISACTIVE then return end -- typing in a text field
     if get_keyboard_alt() ~= 0 or not MGE.Main.window.displayed then return end
     local shift, ctrl = get_keyboard_shift() ~= 0, get_keyboard_ctrl() ~= 0
+    if key == KEY_DELETE and not shift and not ctrl then
+        if not overlayOpen() then MGE.Editor.deleteSelected() end -- confirmation popup
+        return 1
+    elseif ctrl and not shift and OBJECT_KEYS[key] then
+        if not overlayOpen() then OBJECT_KEYS[key]() end
+        return 1
+    end
     if shift and not ctrl then
         if key == string.byte("z") then
             History.undo()
