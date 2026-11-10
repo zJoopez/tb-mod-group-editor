@@ -113,7 +113,7 @@ Widgets.helpIcon(menuBar, -helpSize - 2, 2, helpSize,
     "Gizmo (toolbar toggles): drag arrows / squares to move,\n" ..
     "rings to rotate, cubes to scale, the white cube scales evenly (Ctrl: steps)\n" ..
     "Drag (off the gizmo) / wheel: orbit / zoom camera\n" ..
-    "Settings: camera follow, click to select in the world (off to play)")
+    "Settings: camera follow, click to select in the world (off to play), gizmo snap steps")
 updateContentHeight(menuH)
 
 -- tabs for the list area: objects (with how full the mod is) and players. The active tab has the

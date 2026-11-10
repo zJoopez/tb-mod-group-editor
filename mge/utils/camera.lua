@@ -22,9 +22,13 @@ local Camera = {
     fitFactor = 2.5,     -- camera distance per unit of selection radius (covers the game's field of view)
     margin = 1,          -- extra distance so objects don't touch the screen edges
     minDistance = 2.5,   -- closest framing distance
+    -- largest radius an object counts with when framing. Many mods use a huge object as the ground,
+    -- framing all of it put the camera thousands of units away. Bigger objects are framed like one this
+    -- size at their center, so a selection with a ground object still shows the other objects
+    maxObjectRadius = 10,
     zoomStep = 1.15,     -- distance factor per mouse wheel step
     zoomMin = 0.5,
-    zoomMax = 200,
+    zoomMax = 200,       -- also the furthest framing distance (objects spread very far apart)
     orbitSpeed = 0.008,  -- radians per dragged pixel
     maxPitch = math.rad(85),
     dragThreshold = 4,   -- pixels before a press turns into an orbit drag (shorter left clicks select objects)
@@ -61,7 +65,8 @@ local function objectRadius(id)
     return math.sqrt(sx * sx + sy * sy + sz * sz) / 2           -- box: half diagonal
 end
 
----Center and radius of a sphere around the objects
+---Center and radius of a sphere around the objects, each object counting with at most
+---Camera.maxObjectRadius (huge ground objects)
 ---@param objects FileParserEnvObj[]
 ---@return number[]? center, number radius
 function Camera.bounds(objects)
@@ -71,7 +76,8 @@ function Camera.bounds(objects)
         local x, y, z = get_obj_pos(obj.id - 1)
         if x then
             local p = { x, y, z }
-            table.insert(positions, { pos = p, radius = objectRadius(obj.id - 1) })
+            local radius = math.min(objectRadius(obj.id - 1), Camera.maxObjectRadius)
+            table.insert(positions, { pos = p, radius = radius })
             for i = 1, 3 do
                 if p[i] < min[i] then min[i] = p[i] end
                 if p[i] > max[i] then max[i] = p[i] end
@@ -178,6 +184,7 @@ function Camera.focus(objects, keepDistance)
     end
 
     local distance = math.max(radius * Camera.fitFactor + Camera.margin, Camera.minDistance)
+    distance = math.min(distance, Camera.zoomMax)
     if keepDistance then distance = math.max(distance, Camera.distance) end
 
     set_camera_mode(4)
