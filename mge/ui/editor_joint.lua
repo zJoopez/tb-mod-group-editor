@@ -1,12 +1,13 @@
 -- Joints list's Properties tab. Enter in a field applies it to every selected joint as one undo step,
 -- like the object rows. Joints have no live setter, so each change saves and reloads. Which objects a
 -- joint links is set on the Link tab (ui/editor_link.lua)
---   Pos:      the anchor, where the game joins them. Mid puts it halfway between the two objects, the
---             Move gizmo drags it (Joints.target, utils/joints.lua)
+--   Pos:      the anchor, where the game joins them. Like the Core tab's Pos: the selected joints'
+--             center, a typed axis moves them together so the center gets there (as the Move gizmo
+--             does, Joints.target in utils/joints.lua). Mid puts each halfway between its two objects
 --   Axis:     the hinge axis, X / Y / Z set a world axis
 --   Range, Strength, Velocity, Type (jointtype), Visible: the env_obj_joint lines of those names, a row each
--- Placeholders show the selection's value: "mixed" when the joints differ, "-" when the line is missing
--- (the game's default). Selected empty slots are left out
+-- Placeholders show the current values: "mixed" when the joints differ, DEFAULTS for a missing line.
+-- Selected empty slots are left out
 
 local Rows = MGE.EditorRows
 local Widgets = MGE.Widgets
@@ -36,14 +37,16 @@ local function addLine(holder, text, row)
     line:addAdaptedText(text, nil, nil, nil, LEFTMID, 0.7, nil, nil)
 end
 
----Text in a row's content space
----@param row UIElement
----@param x number
----@param w number
----@param text string
-local function addRowText(row, x, w, text)
-    local holder = row:addChild({ pos = { x + 4, 0 }, size = { w - 8, row.size.h } })
-    holder:addAdaptedText(text, nil, nil, nil, LEFTMID, 0.65, nil, nil)
+-- a joint's value when its line is missing: what the game's modmaker writes for a new joint, the values
+-- nearly every mod's joints have (a scan of data/mod: axis 0 0 0, range 0 0, strength / velocity 0,
+-- visible 0, jointtype 0). There's no getter for env joints to read the live value from
+local DEFAULTS = { axis = "0 0 0", range = "0 0", strength = "0", velocity = "0", visible = "0", jointtype = "0" }
+
+---@param joint FileParserEnvObjJoint|FileParserEnvObj Rows.sharedChoice's callbacks are typed for objects
+---@param key string
+---@return string? the line's value, or its default (nil for pos: no default anchor)
+local function valueOf(joint, key)
+    return joint.props[key] or DEFAULTS[key]
 end
 
 ---Placeholder for number `index` of a prop that has `count` numbers
@@ -54,7 +57,7 @@ end
 ---@return string
 local function hintOf(joints, key, index, count)
     return Rows.sharedChoice(joints, function(joint)
-        local value = joint.props[key]
+        local value = valueOf(joint, key)
         if value == nil then return "-" end
         return Rows.formatHint(Joints.parseNumbers(value, count)[index])
     end) or "-"
@@ -129,31 +132,41 @@ local function setAll(key, value)
     Joints.setProps(selectedJoints(), key, function() return value end)
 end
 
----First row: which joints the panel edits
+---Pos row: the selected joints' center (the gizmo's pivot), a typed axis moves them together so the
+---center gets there. Joints without a pos line get the typed value (nothing to move from)
 ---@param holder UIElement
 ---@param joints FileParserEnvObjJoint[]
-local function buildHeading(holder, joints)
-    local single = #joints == 1 and joints[1] or nil
-    local row, x, w = Rows.createRow(single and "Joint " .. single.id or #joints .. " joints", holder)
-    local text
-    if single then
-        local max = MGE.MAX_NONSTATIC_OBJECTS
-        if single.obj1 > max or single.obj2 > max then
-            text = "Ignored by the game: objects above id " .. max .. " (Reindex)"
-        else
-            text = "Links objects " .. single.obj1 .. " and " .. single.obj2 .. " (Link tab)"
+local function buildPos(holder, joints)
+    local target = Joints.target(joints)
+    local row, x, w = Rows.createRow("Pos", holder,
+        "Anchor: where the game joins the two objects, in\n" ..
+        "world coordinates. Several joints: their center,\n" ..
+        "they move together. Mid: each halfway between its\n" ..
+        "objects. The Move gizmo (Shift + Q) drags them.")
+    local hints = target and Rows.formatHints(target.pivot()) or { "-", "-", "-" }
+    inwuts.jointPos = layoutRow(row, x, w, {
+        { hint = hints[1] }, { hint = hints[2] }, { hint = hints[3] },
+        { button = "Mid", w = 38, onClick = function() Joints.centerPos(selectedJoints()) end },
+    }, function(inputs, index)
+        local value = tonumber(inputs[index].textfieldstr[1])
+        if not value then return end
+        local list = selectedJoints()
+        local now = Joints.target(list) -- read again: a reload replaces the joint tables
+        if not now then
+            Joints.setComponent(list, "pos", index, 3, value)
+            return
         end
-    else
-        text = "A value typed here applies to all of them"
-    end
-    addRowText(row, x, w, text)
+        local offset = { 0, 0, 0 }
+        offset[index] = value - now.pivot()[index]
+        now.moveBy(offset)
+    end)
 end
 
 ---Type row: the jointtype line, a whole number
 ---@param holder UIElement
 ---@param joints FileParserEnvObjJoint[]
 local function buildType(holder, joints)
-    local hint = Rows.sharedChoice(joints, function(joint) return joint.props.jointtype or "-" end) or "-"
+    local hint = Rows.sharedChoice(joints, function(joint) return valueOf(joint, "jointtype") end) or "-"
     inwuts.jointType = Rows.createInputRow("Type", holder, function(inputs)
         local value = tonumber(inputs[1].textfieldstr[1])
         if value then setAll("jointtype", tostring(math.floor(value))) end
@@ -164,12 +177,12 @@ end
 ---@param holder UIElement
 ---@param joints FileParserEnvObjJoint[]
 local function buildVisible(holder, joints)
-    local visible = Rows.sharedChoice(joints, function(joint) return joint.props.visible or "-" end)
+    local visible = Rows.sharedChoice(joints, function(joint) return valueOf(joint, "visible") end)
     Rows.createChoiceRow("Visible", holder, {
         { label = "Visible", value = "1" },
         { label = "Hidden", value = "0" },
     }, visible, function(value) setAll("visible", value) end,
-        "The visible line, lit when all selected joints\nhave it. Without the line the game decides.")
+        "The visible line, lit when all selected joints\nhave it. Without the line: hidden.")
 end
 
 ---@param holder UIElement
@@ -183,12 +196,7 @@ local function buildJoints(holder)
         return
     end
 
-    buildHeading(holder, joints)
-    numberRow(holder, joints, "Pos", "jointPos", "pos", 3,
-        "Anchor: where the game joins the two objects, in\n" ..
-        "world coordinates. Mid: halfway between them.\n" ..
-        "The Move gizmo (Shift + Q) drags it in the world.",
-        { { button = "Mid", w = 38, onClick = function() Joints.centerPos(selectedJoints()) end } })
+    buildPos(holder, joints)
     local function axisButton(label, value)
         return { button = label, w = 24, onClick = function() setAll("axis", value) end }
     end

@@ -132,33 +132,43 @@ local function drawPlayerHighlight(player, scale)
 end
 
 local JOINT_ANCHOR_RADIUS = 0.12
+-- the halo's radius: what a click on a joint's anchor hits (utils/world_select.lua, WorldSelect.pickJoint)
+Highlight.anchorPickRadius = JOINT_ANCHOR_RADIUS * 2
 
----A joint's anchor: a solid core in the preview color, a translucent halo so it reads inside objects
-local function drawAnchor(x, y, z)
+---A joint's anchor: a solid core in the preview color, a translucent halo so it reads inside objects.
+---Faint: an unselected joint on the Joints list, there to be clicked
+---@param faint boolean?
+local function drawAnchor(x, y, z, faint)
     local c = Highlight.previewColor
-    set_color(c[1], c[2], c[3], 1.0)
+    set_color(c[1], c[2], c[3], faint and 0.35 or 1.0)
     draw_sphere(x, y, z, JOINT_ANCHOR_RADIUS)
-    set_color(c[1], c[2], c[3], 0.3)
+    set_color(c[1], c[2], c[3], faint and 0.1 or 0.3)
     draw_sphere(x, y, z, JOINT_ANCHOR_RADIUS * 2)
 end
 
 ---A joint's anchor, where a Move gizmo drag has it so far (Joints.anchorOf)
 ---@param joint FileParserEnvObjJoint
-local function drawJointAnchor(joint)
+---@param faint boolean?
+local function drawJointAnchor(joint, faint)
     local p = MGE.Joints.anchorOf(joint)
-    if p then drawAnchor(p[1], p[2], p[3]) end
+    if p then drawAnchor(p[1], p[2], p[3], faint) end
 end
 
----Joints list: every object a selected joint links gets the object highlight, each joint's anchor (its
----pos line, where the game joins the two) a sphere in the preview color
----@param joints FileParserEnvObjJoint[]
+---Joints list: every object a selected joint links gets the object highlight, each selected joint's
+---anchor (its pos line, where the game joins the two) a sphere in the preview color. The other joints'
+---anchors are faint, a click on one selects it
+---@param joints FileParserEnvObjJoint[] the selected ones
 local function drawJointHighlights(joints)
-    local objects = {}
+    local objects, selected = {}, {}
     for _, joint in ipairs(joints) do
+        selected[joint] = true
         if joint.obj1 then objects[joint.obj1] = true end
         if joint.obj2 then objects[joint.obj2] = true end
     end
     for id in pairs(objects) do drawObjectHighlight(id - 1) end
+    for _, joint in ipairs(ModData.parsed.env_obj_joint) do
+        if not selected[joint] then drawJointAnchor(joint, true) end
+    end
     for _, joint in ipairs(joints) do drawJointAnchor(joint) end
 end
 
@@ -166,7 +176,7 @@ local HOVER_COLOR = { 1.0, 1.0, 1.0 } -- what a click would pick (or take out)
 
 ---The Link tab's draft (Joints.draftFor): the picked objects in the selection color, the object under
 ---the cursor in white. A joint shows its anchor (Update keeps it), a new one where Create would put it
----(halfway between the two)
+---(halfway between the two). The other joints' anchors are faint, a click on one selects it
 ---@param slot integer
 local function drawLinkHighlights(slot)
     local Joints = MGE.Joints
@@ -175,6 +185,9 @@ local function drawLinkHighlights(slot)
     if draft.obj1 then drawObjectHighlight(draft.obj1 - 1) end
     if draft.obj2 then drawObjectHighlight(draft.obj2 - 1) end
     if hover then drawObjectHighlight(hover.id - 1, HOVER_COLOR) end
+    for _, other in ipairs(ModData.parsed.env_obj_joint) do
+        if other.id ~= slot then drawJointAnchor(other, true) end
+    end
     local joint = Joints.find(slot)
     if joint then
         drawJointAnchor(joint)

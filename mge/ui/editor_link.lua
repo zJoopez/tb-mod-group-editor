@@ -6,9 +6,11 @@
 --   row 0:    the slot and what the draft would do
 --   rows 1-6: objects 1-MAX_NONSTATIC_OBJECTS (the ones the game joins), picked ones pale. Higher ids
 --             can be clicked in the world (Reindex moves them down)
---   row 7:    Create / Update, Delete, Reset (the saved link). Create with nothing picked makes two
+--   row 7:    Create / Update, Reset (the saved link; Delete is in the list's bar). Create with nothing picked makes two
 --             default objects joined in the slot
--- Has its own buttons instead of the editor's Reset inputs footer (PANELS in ui/editor.lua)
+-- Has its own buttons instead of the editor's Reset inputs footer (PANELS in ui/editor.lua).
+-- Like the Properties tab, a click on a joint's anchor selects that joint (it becomes the current
+-- slot) and the Move gizmo drags the selected joints' anchors: those come before picking objects
 
 local Rows = MGE.EditorRows
 local Widgets = MGE.Widgets
@@ -114,7 +116,7 @@ local function commit(slot)
     end
 end
 
----Last row: Create / Update (lit when it would do something), Delete, Reset
+---Last row: Create / Update (lit when it would do something), Reset
 ---@param holder UIElement
 ---@param slot integer
 ---@param draft JointDraft
@@ -124,9 +126,6 @@ local function buildButtons(holder, slot, draft, state)
     local row = holder:addChild({ pos = { 0, (ROWS - 1) * ROW_H + 2 }, size = { holder.size.w, ROW_H - 4 } })
     local buttons = Widgets.buttonRow(row, 0, row.size.h, {
         { label = joint and "Update" or "Create", onClick = function() commit(slot) end },
-        { label = "Delete", onClick = function()
-            if Joints.find(slot) then MGE.JointList.deleteSelected() end -- asks first
-        end },
         { label = "Reset", onClick = function()
             Joints.resetDraft()
             Joints.onDraftChanged()

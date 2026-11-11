@@ -5,7 +5,7 @@
 --   thrust:   ui/editor_thrust.lua    Frames, Direction, Axes (World / Object / Off)
 --   generate: ui/editor_generate.lua  Align, Amount, Gap, Angle, Size, Increment, Position, Generate / To view
 --   player:   ui/editor_player.lua    Pos, Rot, Scale, parts of the selected players (the Players list's Core tab)
---   jointLink: ui/editor_link.lua     the 2 linked objects (grid), Create / Update, Delete, Reset (the Joints list's Link tab)
+--   jointLink: ui/editor_link.lua     the 2 linked objects (grid), Create / Update, Reset (the Joints list's Link tab)
 --   joint:    ui/editor_joint.lua     Pos, Axis, Range, Strength, Velocity, Type (the Joints list's Properties tab)
 -- Shared row widgets are in ui/editor_rows.lua, the transform math in utils/transforms.lua.
 -- Every block of rows has its own holder. Fixed blocks are built once (typed values stay), the

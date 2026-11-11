@@ -13,8 +13,8 @@
 -- to the screen and adds up mouse deltas, which breaks off screen and drifts.
 --
 -- Works on a GizmoTarget: the selected objects (Transforms), on the Players list the selected
--- player (utils/players.lua: Move, Rotate, Scale with the white cube only), on the Joints list's
--- Properties tab the selected joints' anchors (utils/joints.lua: Move only).
+-- player (utils/players.lua: Move, Rotate, Scale with the white cube only), on the Joints list the
+-- selected joints' anchors (utils/joints.lua: Move only).
 -- A drag only changes the live world (target.previewMove / previewRotate). Releasing applies it
 -- once like the Move / Rotate / Resize rows do (target.moveBy / rotateByMatrix / scaleBy): one undo
 -- step (Shift + Z takes the drag back), joints follow, editor rows refresh. Ctrl snaps: Gizmo.moveStep,
@@ -117,8 +117,8 @@ local function gizmoTarget()
     -- the gizmo draws in draw2d, on top of everything: hidden (and not grabbable) under an overlay
     if MGE.overlayOpen and MGE.overlayOpen() then return nil end
     if Main.listTab == "joints" then
-        -- the selected joints' anchors, Move only, on the Properties tab (the Link tab's clicks pick objects)
-        if Gizmo.mode ~= "move" or Main.activeTabs.joints ~= "joint" then return nil end
+        -- the selected joints' anchors, Move only, on both of the list's tabs
+        if Gizmo.mode ~= "move" then return nil end
         return MGE.Joints.target(Main.selectedJointList())
     end
     if Main.listTab == "players" then

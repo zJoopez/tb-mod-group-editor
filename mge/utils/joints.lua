@@ -284,7 +284,7 @@ function Joints.setComponent(joints, key, index, count, value)
     end)
 end
 
--- Move gizmo on the Joints list's Properties tab (utils/gizmo.lua): drags the selected joints' anchors.
+-- Move gizmo on the Joints list, both tabs (utils/gizmo.lua): drags the selected joints' anchors.
 -- Joints have no live position, so a drag only offsets the drawn anchors (Joints.posPreview, read by
 -- Joints.anchorOf and utils/highlight.lua); the release writes the pos lines, one undo step and a reload
 

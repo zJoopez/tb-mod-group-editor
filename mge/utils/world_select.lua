@@ -1,7 +1,8 @@
 -- Click objects in the world to select them: click selects only that object, Shift + click adds /
 -- removes it (ModData.clickSelect, same as the object list). On the Players list a click picks the
--- player under the cursor instead (pickPlayer). On the Joints list it selects the clicked object's
--- joints, or on its Link tab it fills the selected slot's draft (Joints.offerDraft).
+-- player under the cursor instead (pickPlayer). On the Joints list a click on a joint's anchor selects
+-- that joint (pickJoint); a click on an object picks it for the current slot's draft on the Link tab
+-- (Joints.offerDraft), on the Properties tab it selects the object's joints.
 --
 -- The click is turned into a camera ray by MGE itself and intersected exactly with every object's
 -- shape (box, sphere, capsule). The nearest hit along the ray wins, so objects in front block the
@@ -224,6 +225,25 @@ function WorldSelect.pick(x, y)
     return best
 end
 
+---Joint whose anchor (the sphere the highlight draws, Highlight.anchorPickRadius) is under the screen
+---position, nearest along the camera ray. Must be called from draw3d. Joints without a pos line have
+---no anchor to click
+---@param x number
+---@param y number
+---@return FileParserEnvObjJoint?
+function WorldSelect.pickJoint(x, y)
+    local origin, dir = WorldSelect.cameraRay(x, y)
+    if not origin or not dir then return nil end
+    local radius = MGE.Highlight.anchorPickRadius
+    local best, bestT = nil, math.huge
+    for _, joint in ipairs(ModData.parsed.env_obj_joint) do
+        local p = joint.id and MGE.Joints.anchorOf(joint)
+        local t = p and hitSphere(origin, dir, p, radius)
+        if t and t < bestT then best, bestT = joint, t end
+    end
+    return best
+end
+
 -- player body part shapes (BodyInfo.shape): sphere x radius, box full sides, cylinder (pill) x radius
 -- y length along its z, like objects
 local BODY_SPHERE, BODY_CYLINDER = 0, 2
@@ -354,8 +374,10 @@ add_hook("draw3d", HOOK_SET, function()
     if not linkSlot() then
         pendingHover, WorldSelect.hover = nil, nil
     elseif pendingHover then
+        -- over a joint's anchor a click selects the joint instead of picking an object: no object hover
+        local okJoint, joint = pcall(WorldSelect.pickJoint, pendingHover.x, pendingHover.y)
         local ok, obj = pcall(WorldSelect.pick, pendingHover.x, pendingHover.y)
-        WorldSelect.hover = ok and obj or nil
+        WorldSelect.hover = ok and not (okJoint and joint) and obj or nil
         pendingHover = nil
     end
     local click = pendingClick
@@ -369,6 +391,20 @@ add_hook("draw3d", HOOK_SET, function()
             MGE.Main.selectPlayer(player, click.additive) -- Shift + click adds / removes, like objects
         end
         return
+    end
+    if MGE.Main.listTab == "joints" then
+        -- a click on a joint's anchor selects that joint (Shift adds / removes it, like its cell), on both
+        -- tabs. Before objects: anchors sit on the faces between them, the ray reaches an object first
+        local okJoint, joint = pcall(WorldSelect.pickJoint, click.x, click.y)
+        if not okJoint then
+            echo("[MGE] world select error: " .. tostring(joint))
+            return
+        end
+        if joint then
+            MGE.Main.selectJoint(joint.id, click.additive)
+            MGE.Main.updateWindow() -- the list's cells follow (a cell click restyles them itself)
+            return
+        end
     end
     local ok, obj = pcall(WorldSelect.pick, click.x, click.y)
     if not ok then

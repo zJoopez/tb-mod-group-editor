@@ -88,8 +88,9 @@ function joint_list.create(view)
         pos = { 0, 0 },
         size = { view.size.w, view.size.h },
     })
-    -- the object list's bottom bar, same icons and order: Select all, New, Duplicate, Delete (no
-    -- Import / Export: joints come with the objects they link)
+    -- the object list's bottom bar, same icons: Select all and Delete only. A new joint is an empty slot
+    -- picked in the grid (Create on the Link tab), Ctrl + N / D still pick the lowest empty slot /
+    -- duplicate; no Import / Export: joints come with the objects they link
     local barH = ScrollList.rowHeight
     local botBar = toReload:addChild({
         pos = { 0, -barH },
@@ -100,11 +101,7 @@ function joint_list.create(view)
     local barIcons = Widgets.barButtons(botBar, {
         { label = "Select all joints, or only the current slot (Ctrl + A)", icon = MGE.scriptPath .. "textures/selectall.tga", wide = true,
             onClick = function() Main.toggleSelectAllJoints() end },
-        { label = "New joint (Ctrl + N): the lowest empty slot\non the Link tab. 1 or 2 objects selected on\nthe Objects list are picked already",
-            icon = "../textures/menu/general/buttons/addsign.tga", wide = true, onClick = joint_list.newJoint },
-        { label = "Duplicate selected joints (Ctrl + D)", icon = MGE.scriptPath .. "textures/duplicate.tga", wide = true,
-            onClick = joint_list.duplicate },
-        -- last, away from the others
+        -- last, away from Select all
         { label = "Delete selected joints (Del)", icon = "../textures/menu/general/buttons/trash.tga", wide = true,
             onClick = joint_list.deleteSelected }, -- asks first
     })
