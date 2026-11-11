@@ -1,5 +1,7 @@
 -- Generate tab: lines, ramps, loops, stairs and pyramids made of default objects (geometry in utils/shape_gen.lua),
--- placed in front of the camera, or where the Position row says
+-- placed in front of the camera, or where the Position row says. Amount's second field joins each two
+-- neighbouring pieces: 1 joint between their centers, 2 at their edges like a door's hinges
+-- (ShapeGen.joints). Joined pieces are made dynamic, static ones wouldn't move at the joints
 local Rows = MGE.EditorRows
 local inwuts = Rows.inputs
 local formatHints = Rows.formatHints
@@ -11,7 +13,11 @@ local Transforms = MGE.Transforms
 
 -- used for empty Generate fields, shown as their placeholders
 local GENERATE_AMOUNT = 8
+local GENERATE_JOINTS = 0 -- joints between each two neighbouring pieces: 0, 1 or 2
 local GENERATE_ANGLE = 90
+
+-- inwuts.generate indexes: Amount (pieces, joints), Gap, Angle, Size x y z, Increment x y z
+local FIELD = { amount = 1, joints = 2, gap = 3, angle = 4, size = 4, increment = 7 } -- size / increment: + axis
 local MAX_GENERATE = 200 -- more than any mod has room for, stops a typo from planning thousands
 
 ---@type GenerateAlign kept while the script runs
@@ -63,25 +69,34 @@ end
 ---@return GeneratePiece[]? pieces
 ---@return string? error why nothing can be generated
 ---@return number[]? center where the shape is, Pos-row style
+---@return GenerateJoint[]? joints between neighbouring pieces, where they end up
 local function planFromFields()
     local fields = inwuts.generate or {}
     local function typed(i) return fields[i] and not fields[i].destroyed and tonumber(fields[i].textfieldstr[1]) end
-    local amount = math.floor((typed(1) or GENERATE_AMOUNT) + 0.5)
+    local amount = math.floor((typed(FIELD.amount) or GENERATE_AMOUNT) + 0.5)
     if amount < 2 or amount > MAX_GENERATE then -- one piece is what the list's New button adds
         return nil, "amount must be 2-" .. MAX_GENERATE
     end
+    local perPair = math.floor((typed(FIELD.joints) or GENERATE_JOINTS) + 0.5)
+    if perPair < 0 or perPair > 2 then
+        return nil, "joints between two pieces must be 0, 1 or 2"
+    end
+    local jointCount, free = (amount - 1) * perPair, #MGE.Joints.freeIds()
+    if jointCount > free then
+        return nil, jointCount .. " joints needed, " .. free .. " free (max " .. MGE.MAX_ENV_JOINTS .. "), use fewer pieces"
+    end
     local sides, increment = defaultSides(), {}
     for i = 1, 3 do
-        local value = typed(3 + i)
+        local value = typed(FIELD.size + i)
         if value and value > 0 then sides[i] = math.max(value, MGE.MIN_SIDE) end
-        increment[i] = typed(6 + i) or 0
+        increment[i] = typed(FIELD.increment + i) or 0
     end
     local most = MGE.ShapeGen.maxPieces(sides, increment)
     if most and amount > most then
         return nil, "the increment shrinks pieces to nothing after " .. most .. " pieces, use fewer or a smaller increment"
     end
     local ShapeGen = MGE.ShapeGen
-    local pieces, bounds = ShapeGen.plan(amount, typed(2) or 0, typed(3) or GENERATE_ANGLE, sides,
+    local pieces, bounds = ShapeGen.plan(amount, typed(FIELD.gap) or 0, typed(FIELD.angle) or GENERATE_ANGLE, sides,
         { 0, 0 }, { increment = increment, align = align })
     if not anchor then anchorToView() end
     ---@cast anchor -nil
@@ -98,12 +113,13 @@ local function planFromFields()
     end
     local shown = {}
     for k = 1, 3 do shown[k] = center[k] + shift[k] - origin[k] end
-    return pieces, nil, shown
+    return pieces, nil, shown, ShapeGen.joints(pieces, perPair) -- from the placed pieces
 end
 
--- Preview: the pieces Generate would add, drawn by utils/highlight.lua while the Generate tab is open.
--- Planned again only when a field's text, Align or the view line changes, the draw hook asks every frame
-local previewKey, previewPieces
+-- Preview: the pieces Generate would add and their joints' anchors, drawn by utils/highlight.lua while
+-- the Generate tab is open. Planned again only when a field's text, Align or the view line changes, the
+-- draw hook asks every frame
+local previewKey, previewPieces, previewAnchors
 local previewShown = false -- false while the tab is closed, opening it takes the view line again
 ---@type string[] placeholders of the Position row: where the shape is, empty fields keep it there
 local positionHints = { "0.00", "0.00", "0.00" }
@@ -143,34 +159,46 @@ MGE.Highlight.preview = function()
     local key = fieldsKey()
     if key ~= previewKey then
         previewKey = key
-        local center
-        previewPieces, _, center = planFromFields() -- nil when the values can't be generated, nothing is drawn
+        local center, joints
+        previewPieces, _, center, joints = planFromFields() -- nil when the values can't be generated, nothing is drawn
+        previewAnchors = {}
+        for i, joint in ipairs(joints or {}) do previewAnchors[i] = joint.pos end
         showPosition(center)
     end
-    return previewPieces
+    return previewPieces, previewAnchors
 end
 
----Generate button / Enter: adds the shape, made of the default object made static
+---Generate button / Enter: adds the shape, made of the default object: static, or dynamic when joints
+---join the pieces (static ones wouldn't move at the joints). The joints come in the same undo step
 local function generate()
-    local pieces, err = planFromFields()
+    local pieces, err, _, joints = planFromFields()
     if not pieces then
         print("Generate: " .. err)
         return
     end
+    joints = joints or {}
 
     local objects = {}
     for i, piece in ipairs(pieces) do
         local obj = { kind = "env_obj", id = i, props = MGE.Assets.defaultProps() }
-        obj.props.flag = tostring(MGE.FLAGS.STATIC) -- a ramp stays in place, and static ids are plenty
+        -- a ramp stays in place, and static ids are plenty. Joined pieces move: dynamic
+        obj.props.flag = #joints > 0 and "0" or tostring(MGE.FLAGS.STATIC)
         Transforms.writeVector(obj, "pos", piece.pos)
         Transforms.writeVector(obj, "rot", piece.rot)
         Transforms.writeVector(obj, "sides", piece.sides)
         objects[i] = obj
     end
+    -- the pieces' ids here are their indexes, the import gives them and the joints real ids. Visible so
+    -- the joints show in game (the Joints list's Properties tab can hide them)
+    local jointBlocks = {}
+    for i, joint in ipairs(joints) do
+        jointBlocks[i] = { kind = "env_obj_joint", id = i, obj1 = joint.a, obj2 = joint.b, lines = {},
+            props = { pos = MGE.FileHandler.formatNumbers(joint.pos[1], joint.pos[2], joint.pos[3]), visible = "1" } }
+    end
     -- selected and saved like an import, the tab stays so values can be tried again after Undo
-    MGE.Assets.addObjects(objects, true)
+    MGE.Assets.addObjects(objects, true, nil, jointBlocks)
     -- the shape is there now (highlighted as the selection), the preview comes back when a value changes
-    previewKey, previewPieces = fieldsKey(), nil
+    previewKey, previewPieces, previewAnchors = fieldsKey(), nil, nil
 end
 
 ---Align row (generate panel), rebuilt on a click so the current choice is highlighted
@@ -200,7 +228,11 @@ local function buildGenerate(holder)
     local function add(row)
         for _, input in ipairs(row) do table.insert(inputs, input) end
     end
-    add(createInputRow("Amount", holder, apply, { tostring(GENERATE_AMOUNT) }, "Pieces in the shape. Enter in any field generates."))
+    add(createInputRow("Amount", holder, apply, { GENERATE_AMOUNT .. " obj", GENERATE_JOINTS .. " joint" },
+        "Pieces in the shape, and joints between each two\n" ..
+        "neighbours: 1 between their centers, 2 at their\n" ..
+        "edges (a hinge). Joined pieces are made dynamic.\n" ..
+        "Enter in any field generates."))
     add(createInputRow("Gap", holder, apply, { "0.00" }, "Space between pieces, negative overlaps."))
     add(createInputRow("Angle", holder, apply, { tostring(GENERATE_ANGLE) },
         "Total bend: 0 line, 90 quarter pipe, 360 loop."))
@@ -228,7 +260,7 @@ local function buildButtons(holder)
     createToggleButtonRow("", holder, {
         { label = "Generate", active = false, onClick = generate },
         { label = "To view", active = false, onClick = toView },
-    }, "Generate: adds the orange preview as static pieces\nand selects them.\n" ..
+    }, "Generate: adds the orange preview (static pieces, or\ndynamic ones joined) and selects them.\n" ..
         "To view: moves the preview in front of the camera\n(also done when this tab opens), clears Position.")
 end
 

@@ -12,7 +12,8 @@ local Mat3 = MGE.Mat3
 -- Increment is added to the sides of each next piece, so piece i (from 0) has sides + i * increment:
 -- with angle 0, a Z increment and out alignment the pieces are stairs, adding the same Y increment
 -- with center alignment makes a stepped pyramid lying along X. Y is always centered.
--- The Generate tab then moves the shape in front of the camera (Camera.spawnPoint, moveTo).
+-- The Generate tab then moves the shape in front of the camera (Camera.spawnPoint, moveTo), and can
+-- join each two neighbouring pieces with 1 or 2 joints (ShapeGen.joints).
 
 ---Rotation by t radians around the unit vector u (Rodrigues)
 ---@param u number[]
@@ -141,6 +142,39 @@ function ShapeGen.moveTo(pieces, bounds, point)
     end
 end
 
+
+---@class GenerateJoint
+---@field a integer index of the first piece (from 1)
+---@field b integer index of the next piece
+---@field pos number[] anchor
+
+---Joints between each two neighbouring pieces. 1 per pair: halfway between their centers (like
+---Joints.midpoint). 2 per pair: that point moved to both edges along the pieces' width axis (their Y,
+---the line the bend turns around), a hinge like a door's. The edge is the narrower piece's
+---@param pieces GeneratePiece[] planned and placed
+---@param perPair integer 0, 1 or 2
+---@return GenerateJoint[]
+function ShapeGen.joints(pieces, perPair)
+    local joints = {}
+    if perPair < 1 then return joints end
+    for i = 1, #pieces - 1 do
+        local p, q = pieces[i], pieces[i + 1]
+        local mid = {}
+        for k = 1, 3 do mid[k] = (p.pos[k] + q.pos[k]) / 2 end
+        if perPair == 1 then
+            table.insert(joints, { a = i, b = i + 1, pos = mid })
+        else
+            local half = math.min(p.sides[2], q.sides[2]) / 2
+            local width = { p.frame[1][2], p.frame[2][2], p.frame[3][2] } -- the piece's Y axis (a frame column)
+            for _, sign in ipairs({ -1, 1 }) do
+                local pos = {}
+                for k = 1, 3 do pos[k] = mid[k] + sign * half * width[k] end
+                table.insert(joints, { a = i, b = i + 1, pos = pos })
+            end
+        end
+    end
+    return joints
+end
 
 ShapeGen.plan = planGenerate
 ShapeGen.maxPieces = maxPieces

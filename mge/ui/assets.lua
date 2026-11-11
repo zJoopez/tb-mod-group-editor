@@ -368,8 +368,10 @@ end
 ---@param objects FileParserEnvObj[]
 ---@param keepTab boolean? see importObjects
 ---@param inView boolean? see importObjects
-function assetsView.addObjects(objects, keepTab, inView)
-    importObjects({ env_obj = objects, env_obj_joint = {}, ignores = {} }, keepTab, inView)
+---@param joints FileParserEnvObjJoint[]? joints between the objects (their obj1 / obj2 are the objects'
+---ids here), they get new ids with them (Generate's joined pieces)
+function assetsView.addObjects(objects, keepTab, inView, joints)
+    importObjects({ env_obj = objects, env_obj_joint = joints or {}, ignores = {} }, keepTab, inView)
 end
 
 ---New button of the object list: adds DEFAULT_OBJECT in front of the camera, like an import

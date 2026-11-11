@@ -15,7 +15,7 @@ local Highlight = {
     fillAlpha = 0.25,
     previewColor = { 1.0, 0.6, 0.0 },
     previewAlpha = 0.2,
-    ---@type (fun(): HighlightBox[]?)? set by the Generate tab, boxes to draw this frame
+    ---@type (fun(): HighlightBox[]?, number[][]?)? set by the Generate tab, boxes and joint anchors to draw this frame
     preview = nil,
     errorShown = false,
 }
@@ -211,8 +211,10 @@ add_hook("draw3d", MGE.hookname, function()
                 drawObjectHighlight(obj.id - 1)
             end
         end
-        local boxes = Highlight.preview and Highlight.preview()
+        local boxes, anchors
+        if Highlight.preview then boxes, anchors = Highlight.preview() end
         for _, box in ipairs(boxes or {}) do drawPreviewBox(box) end
+        for _, p in ipairs(anchors or {}) do drawAnchor(p[1], p[2], p[3]) end -- Generate's joints
     end)
     if not ok and not Highlight.errorShown then -- report once instead of spamming every frame
         Highlight.errorShown = true
