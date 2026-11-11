@@ -27,7 +27,7 @@ local Camera = {
     -- size at their center, so a selection with a ground object still shows the other objects
     maxObjectRadius = 10,
     zoomStep = 1.15,     -- distance factor per mouse wheel step
-    zoomMin = 0.5,
+    zoomMin = 1,
     zoomMax = 200,       -- also the furthest framing distance (objects spread very far apart)
     orbitSpeed = 0.008,  -- radians per dragged pixel
     maxPitch = math.rad(85),
@@ -44,7 +44,7 @@ local Camera = {
     ---@type number[]? look-at point
     target = nil,
     yaw = 0,             -- direction from the target to the camera
-    pitch = 0,
+    pitch = 0.0,         -- radians, kept above the floor (Camera.minPitch)
 }
 
 ---@type { x: number, y: number, dragging: boolean, button: integer }?
@@ -166,9 +166,30 @@ function Camera.spawnShift(bounds, point)
     }
 end
 
----Places the camera from target, yaw, pitch and distance
+-- The game won't put the camera under the floor: a camera MGE places below it is pushed back up, right
+-- next to the target, and the gizmo (sized from the camera distance, drawn from the camera's real
+-- position) collapses to nothing. So the orbit stops this far above the floor (0.3 worked but stopped
+-- the view noticeably early)
+Camera.minHeight =  0
+
+---Lowest pitch that keeps a camera at `distance` from `target` at least minHeight above the floor.
+---Looking up from below is still possible while the target is high enough
+---@param target number[]
+---@param distance number
+---@return number pitch radians (from -maxPitch to maxPitch)
+function Camera.minPitch(target, distance)
+    if distance <= 1e-6 then return -Camera.maxPitch end
+    local s = (Camera.GROUND_Z + Camera.minHeight - target[3]) / distance -- sin(pitch) at the floor
+    if s <= -1 then return -Camera.maxPitch end
+    if s >= 1 then return Camera.maxPitch end -- target far underground: as high as the camera goes
+    return math.min(math.max(math.asin(s), -Camera.maxPitch), Camera.maxPitch)
+end
+
+---Places the camera from target, yaw, pitch and distance, kept above the floor (Camera.minPitch). The
+---pitch itself is raised, so a drag further down doesn't build up and the drag back up answers at once
 local function place()
     local t, d = Camera.target, Camera.distance
+    Camera.pitch = math.max(Camera.pitch, Camera.minPitch(t, d))
     local cp = math.cos(Camera.pitch)
     set_camera_lookat(t[1], t[2], t[3])
     set_camera_pos(t[1] + math.cos(Camera.yaw) * cp * d, t[2] + math.sin(Camera.yaw) * cp * d,
