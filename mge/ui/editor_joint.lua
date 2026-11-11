@@ -3,20 +3,17 @@
 -- joint links is set on the Link tab (ui/editor_link.lua)
 --   Pos:      the anchor, where the game joins them. Like the Core tab's Pos: the selected joints'
 --             center, a typed axis moves them together so the center gets there (as the Move gizmo
---             does, Joints.target in utils/joints.lua). Mid puts each halfway between its two objects
---   Axis:     the hinge axis, X / Y / Z set a world axis
+--             does, Joints.target in utils/joints.lua). Recenter (the last row) puts each halfway between its two objects
+--   Axis:     the axis line, typed as the file writes it
 --   Range, Strength, Velocity, Type (jointtype), Visible: the env_obj_joint lines of those names, a row each
 -- Placeholders show the current values: "mixed" when the joints differ, DEFAULTS for a missing line.
 -- Selected empty slots are left out
 
 local Rows = MGE.EditorRows
-local Widgets = MGE.Widgets
 local Joints = MGE.Joints
 local inwuts = Rows.inputs
 
 local ROWS = 8 -- the panel's height in rows (PANELS in ui/editor.lua)
-local BUTTON_W = 34
-local GAP = 4
 
 local INPUT_LISTS = { "jointPos", "jointAxis", "jointRange", "jointStrength", "jointVelocity", "jointType" }
 
@@ -63,49 +60,8 @@ local function hintOf(joints, key, index, count)
     end) or "-"
 end
 
----@class JointRowSegment
----@field hint string? an input with this placeholder
----@field button string? a button with this label
----@field w number? button width, defaults to BUTTON_W
----@field lit boolean? button highlighted like a current choice
----@field popup string? button hover text
----@field onClick function?
-
----Inputs and buttons side by side in a row's content space, the inputs share the width the buttons leave
----@param row UIElement
----@param x number
----@param w number
----@param segments JointRowSegment[]
----@param onEnter fun(inputs: UIElement[], index: integer) index counts inputs only
----@return UIElement[] inputs in order
-local function layoutRow(row, x, w, segments, onEnter)
-    local buttonsW, inputCount = 0, 0
-    for _, segment in ipairs(segments) do
-        if segment.button then buttonsW = buttonsW + (segment.w or BUTTON_W) else inputCount = inputCount + 1 end
-    end
-    local inputW = inputCount > 0 and (w - buttonsW - GAP * (#segments - 1)) / inputCount or 0
-    local inputs = {}
-    local cx = x
-    for _, segment in ipairs(segments) do
-        if segment.button then
-            local bw = segment.w or BUTTON_W
-            local btn = Widgets.button(row, { x = cx, y = 2, w = bw, h = row.size.h - 4 }, segment.button,
-                segment.onClick, nil, Widgets.PANEL_STYLE)
-            if segment.lit then Rows.setHighlighted(btn, true) end
-            if segment.popup then TBMenu:displayPopup(btn, segment.popup) end
-            cx = cx + bw + GAP
-        else
-            local container = row:addChild({ pos = { cx, 0 }, size = { inputW, row.size.h }, interactive = true }, true)
-            local index = #inputs + 1
-            inputs[index] = Rows.createInput(container, function() onEnter(inputs, index) end, segment.hint)
-            cx = cx + inputW + GAP
-        end
-    end
-    return inputs
-end
-
----Row of one prop's numbers (pos x y z, range high low, strength), Enter sets that number on every
----selected joint, their other numbers stay
+---Row of one prop's numbers (axis x y z, range high low, strength), the same input row as the other
+---tabs (Rows.createInputRow). Enter sets that number on every selected joint, their other numbers stay
 ---@param holder UIElement
 ---@param joints FileParserEnvObjJoint[]
 ---@param label string
@@ -113,16 +69,13 @@ end
 ---@param key string prop
 ---@param count integer numbers in the prop
 ---@param help string
----@param buttons JointRowSegment[]? after the inputs
-local function numberRow(holder, joints, label, name, key, count, help, buttons)
-    local row, x, w = Rows.createRow(label, holder, help)
-    local segments = {}
-    for i = 1, count do segments[i] = { hint = hintOf(joints, key, i, count) } end
-    for _, button in ipairs(buttons or {}) do table.insert(segments, button) end
-    inwuts[name] = layoutRow(row, x, w, segments, function(inputs, index)
+local function numberRow(holder, joints, label, name, key, count, help)
+    local hints = {}
+    for i = 1, count do hints[i] = hintOf(joints, key, i, count) end
+    inwuts[name] = Rows.createInputRow(label, holder, function(inputs, index)
         local value = tonumber(inputs[index].textfieldstr[1])
         if value then Joints.setComponent(selectedJoints(), key, index, count, value) end
-    end)
+    end, hints, help)
 end
 
 ---Sets a whole prop to one value on the selected joints
@@ -138,16 +91,8 @@ end
 ---@param joints FileParserEnvObjJoint[]
 local function buildPos(holder, joints)
     local target = Joints.target(joints)
-    local row, x, w = Rows.createRow("Pos", holder,
-        "Anchor: where the game joins the two objects, in\n" ..
-        "world coordinates. Several joints: their center,\n" ..
-        "they move together. Mid: each halfway between its\n" ..
-        "objects. The Move gizmo (Shift + Q) drags them.")
     local hints = target and Rows.formatHints(target.pivot()) or { "-", "-", "-" }
-    inwuts.jointPos = layoutRow(row, x, w, {
-        { hint = hints[1] }, { hint = hints[2] }, { hint = hints[3] },
-        { button = "Mid", w = 38, onClick = function() Joints.centerPos(selectedJoints()) end },
-    }, function(inputs, index)
+    inwuts.jointPos = Rows.createInputRow("Pos", holder, function(inputs, index)
         local value = tonumber(inputs[index].textfieldstr[1])
         if not value then return end
         local list = selectedJoints()
@@ -159,7 +104,11 @@ local function buildPos(holder, joints)
         local offset = { 0, 0, 0 }
         offset[index] = value - now.pivot()[index]
         now.moveBy(offset)
-    end)
+    end, hints,
+        "Anchor: where the game joins the two objects, in\n" ..
+        "world coordinates. Several joints: their center,\n" ..
+        "they move together. The Move gizmo (Shift + Q)\n" ..
+        "drags them, Recenter puts each between its objects.")
 end
 
 ---Type row: the jointtype line, a whole number
@@ -197,12 +146,10 @@ local function buildJoints(holder)
     end
 
     buildPos(holder, joints)
-    local function axisButton(label, value)
-        return { button = label, w = 24, onClick = function() setAll("axis", value) end }
-    end
     numberRow(holder, joints, "Axis", "jointAxis", "axis", 3,
-        "Hinge axis direction. X / Y / Z set a world axis.",
-        { axisButton("X", "1 0 0"), axisButton("Y", "0 1 0"), axisButton("Z", "0 0 1") })
+        "The axis line, three numbers as the file writes\n" ..
+        "them (mods use both directions like 0 1 0 and\n" ..
+        "angles like 0 -90 0).")
     numberRow(holder, joints, "Range", "jointRange", "range", 2,
         "Rotation limits, high then low as the file writes\n" ..
         "them (e.g. 3.6 -3.6).")
@@ -212,6 +159,9 @@ local function buildJoints(holder)
         "The joint's motor velocity.")
     buildType(holder, joints)
     buildVisible(holder, joints)
+    Rows.createToggleButtonRow("", holder, {
+        { label = "Recenter", active = false, onClick = function() Joints.centerPos(selectedJoints()) end },
+    }, "Moves each selected joint's anchor halfway\nbetween the two objects it links.")
 end
 
 ---@type EditorPanelModule

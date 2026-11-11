@@ -194,19 +194,50 @@ function Joints.midpoint(obj1, obj2)
     return formatVector((a[1] + b[1]) / 2, (a[2] + b[2]) / 2, (a[3] + b[3]) / 2)
 end
 
----The game ignores joints to objects above the dynamic ids (mod_export.lua's id rules): says so
----@param jointId integer
+---The game doesn't join two static objects (the joint isn't shown and nothing moves): when a new link
+---joins two, both are made dynamic (the static bit cleared, other flags kept). One static object is
+---fine, the joint then holds the dynamic one to it. Call after the joints changed and before
+---fitLinkedIds (dynamic objects need ids 1-MAX_NONSTATIC_OBJECTS too) and History.commit. The flag is
+---read by the game when the mod loads, MGE.apply's reload applies it
+---@param obj1 integer object id
+---@param obj2 integer object id
+local function unstaticLinked(obj1, obj2)
+    local a, b = Joints.objectById(obj1), Joints.objectById(obj2)
+    if not a or not b or not ModData.isStatic(a, true) or not ModData.isStatic(b, true) then return end
+    local STATIC = MGE.FLAGS.STATIC
+    for _, obj in ipairs({ a, b }) do
+        local flag = tonumber(obj.props.flag) or get_obj_flag(obj.id - 1) or 0
+        obj.props.flag = tostring(flag - bit.band(flag, STATIC))
+    end
+    echo("^04[MGE] objects " .. obj1 .. " and " .. obj2 .. " were both static, made dynamic: the game doesn't join two static objects")
+end
+
+---The game ignores joints to objects above the dynamic ids (mod_export.lua's id rules). A new link to
+---such an object reindexes right away, like the Advanced tab's Reindex: joint-linked objects move to
+---ids 1-MAX_NONSTATIC_OBJECTS, static ones up, the joints follow. Call after the joints changed and
+---before History.commit, so it's the same undo step as the link. Acts on all objects, like Reindex
+---@param jointId integer for the message
 ---@param obj1 integer
 ---@param obj2 integer
-local function warnHighIds(jointId, obj1, obj2)
+local function fitLinkedIds(jointId, obj1, obj2)
     local max = MGE.MAX_NONSTATIC_OBJECTS
-    if max and (obj1 > max or obj2 > max) then
-        echo("^04[MGE] joint " .. jointId .. ": the game only joins objects 1-" .. max .. ", Reindex (Advanced tab) moves them down")
+    if not max or (obj1 <= max and obj2 <= max) then return end
+    ModData.refreshJointIds() -- the new link counts before the reload
+    local moved, left = ModData.reindex()
+    if left > 0 then
+        echo("^04[MGE] joint " .. jointId .. ": the game only joins objects 1-" .. max .. ", " .. left ..
+            " dynamic or joined objects still above (no lower ids left), make some static")
+    elseif moved > 0 then
+        echo("^04[MGE] joint " .. jointId .. ": reindexed, " .. moved .. " objects moved so the joined ones are on ids 1-" .. max)
     end
 end
 
----New joint between two objects, its anchor (pos) halfway between their positions. Nothing else is
----set: the game's defaults for the rest, like joints written with only a pos line
+-- the visible line of every joint MGE makes (Create, New pair, Generate): shown in game, and clickable
+-- from any list (utils/world_select.lua). The Properties tab can hide them
+Joints.NEW_VISIBLE = "1"
+
+---New joint between two objects, its anchor (pos) halfway between their positions, visible. Nothing
+---else is set: the game's defaults for the rest
 ---@param obj1 FileParserEnvObj
 ---@param obj2 FileParserEnvObj
 ---@param id integer? the joint id (an empty slot), default the lowest free one
@@ -220,12 +251,13 @@ function Joints.addBetween(obj1, obj2, id)
     end
     if not id then return nil end
     local joint = { kind = "env_obj_joint", id = id, obj1 = obj1.id, obj2 = obj2.id, lines = {},
-        props = { pos = Joints.midpoint(obj1, obj2) } }
+        props = { pos = Joints.midpoint(obj1, obj2), visible = Joints.NEW_VISIBLE } }
     table.insert(ModData.parsed.env_obj_joint, joint)
     sortJoints()
+    unstaticLinked(obj1.id, obj2.id)
+    fitLinkedIds(id, obj1.id, obj2.id)
     MGE.History.commit()
     MGE.apply()
-    warnHighIds(id, obj1.id, obj2.id)
     return id
 end
 
@@ -372,9 +404,10 @@ function Joints.setObjects(joint, obj1, obj2)
     end
     if joint.obj1 == obj1 and joint.obj2 == obj2 then return false end
     joint.obj1, joint.obj2 = obj1, obj2
+    unstaticLinked(obj1, obj2)
+    fitLinkedIds(joint.id, obj1, obj2)
     MGE.History.commit()
     MGE.apply()
-    warnHighIds(joint.id, obj1, obj2)
     return true
 end
 
@@ -451,37 +484,81 @@ function Joints.offerDraft(slotId, objId)
     return true
 end
 
----What Create / Update would do with the slot's draft. The same two objects in either order are the
----same link
----@param slotId integer
----@return "incomplete"|"new"|"changed"|"unchanged"
-function Joints.draftState(slotId)
-    local draft = Joints.draftFor(slotId)
-    if not draft.obj1 or not draft.obj2 then return "incomplete" end
-    local joint = Joints.find(slotId)
-    if not joint then return "new" end
-    if Joints.draftHas(draft, joint.obj1) and Joints.draftHas(draft, joint.obj2) then return "unchanged" end
-    return "changed"
+---@param joint FileParserEnvObjJoint
+---@param obj1 integer
+---@param obj2 integer
+---@return boolean the joint links these two, in either order
+local function linksPair(joint, obj1, obj2)
+    return (joint.obj1 == obj1 and joint.obj2 == obj2) or (joint.obj1 == obj2 and joint.obj2 == obj1)
 end
 
----Create (empty slot: a joint with the slot's id, its anchor halfway between the two) or Update (the
----joint's objects, its anchor stays). One undo step, the draft is dropped after
----@param slotId integer
----@return boolean done
-function Joints.commitDraft(slotId)
-    local state = Joints.draftState(slotId)
-    local draft = Joints.draftFor(slotId)
-    local done = false
-    if state == "new" then
-        local a, b = Joints.objectById(draft.obj1), Joints.objectById(draft.obj2)
-        if not a or not b then
-            echo("^04[MGE] the picked objects are gone, pick them again")
-            return false
-        end
-        done = Joints.addBetween(a, b, slotId) ~= nil
-    elseif state == "changed" then
-        done = Joints.setObjects(Joints.find(slotId) --[[@as FileParserEnvObjJoint]], draft.obj1, draft.obj2)
+---Links every listed slot to the same two objects: a joint gets them (its anchor stays), an empty slot
+---becomes a joint there (its anchor halfway between the two). One undo step for all of them
+---@param slotIds integer[]
+---@param obj1 integer object id
+---@param obj2 integer object id
+---@return integer changed slots that changed, 0 when none did or the objects can't be linked (says why)
+function Joints.linkSlots(slotIds, obj1, obj2)
+    if obj1 == obj2 then
+        echo("^04[MGE] a joint links two different objects")
+        return 0
     end
+    local a, b = Joints.objectById(obj1), Joints.objectById(obj2)
+    if not a or not b then
+        echo("^04[MGE] the picked objects are gone, pick them again")
+        return 0
+    end
+    local changed, anchor = 0, nil
+    for _, id in ipairs(slotIds) do
+        local joint = Joints.find(id)
+        if joint then
+            if not linksPair(joint, obj1, obj2) then
+                joint.obj1, joint.obj2 = obj1, obj2
+                changed = changed + 1
+            end
+        elseif id >= 1 and id <= MGE.MAX_ENV_JOINTS then
+            anchor = anchor or Joints.midpoint(a, b)
+            table.insert(ModData.parsed.env_obj_joint, { kind = "env_obj_joint", id = id, obj1 = obj1, obj2 = obj2,
+                lines = {}, props = { pos = anchor, visible = Joints.NEW_VISIBLE } })
+            changed = changed + 1
+        end
+    end
+    if changed == 0 then return 0 end
+    sortJoints()
+    unstaticLinked(obj1, obj2)
+    fitLinkedIds(slotIds[1], obj1, obj2)
+    MGE.History.commit()
+    MGE.apply()
+    return changed
+end
+
+---What Create / Update would do with the current slot's draft for all the listed slots (the selection).
+---The same two objects in either order are the same link
+---@param slotId integer the current slot, its draft
+---@param slotIds integer[]? the slots Create / Update links, default only slotId
+---@return "incomplete"|"new"|"changed"|"unchanged" new: the current slot is empty
+function Joints.draftState(slotId, slotIds)
+    local draft = Joints.draftFor(slotId)
+    if not draft.obj1 or not draft.obj2 then return "incomplete" end
+    local any = false
+    for _, id in ipairs(slotIds or { slotId }) do
+        local joint = Joints.find(id)
+        if not joint or not linksPair(joint, draft.obj1, draft.obj2) then any = true end
+    end
+    if not any then return "unchanged" end
+    return Joints.find(slotId) and "changed" or "new"
+end
+
+---Create / Update: links all the listed slots to the current slot's draft (Joints.linkSlots), one undo
+---step, the draft is dropped after
+---@param slotId integer the current slot, its draft
+---@param slotIds integer[]? the slots to link, default only slotId
+---@return boolean done
+function Joints.commitDraft(slotId, slotIds)
+    local state = Joints.draftState(slotId, slotIds)
+    if state == "incomplete" or state == "unchanged" then return false end
+    local draft = Joints.draftFor(slotId)
+    local done = Joints.linkSlots(slotIds or { slotId }, draft.obj1, draft.obj2) > 0
     if done then Joints.resetDraft() end
     return done
 end

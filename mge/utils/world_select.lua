@@ -1,10 +1,10 @@
 -- Click anything in the world to select it, whichever list shows (pickAny): a joint's anchor (any joint
 -- on the Joints list, which draws them; elsewhere the ones the game shows, visible 1), else the nearest
--- player or object under the cursor. A joint, player or object from
--- another list switches the list to Joints / Players / Objects with only it selected; on
--- its own list a click selects only it, Shift + click adds / removes it (ModData.clickSelect,
--- Main.selectPlayer, Main.selectJoint, like the lists). On the Joints list's Link tab an object is
--- picked for the current slot's draft instead (Joints.offerDraft).
+-- player or object under the cursor. A joint, player or object from another list switches the list to
+-- Joints / Players / Objects with only it selected; on its own list a click selects only it, Shift +
+-- click adds / removes it (ModData.clickSelect, Main.selectPlayer, Main.selectJoint, like the lists).
+-- Objects don't switch away from the Joints list: its Link tab picks them for the current slot's draft
+-- (Joints.offerDraft), on Properties one starts a new joint in the lowest empty slot.
 --
 -- The click is turned into a camera ray by MGE itself and intersected exactly with every object's
 -- shape (box, sphere, capsule). The nearest hit along the ray wins, so objects in front block the
@@ -371,15 +371,33 @@ add_hook("mouse_move", HOOK_SET, function(x, y)
     pendingHover = { x = x, y = y }
 end)
 
----A clicked object: on the Link tab it's picked for the current slot's draft, on the Objects list the
----usual click select, on any other list it switches to Objects with only that object selected
+---Properties tab click on an object: taken as the start of a new joint. The lowest empty slot on the
+---Link tab, the object picked for it (the next click picks the other one). Joints full: says so
+---@param obj FileParserEnvObj
+local function startNewJoint(obj)
+    local Main, Joints = MGE.Main, MGE.Joints
+    local id = Joints.nextId()
+    if not id then
+        Joints.haveRoom(1) -- prints that the joints are full
+        return
+    end
+    Main.selectJointsOnly({ id })
+    Main.setTab("jointLink")
+    Main.updateWindow() -- the list's cells and the Link tab show the new slot
+    Joints.offerDraft(id, obj.id)
+end
+
+---A clicked object: on the Joints list it never switches lists (after Create the Properties tab shows,
+---the next object click would throw the joint work away): the Link tab picks it for the current slot's
+---draft, Properties starts a new joint with it. On the Objects list the usual click select, from
+---Players it switches to Objects with only that object selected
 ---@param obj FileParserEnvObj
 ---@param additive boolean
 local function clickObject(obj, additive)
     local Main = MGE.Main
-    local slot = linkSlot()
-    if slot then
-        MGE.Joints.offerDraft(slot, obj.id)
+    if Main.listTab == "joints" then
+        local slot = linkSlot()
+        if slot then MGE.Joints.offerDraft(slot, obj.id) else startNewJoint(obj) end
     elseif Main.listTab == "objects" then
         local selected = ModData.clickSelect(obj, additive)
         Main.updateWindow() -- list checkboxes and editor values follow the selection

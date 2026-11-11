@@ -392,7 +392,7 @@ function assetsView.newPair(jointId)
         objects[i] = { kind = "env_obj", id = i, props = props }
     end
     local joint = { kind = "env_obj_joint", id = jointId, obj1 = 1, obj2 = 2, lines = {},
-        props = { pos = assetsView.defaultProps().pos } }
+        props = { pos = assetsView.defaultProps().pos, visible = Joints.NEW_VISIBLE } }
     return importObjects({ env_obj = objects, env_obj_joint = { joint }, ignores = {} }, true, true, { jointId })
 end
 

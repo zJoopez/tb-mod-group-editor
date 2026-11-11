@@ -176,7 +176,8 @@ local HOVER_COLOR = { 1.0, 1.0, 1.0 } -- what a click would pick (or take out)
 
 ---The Link tab's draft (Joints.draftFor): the picked objects in the selection color, the object under
 ---the cursor in white. A joint shows its anchor (Update keeps it), a new one where Create would put it
----(halfway between the two). The other joints' anchors are faint, a click on one selects it
+---(halfway between the two). The other selected joints' anchors are bright too, the unselected ones
+---faint (a click on one selects it)
 ---@param slot integer
 local function drawLinkHighlights(slot)
     local Joints = MGE.Joints
@@ -185,8 +186,10 @@ local function drawLinkHighlights(slot)
     if draft.obj1 then drawObjectHighlight(draft.obj1 - 1) end
     if draft.obj2 then drawObjectHighlight(draft.obj2 - 1) end
     if hover then drawObjectHighlight(hover.id - 1, HOVER_COLOR) end
+    -- the other selected joints bright (Update links them all to the picked pair), the rest faint
+    local selected = MGE.Main.selectedJoints
     for _, other in ipairs(ModData.parsed.env_obj_joint) do
-        if other.id ~= slot then drawJointAnchor(other, true) end
+        if other.id ~= slot then drawJointAnchor(other, not selected[other.id]) end
     end
     local joint = Joints.find(slot)
     if joint then

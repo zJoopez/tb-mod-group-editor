@@ -193,7 +193,7 @@ local function generate()
     local jointBlocks = {}
     for i, joint in ipairs(joints) do
         jointBlocks[i] = { kind = "env_obj_joint", id = i, obj1 = joint.a, obj2 = joint.b, lines = {},
-            props = { pos = MGE.FileHandler.formatNumbers(joint.pos[1], joint.pos[2], joint.pos[3]), visible = "1" } }
+            props = { pos = MGE.FileHandler.formatNumbers(joint.pos[1], joint.pos[2], joint.pos[3]), visible = MGE.Joints.NEW_VISIBLE } }
     end
     -- selected and saved like an import, the tab stays so values can be tried again after Undo
     MGE.Assets.addObjects(objects, true, nil, jointBlocks)

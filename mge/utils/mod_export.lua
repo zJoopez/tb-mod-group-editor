@@ -287,6 +287,12 @@ function ModData.reindex()
     return moved, left
 end
 
+---Reads the joint-linked object ids again (ModData.jointIds is set when the mod loads): a new link
+---made in the editor counts before the reload, e.g. for a Reindex right away (utils/joints.lua)
+function ModData.refreshJointIds()
+    ModData.jointIds = getJointIds(ModData.parsed.env_obj_joint)
+end
+
 -- model_name is relative to mod_assets/<the mod file's folders>/<mod name>/, as used by the game's own
 -- mods: mod/owo.tbm uses ../Noki/PinTori for mod_assets/Noki/PinTori.obj, mod/Fun/HoleInTheWall/
 -- holeinthewall6.tbm uses ../../../events/sakura for mod_assets/events/sakura.obj

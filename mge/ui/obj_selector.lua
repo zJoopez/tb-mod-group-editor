@@ -47,6 +47,8 @@ end
 ---@param items any[]
 ---@param opts GridListOptions
 ---@param toReload UIElement
+---@return fun() restyle the cells from opts.isSelected / isDimmed again, for selections changed elsewhere
+---(the Link tab's grid after a world click), keeps the scroll position a rebuild would reset
 function obj_selector.grid(view, rect, items, opts, toReload)
     local columns = opts.columns or GRID_COLUMNS
     local gridRows = {}
@@ -61,6 +63,11 @@ function obj_selector.grid(view, rect, items, opts, toReload)
 
     ---@type table<any, UIElement> cells on this page, restyled when a click changes others
     local cells = {}
+    local function restyleAll()
+        for item, cell in pairs(cells) do
+            if not cell.destroyed then restyle(item, cell) end
+        end
+    end
     ScrollList.create(view, rect, gridRows, function(rowElement, rowItems)
         local cellW = (rowElement.size.w - GRID_GAP * (columns + 1)) / columns
         for c, item in ipairs(rowItems) do
@@ -80,10 +87,11 @@ function obj_selector.grid(view, rect, items, opts, toReload)
             if text then TBMenu:displayPopup(cell, text) end
             cell:addMouseUpHandler(function()
                 opts.onClick(item, get_keyboard_shift() ~= 0)
-                for other, otherCell in pairs(cells) do restyle(other, otherCell) end
+                restyleAll()
             end)
         end
     end, toReload)
+    return restyleAll
 end
 
 local function create(view, fullList)

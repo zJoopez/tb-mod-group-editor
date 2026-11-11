@@ -406,6 +406,7 @@ local function followJoints()
     end
     if MGE.Camera.followMoves and #objects > 0 then MGE.Camera.focus(objects) end
 end
+Main.followJoints = followJoints -- also after the Link tab's Create / Update (ui/editor_link.lua)
 
 ---After the joint selection changed: a draft for another slot is dropped (the Link tab starts from the
 ---saved link again)

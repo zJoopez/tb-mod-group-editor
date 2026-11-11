@@ -3,11 +3,13 @@
 -- the world (utils/world_select.lua) picks it, a click on a picked one takes it out, at most two. Which
 -- one is first doesn't matter to the game. Nothing changes in the mod until Create (an empty slot) or
 -- Update (a joint's new objects), so a stray click can't rewire a joint.
---   row 0:    the slot and what the draft would do
---   rows 1-6: objects 1-MAX_NONSTATIC_OBJECTS (the ones the game joins), picked ones pale. Higher ids
---             can be clicked in the world (Reindex moves them down)
---   row 7:    Create / Update, Reset (the saved link; Delete is in the list's bar). Create with nothing picked makes two
---             default objects joined in the slot
+--   row 0:    the slot and what the draft would do                             (block jointLinkHead)
+--   rows 1-6: every object, picked ones pale, static ones faint. Linking one above id
+--             MAX_NONSTATIC_OBJECTS reindexes it down (Joints.linkSlots)        (block jointLinkGrid)
+--   row 7:    Create / Update, Reset (the saved link; Delete is in the list's bar). Create with nothing
+--             picked makes two default objects joined in the slot              (block jointLinkButtons)
+-- A pick only rebuilds the heading and the buttons, the grid restyles its cells in place: rebuilding it
+-- would scroll it back to the top. Selecting another slot rebuilds all three.
 -- Has its own buttons instead of the editor's Reset inputs footer (PANELS in ui/editor.lua).
 -- Like the Properties tab, a click on a joint's anchor selects that joint (it becomes the current
 -- slot) and the Move gizmo drags the selected joints' anchors: those come before picking objects
@@ -17,13 +19,17 @@ local Widgets = MGE.Widgets
 local Joints = MGE.Joints
 local ModData = MGE.ModData
 
-local ROWS = 8 -- the panel's height in rows (PANELS in ui/editor.lua)
 local ROW_H = 30
-local GRID_ROWS = 6 -- panel rows the object grid takes, rows 1-6
-local GRID_COLUMNS = 8 -- 48 objects in 6 grid rows, no scrolling
+local GRID_COLUMNS = 8 -- 48 objects in the 6 rows without scrolling, more scroll
+
+---@type fun()? restyles the grid's cells from the current draft (ObjSelector.grid), set by its build
+local restyleGrid = nil
 
 -- a click in the grid or the world changed the draft: only this tab shows it (no reload, nothing saved)
-Joints.onDraftChanged = function() Rows.refreshBlocks({ "jointLink" }) end
+Joints.onDraftChanged = function()
+    Rows.refreshBlocks({ "jointLinkHead", "jointLinkButtons" })
+    if restyleGrid then restyleGrid() end
+end
 
 ---Create with nothing picked in an empty slot: two new default objects joined there
 ---@param slot integer
@@ -41,25 +47,49 @@ local function pairText(a, b)
     return tostring(a or "-") .. " and " .. tostring(b or "-")
 end
 
----First row: the slot and what Create / Update would do
+---The selected slots, in id order: Create / Update links all of them to the current slot's draft
+---@return integer[]
+local function selectedSlots()
+    local slots = {}
+    for id in pairs(MGE.Main.selectedJoints) do table.insert(slots, id) end
+    table.sort(slots)
+    return slots
+end
+
+---@param slots integer[]
+---@return boolean any of them is a joint already (the button reads Update, not Create)
+local function anyJoint(slots)
+    for _, id in ipairs(slots) do
+        if Joints.find(id) then return true end
+    end
+    return false
+end
+
+---First row: the slot (or how many are selected) and what Create / Update would do
 ---@param holder UIElement
----@param slot integer
----@param draft JointDraft
----@param state string Joints.draftState
-local function buildHeading(holder, slot, draft, state)
-    local row, x, w = Rows.createRow("Joint " .. slot, holder,
+local function buildHeading(holder)
+    Rows.begin()
+    local slot, slots = MGE.Main.selectedSlot(), selectedSlots()
+    local draft, state = Joints.draftFor(slot), Joints.draftState(slot, slots)
+    local many = #slots > 1
+    local row, x, w = Rows.createRow(many and #slots .. " joints" or "Joint " .. slot, holder,
         "Click two objects in the list below or in the world.\n" ..
         "A click on a picked one takes it out. Nothing changes\n" ..
         "until Create / Update, Reset goes back to the saved\n" ..
-        "link. Objects above id " .. MGE.MAX_NONSTATIC_OBJECTS .. " aren't joined by the game.")
+        "link. With several joints selected Update links them\n" ..
+        "all, empty slots too. An object above id " .. MGE.MAX_NONSTATIC_OBJECTS .. " is\n" ..
+        "reindexed down when linked, the game joins only those.")
     local joint = Joints.find(slot)
+    local pair = pairText(draft.obj1, draft.obj2)
     local text
-    if state == "new" then
-        text = "Create joins " .. pairText(draft.obj1, draft.obj2)
+    if (state == "new" or state == "changed") and many then
+        text = "Link all " .. #slots .. " to " .. pair
+    elseif state == "new" then
+        text = "Create joins " .. pair
     elseif state == "changed" and joint then
-        text = "Update to " .. pairText(draft.obj1, draft.obj2) .. " (now " .. pairText(joint.obj1, joint.obj2) .. ")"
+        text = "Update to " .. pair .. " (now " .. pairText(joint.obj1, joint.obj2) .. ")"
     elseif state == "unchanged" then
-        text = "Links objects " .. pairText(draft.obj1, draft.obj2)
+        text = (many and "All link objects " or "Links objects ") .. pair
     elseif draft.obj1 then
         text = "Picked " .. draft.obj1 .. ", pick one more"
     else
@@ -69,39 +99,44 @@ local function buildHeading(holder, slot, draft, state)
     textHolder:addAdaptedText(text, nil, nil, nil, LEFTMID, 0.65, nil, nil)
 end
 
----Objects the game joins, a click picks or unpicks one
+---Every object, a click picks or unpicks one. Picked ones read from the draft on every restyle (the
+---draft is replaced when it's first edited, see Joints.editDraft)
 ---@param holder UIElement
----@param slot integer
----@param draft JointDraft
-local function buildGrid(holder, slot, draft)
+local function buildGrid(holder)
+    restyleGrid = nil
+    local slot = MGE.Main.selectedSlot()
     local objects = {}
-    for _, obj in ipairs(ModData.parsed.env_obj) do
-        if obj.id <= MGE.MAX_NONSTATIC_OBJECTS then table.insert(objects, obj) end
-    end
+    for _, obj in ipairs(ModData.parsed.env_obj) do table.insert(objects, obj) end
     table.sort(objects, function(a, b) return a.id < b.id end)
-    local rect = { x = 0, y = ROW_H, w = holder.size.w, h = GRID_ROWS * ROW_H }
+    local rect = { x = 0, y = 0, w = holder.size.w, h = holder.size.h }
     if #objects == 0 then
         local empty = holder:addChild({ pos = { rect.x, rect.y }, size = { rect.w, rect.h } })
-        empty:addAdaptedText("No objects with ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS ..
-            ": click them in the world, or Create 2 new ones", nil, nil, nil, CENTERMID, 0.65, nil, nil)
+        empty:addAdaptedText("No objects: Create 2 new ones", nil, nil, nil, CENTERMID, 0.65, nil, nil)
         return
     end
-    MGE.ObjSelector.grid(holder, rect, objects, {
+    local max = MGE.MAX_NONSTATIC_OBJECTS
+    restyleGrid = MGE.ObjSelector.grid(holder, rect, objects, {
         columns = GRID_COLUMNS,
         label = function(obj) return tostring(obj.id) end,
-        isSelected = function(obj) return Joints.draftHas(draft, obj.id) end,
+        isSelected = function(obj) return Joints.draftHas(Joints.draftFor(slot), obj.id) end,
         isDimmed = function(obj) return ModData.isStatic(obj, true) end,
         onClick = function(obj) Joints.offerDraft(slot, obj.id) end,
-        popup = function(obj) return "Object " .. obj.id .. (ModData.isStatic(obj, true) and " (static)" or "") end,
+        popup = function(obj)
+            return "Object " .. obj.id .. (ModData.isStatic(obj, true) and " (static)" or "") ..
+                (obj.id > max and "\nAbove id " .. max .. ": linking it reindexes it down" or "")
+        end,
     }, holder)
 end
 
----Create / Update: the draft's link, or with nothing picked in an empty slot two new default objects
----joined there, in front of the camera. A new joint shows the Properties tab next
+---Create / Update: every selected slot gets the draft's link (Joints.commitDraft), or with nothing
+---picked in an empty current slot two new default objects joined there, in front of the camera. New
+---joints show the Properties tab next. Camera follow then frames the linked objects (Main.followJoints)
 ---@param slot integer
 local function commit(slot)
+    local slots = selectedSlots()
     local draft = Joints.draftFor(slot)
-    local state = Joints.draftState(slot)
+    local state = Joints.draftState(slot, slots)
+    local creating = not anyJoint(slots)
     if makesPair(slot, draft) then
         if MGE.Assets.newPair(slot) then
             Joints.resetDraft()
@@ -110,22 +145,23 @@ local function commit(slot)
     elseif state == "incomplete" then
         echo("^04[MGE] pick 2 objects first")
     elseif state == "unchanged" then
-        echo("^04[MGE] joint " .. slot .. " already links those objects")
-    elseif Joints.commitDraft(slot) and state == "new" then
-        MGE.Main.setTab("joint")
+        echo("^04[MGE] " .. (#slots > 1 and "the selected joints already link" or "joint " .. slot .. " already links")
+            .. " those objects")
+    elseif Joints.commitDraft(slot, slots) then
+        MGE.Main.followJoints() -- camera follow frames the linked objects, like selecting the joint does
+        if creating then MGE.Main.setTab("joint") end
     end
 end
 
 ---Last row: Create / Update (lit when it would do something), Reset
 ---@param holder UIElement
----@param slot integer
----@param draft JointDraft
----@param state string Joints.draftState
-local function buildButtons(holder, slot, draft, state)
-    local joint = Joints.find(slot)
-    local row = holder:addChild({ pos = { 0, (ROWS - 1) * ROW_H + 2 }, size = { holder.size.w, ROW_H - 4 } })
+local function buildButtons(holder)
+    Rows.begin()
+    local slot, slots = MGE.Main.selectedSlot(), selectedSlots()
+    local draft, state = Joints.draftFor(slot), Joints.draftState(slot, slots)
+    local row = holder:addChild({ pos = { 0, 2 }, size = { holder.size.w, ROW_H - 4 } })
     local buttons = Widgets.buttonRow(row, 0, row.size.h, {
-        { label = joint and "Update" or "Create", onClick = function() commit(slot) end },
+        { label = anyJoint(slots) and "Update" or "Create", onClick = function() commit(slot) end },
         { label = "Reset", onClick = function()
             Joints.resetDraft()
             Joints.onDraftChanged()
@@ -137,18 +173,11 @@ local function buildButtons(holder, slot, draft, state)
     end
 end
 
----@param holder UIElement
-local function buildLink(holder)
-    Rows.begin()
-    local slot = MGE.Main.selectedSlot()
-    local draft = Joints.draftFor(slot)
-    local state = Joints.draftState(slot)
-    buildHeading(holder, slot, draft, state)
-    buildGrid(holder, slot, draft)
-    buildButtons(holder, slot, draft, state)
-end
-
 ---@type EditorPanelModule
 return {
-    blocks = { { name = "jointLink", build = buildLink, panel = "jointLink", row = 0, rows = ROWS } },
+    blocks = {
+        { name = "jointLinkHead", build = buildHeading, panel = "jointLink", row = 0, rows = 1 },
+        { name = "jointLinkGrid", build = buildGrid, panel = "jointLink", row = 1, rows = 6 },
+        { name = "jointLinkButtons", build = buildButtons, panel = "jointLink", row = 7, rows = 1 },
+    },
 }
