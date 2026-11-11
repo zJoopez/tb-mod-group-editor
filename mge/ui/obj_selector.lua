@@ -1,4 +1,5 @@
 local obj_selector = {}
+MGE.ObjSelector = obj_selector -- its grid is also the joint list's (ui/joint_list.lua)
 
 local Main = MGE.Main
 local ModData = MGE.ModData
@@ -11,20 +12,78 @@ local GRID_GAP = 3
 -- cell colors: selected cells are pale with dark text so the state reads at a glance
 local CELL_TEXT = { 1, 1, 1, 1 }
 local CELL_SELECTED_TEXT = { 0.35, 0.05, 0.05, 1 }
+local CELL_DIMMED_TEXT = { 1, 1, 1, 0.35 } -- e.g. an empty joint slot
+local CELL_DIMMED_BG = { 0, 0, 0, 0.15 }
 
 ---@param cell UIElement
 ---@param selected boolean?
-local function styleCell(cell, selected)
+---@param dimmed boolean?
+local function styleCell(cell, selected, dimmed)
     if selected then
         cell.bgColor = TB_MENU_DEFAULT_LIGHTEST_COLOR
         cell.hoverColor = TB_MENU_DEFAULT_LIGHTEST_COLOR
         cell.uiColor = CELL_SELECTED_TEXT
     else
-        cell.bgColor = TB_MENU_DEFAULT_BG_COLOR
+        cell.bgColor = dimmed and CELL_DIMMED_BG or TB_MENU_DEFAULT_BG_COLOR
         cell.hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR
-        cell.uiColor = CELL_TEXT
+        cell.uiColor = dimmed and CELL_DIMMED_TEXT or CELL_TEXT
     end
     cell.pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
+end
+
+---@class GridListOptions
+---@field label fun(item: any): string cell text
+---@field isSelected fun(item: any): boolean?
+---@field onClick fun(item: any, additive: boolean) changes the selection, the cells are restyled after
+---@field popup (fun(item: any): string?)? hover text of a cell
+---@field isDimmed (fun(item: any): boolean?)? drawn faint while not selected
+---@field columns integer? cells per row, default GRID_COLUMNS
+
+---Grid list: one button per item, GRID_COLUMNS per row, selected ones pale (the object list, the joint
+---list). A click calls onClick with Shift as additive, then restyles the cells in place: rebuilding the
+---list would reset its scroll position
+---@param view UIElement
+---@param rect { x: number, y: number, w: number, h: number }
+---@param items any[]
+---@param opts GridListOptions
+---@param toReload UIElement
+function obj_selector.grid(view, rect, items, opts, toReload)
+    local columns = opts.columns or GRID_COLUMNS
+    local gridRows = {}
+    for i, item in ipairs(items) do
+        local r = math.ceil(i / columns)
+        gridRows[r] = gridRows[r] or {}
+        table.insert(gridRows[r], item)
+    end
+    local function restyle(item, cell)
+        styleCell(cell, opts.isSelected(item), opts.isDimmed and opts.isDimmed(item))
+    end
+
+    ---@type table<any, UIElement> cells on this page, restyled when a click changes others
+    local cells = {}
+    ScrollList.create(view, rect, gridRows, function(rowElement, rowItems)
+        local cellW = (rowElement.size.w - GRID_GAP * (columns + 1)) / columns
+        for c, item in ipairs(rowItems) do
+            local cell = rowElement:addChild({
+                pos = { GRID_GAP + (c - 1) * (cellW + GRID_GAP), 2 },
+                size = { cellW, rowElement.size.h - 4 },
+                interactive = true,
+                -- colors given on creation too, toriui sets up the hover animation from them
+                bgColor = TB_MENU_DEFAULT_BG_COLOR,
+                hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
+                pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+            }, true)
+            cells[item] = cell
+            restyle(item, cell)
+            cell:addAdaptedText(opts.label(item), nil, nil, nil, CENTERMID, 0.7, nil, nil)
+            local text = opts.popup and opts.popup(item)
+            if text then TBMenu:displayPopup(cell, text) end
+            cell:addMouseUpHandler(function()
+                opts.onClick(item, get_keyboard_shift() ~= 0)
+                for other, otherCell in pairs(cells) do restyle(other, otherCell) end
+            end)
+        end
+    end, toReload)
 end
 
 local function create(view, fullList)
@@ -57,49 +116,23 @@ local function create(view, fullList)
         interactive = true
     })
 
-    -- grid: one button per object, several per row. Click selects only that object, Shift + click
-    -- adds / removes it (ModData.clickSelect, same as clicking objects in the world)
-    local gridRows = {}
-    for i, obj in ipairs(list) do
-        local r = math.ceil(i / GRID_COLUMNS)
-        gridRows[r] = gridRows[r] or {}
-        table.insert(gridRows[r], obj)
-    end
-
-    ---@type table<FileParserEnvObj, UIElement> cells on this page, restyled when a click changes others
-    local cells = {}
-
-    -- list area between top and bottom bars
-    ScrollList.create(view, {
+    -- grid between top and bottom bars, one cell per object. Click selects only that object, Shift +
+    -- click adds / removes it (ModData.clickSelect, same as clicking objects in the world)
+    obj_selector.grid(view, {
         x = 0,
         y = topBar.size.h,
         w = view.size.w,
         h = view.size.h - topBar.size.h - botBar.size.h
-    }, gridRows, function(rowElement, objects)
-        local cellW = (rowElement.size.w - GRID_GAP * (GRID_COLUMNS + 1)) / GRID_COLUMNS
-        for c, obj in ipairs(objects) do
-            local cell = rowElement:addChild({
-                pos = { GRID_GAP + (c - 1) * (cellW + GRID_GAP), 2 },
-                size = { cellW, rowElement.size.h - 4 },
-                interactive = true,
-                -- colors given on creation too, toriui sets up the hover animation from them
-                bgColor = TB_MENU_DEFAULT_BG_COLOR,
-                hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-                pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
-            }, true)
-            cells[obj] = cell
-            styleCell(cell, obj.selected)
-            cell:addAdaptedText(tostring(obj.id), nil, nil, nil, CENTERMID, 0.7, nil, nil)
-            cell:addMouseUpHandler(function()
-                local selected = ModData.clickSelect(obj, get_keyboard_shift() ~= 0)
-                -- restyled in place, rebuilding the list would reset its scroll position
-                for other, otherCell in pairs(cells) do styleCell(otherCell, other.selected) end
-                -- the selection is framed when the Camera button is on
-                if selected then MGE.Camera.followSelection() end
-                Main.onSelectionChanged()
-            end)
-        end
-    end, toReload)
+    }, list, {
+        label = function(obj) return tostring(obj.id) end,
+        isSelected = function(obj) return obj.selected end,
+        onClick = function(obj, additive)
+            local selected = ModData.clickSelect(obj, additive)
+            -- the selection is framed when the Camera button is on
+            if selected then MGE.Camera.followSelection() end
+            Main.onSelectionChanged()
+        end,
+    }, toReload)
 
     ScrollList.createPager(topBar, { x = 0, y = 0, w = topBar.size.w, h = topBar.size.h }, page, pageCount,
         function(newPage)

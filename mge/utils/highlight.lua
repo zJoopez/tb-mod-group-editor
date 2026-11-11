@@ -57,13 +57,14 @@ end
 ---Draws translucent fill slightly larger than the object, then a negative-size pass
 ---which renders the inverted shell and reads as an outline
 ---@param id integer 0-based object id
-local function drawObjectHighlight(id)
+---@param color number[]? defaults to Highlight.color
+local function drawObjectHighlight(id, color)
     local x, y, z = get_obj_pos(id)
     if x == nil then return end
     local sx, sy, sz = get_obj_sides(id)
     local shape = get_obj_shape(id)
     local rot = getObjRotTB(id)
-    local c = Highlight.color
+    local c = color or Highlight.color
 
     set_color(c[1], c[2], c[3], Highlight.fillAlpha)
     if shape == SHAPE.SPHERE then -- sx = radius
@@ -130,6 +131,60 @@ local function drawPlayerHighlight(player, scale)
     end
 end
 
+local JOINT_ANCHOR_RADIUS = 0.12
+
+---A joint's anchor: a solid core in the preview color, a translucent halo so it reads inside objects
+local function drawAnchor(x, y, z)
+    local c = Highlight.previewColor
+    set_color(c[1], c[2], c[3], 1.0)
+    draw_sphere(x, y, z, JOINT_ANCHOR_RADIUS)
+    set_color(c[1], c[2], c[3], 0.3)
+    draw_sphere(x, y, z, JOINT_ANCHOR_RADIUS * 2)
+end
+
+---A joint's anchor, where a Move gizmo drag has it so far (Joints.anchorOf)
+---@param joint FileParserEnvObjJoint
+local function drawJointAnchor(joint)
+    local p = MGE.Joints.anchorOf(joint)
+    if p then drawAnchor(p[1], p[2], p[3]) end
+end
+
+---Joints list: every object a selected joint links gets the object highlight, each joint's anchor (its
+---pos line, where the game joins the two) a sphere in the preview color
+---@param joints FileParserEnvObjJoint[]
+local function drawJointHighlights(joints)
+    local objects = {}
+    for _, joint in ipairs(joints) do
+        if joint.obj1 then objects[joint.obj1] = true end
+        if joint.obj2 then objects[joint.obj2] = true end
+    end
+    for id in pairs(objects) do drawObjectHighlight(id - 1) end
+    for _, joint in ipairs(joints) do drawJointAnchor(joint) end
+end
+
+local HOVER_COLOR = { 1.0, 1.0, 1.0 } -- what a click would pick (or take out)
+
+---The Link tab's draft (Joints.draftFor): the picked objects in the selection color, the object under
+---the cursor in white. A joint shows its anchor (Update keeps it), a new one where Create would put it
+---(halfway between the two)
+---@param slot integer
+local function drawLinkHighlights(slot)
+    local Joints = MGE.Joints
+    local draft = Joints.draftFor(slot)
+    local hover = MGE.WorldSelect and MGE.WorldSelect.hover
+    if draft.obj1 then drawObjectHighlight(draft.obj1 - 1) end
+    if draft.obj2 then drawObjectHighlight(draft.obj2 - 1) end
+    if hover then drawObjectHighlight(hover.id - 1, HOVER_COLOR) end
+    local joint = Joints.find(slot)
+    if joint then
+        drawJointAnchor(joint)
+    elseif draft.obj1 and draft.obj2 then
+        local ax, ay, az = get_obj_pos(draft.obj1 - 1)
+        local bx, by, bz = get_obj_pos(draft.obj2 - 1)
+        if ax and bx then drawAnchor((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2) end
+    end
+end
+
 add_hook("draw3d", MGE.hookname, function()
     local Main = MGE.Main -- created after this module loads
     if not Main or not Main.window or not Main.window.displayed then return end
@@ -142,6 +197,13 @@ add_hook("draw3d", MGE.hookname, function()
             for _, player in ipairs(scale and scale.players or Main.selectedPlayerList()) do
                 if Players and Players.exists(player) then drawPlayerHighlight(player, scale) end
             end
+            return
+        end
+        if Main.listTab == "joints" then
+            -- the Joints list: the selected joints, their objects and anchors (not the object selection).
+            -- On the Link tab the selected slot's draft instead
+            local slot = Main.linkSlot()
+            if slot then drawLinkHighlights(slot) else drawJointHighlights(Main.selectedJointList()) end
             return
         end
         for _, obj in ipairs(ModData.parsed.env_obj) do

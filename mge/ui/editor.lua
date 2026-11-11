@@ -4,7 +4,9 @@
 --   advanced: ui/editor_advanced.lua  Friction, Bounce, Flags, Model, Ids (Reindex)
 --   thrust:   ui/editor_thrust.lua    Frames, Direction, Axes (World / Object / Off)
 --   generate: ui/editor_generate.lua  Align, Amount, Gap, Angle, Size, Increment, Position, Generate / To view
---   player:   ui/editor_player.lua    Pos, Rot of the picked player (the Players list, no tab of its own)
+--   player:   ui/editor_player.lua    Pos, Rot, Scale, parts of the selected players (the Players list's Core tab)
+--   jointLink: ui/editor_link.lua     the 2 linked objects (grid), Create / Update, Delete, Reset (the Joints list's Link tab)
+--   joint:    ui/editor_joint.lua     Pos, Axis, Range, Strength, Velocity, Type (the Joints list's Properties tab)
 -- Shared row widgets are in ui/editor_rows.lua, the transform math in utils/transforms.lua.
 -- Every block of rows has its own holder. Fixed blocks are built once (typed values stay), the
 -- others are rebuilt when the selection or the objects change, so their placeholders / highlights
@@ -27,6 +29,10 @@ local inwuts = Rows.inputs
 ---@field row integer first row in the panel
 ---@field rows integer
 
+---@class EditorPanel
+---@field height number
+---@field ownButtons boolean? the panel has its own buttons in place of the Reset inputs footer
+
 ---@class EditorPanelModule
 ---@field fixed EditorBlock[]? built once
 ---@field blocks EditorBlock[]? rebuilt with the selection, in this order
@@ -39,7 +45,9 @@ local MODULES = {
     dofile(MGE.scriptPath .. "ui/editor_advanced.lua"),
     dofile(MGE.scriptPath .. "ui/editor_thrust.lua"),
     dofile(MGE.scriptPath .. "ui/editor_generate.lua"),
-    dofile(MGE.scriptPath .. "ui/editor_player.lua"), -- the Players list's panel, no tab of its own
+    dofile(MGE.scriptPath .. "ui/editor_player.lua"), -- the Players list's Core tab
+    dofile(MGE.scriptPath .. "ui/editor_link.lua"), -- the Joints list's Link tab
+    dofile(MGE.scriptPath .. "ui/editor_joint.lua"), -- the Joints list's Properties tab
 }
 
 local ROW_H = 30
@@ -53,7 +61,9 @@ local PANELS = {
     advanced = { height = PANEL_H },
     thrust = { height = PANEL_H },
     generate = { height = PANEL_H },
-    player = { height = PANEL_H }, -- shown on the Players list instead of the tabs (Main.applyTab)
+    player = { height = PANEL_H }, -- the Players list's Core tab (TAB_SETS in ui/main.lua)
+    jointLink = { height = PANEL_H, ownButtons = true }, -- the Joints list's Link tab, has its own Reset
+    joint = { height = PANEL_H }, -- the Joints list's Properties tab
 }
 
 -- collected from the modules: fixed and rebuilt blocks, rebuilt block names in build order, input lists
@@ -92,7 +102,7 @@ local function applyTransformModes()
 end
 
 ---Shows one editor panel, called by Main.applyTab
----@param id string "core"|"advanced"|"thrust"|"generate"|"player"
+---@param id string "core"|"advanced"|"thrust"|"generate"|"player"|"jointLink"|"joint"
 function editor.applyPanel(id)
     local panel = PANELS[id]
     if not panel then return end
@@ -103,8 +113,12 @@ function editor.applyPanel(id)
     end
     applyTransformModes() -- after the panel, rebuilt rows start visible
     if inputFooter and not inputFooter.destroyed then
-        inputFooter:show(true)
-        inputFooter:moveTo(nil, panel.height + FOOTER_GAP)
+        if panel.ownButtons then
+            inputFooter:hide(true)
+        else
+            inputFooter:show(true)
+            inputFooter:moveTo(nil, panel.height + FOOTER_GAP)
+        end
     end
 end
 
@@ -177,7 +191,10 @@ local function rebuildBlocks(names)
     local focusKey, focusIndex = findFocusedInput()
     for _, name in ipairs(names) do
         Widgets.clearChildren(blocks[name])
-        BLOCKS[name].build(blocks[name], selected)
+        -- one failing block must not stop the rest: the blocks after it would keep old rows, and
+        -- reapplyTabs below would be skipped, leaving every panel's new rows visible on top of each other
+        local ok, err = pcall(BLOCKS[name].build, blocks[name], selected)
+        if not ok then echo("^04[MGE] editor panel error (" .. name .. "): " .. tostring(err)) end
     end
     restoreTypedProperties(typed)
     reapplyTabs()

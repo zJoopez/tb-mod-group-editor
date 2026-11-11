@@ -132,7 +132,7 @@ end
 
 MGE.Highlight.preview = function()
     local Main = MGE.Main
-    if Main.activeTab ~= "generate" or Main.listTab == "players" or not inwuts.generate then
+    if Main.activeTab ~= "generate" or Main.listTab ~= "objects" or not inwuts.generate then
         previewShown = false
         return nil
     end

@@ -12,8 +12,9 @@
 -- in 3D (utils/gizmo_math.lua), so a gizmo partly off screen still works. rph's gizmo projects handles
 -- to the screen and adds up mouse deltas, which breaks off screen and drifts.
 --
--- Works on a GizmoTarget: the selected objects (Transforms), or on the Players list the selected
--- player (utils/players.lua: Move, Rotate, Scale with the white cube only).
+-- Works on a GizmoTarget: the selected objects (Transforms), on the Players list the selected
+-- player (utils/players.lua: Move, Rotate, Scale with the white cube only), on the Joints list's
+-- Properties tab the selected joints' anchors (utils/joints.lua: Move only).
 -- A drag only changes the live world (target.previewMove / previewRotate). Releasing applies it
 -- once like the Move / Rotate / Resize rows do (target.moveBy / rotateByMatrix / scaleBy): one undo
 -- step (Shift + Z takes the drag back), joints follow, editor rows refresh. Ctrl snaps: Gizmo.moveStep,
@@ -115,6 +116,11 @@ local function gizmoTarget()
     if not MODES[Gizmo.mode] or not Main or not Main.window or not Main.window.displayed then return nil end
     -- the gizmo draws in draw2d, on top of everything: hidden (and not grabbable) under an overlay
     if MGE.overlayOpen and MGE.overlayOpen() then return nil end
+    if Main.listTab == "joints" then
+        -- the selected joints' anchors, Move only, on the Properties tab (the Link tab's clicks pick objects)
+        if Gizmo.mode ~= "move" or Main.activeTabs.joints ~= "joint" then return nil end
+        return MGE.Joints.target(Main.selectedJointList())
+    end
     if Main.listTab == "players" then
         local t = MGE.Players and MGE.Players.target(Main.selectedPlayerList()) -- all selected, as a group
         if t and Gizmo.mode == "scale" and not t.scalable then return nil end

@@ -5,13 +5,17 @@ require("toriui.uielement")
 ---@field page integer
 ---@field pageSize integer
 ---@field toggleAll boolean
----@field activeTab "core"|"advanced"|"thrust"|"generate" editor panel, kept while the Players list hides the editor
----@field listTab "objects"|"players" what the list area shows
+---@field activeTab "core"|"advanced"|"thrust"|"generate" the objects' editor tab, kept while another list is shown
+---@field activeTabs table<string, string> each list's active editor tab (panel id), by list
+---@field listTab "objects"|"joints"|"players" what the list area shows
 ---@field selectedPlayer integer last picked player: the players panel shows it (also when none is selected)
 ---@field selectedPlayers table<integer, boolean> selected players (Shift adds), the gizmo moves them together
 ---@field selectPlayer fun(id: integer, additive: boolean?) picks a player (list row, world click)
+---@field selectedJoints table<integer, boolean> selected joint slots (Shift adds), never empty, empty slots too
+---@field jointSlot integer the current joint slot (last clicked), always selected: the Link tab edits it
 local Main = { page = 1, pageSize = 120, toggleAll = false, activeTab = "core", listTab = "objects", selectedPlayer = 0,
-    selectedPlayers = { [0] = true } }
+    selectedPlayers = { [0] = true }, selectedJoints = { [1] = true }, jointSlot = 1,
+    activeTabs = { objects = "core", players = "player", joints = "jointLink" } }
 MGE.Main = Main -- registered before UI modules load so they can alias it
 
 local ModData = MGE.ModData
@@ -99,8 +103,8 @@ Widgets.barButtons(textButtons, {
 })
 updateContentHeight(menuH)
 
--- tabs for the list area: objects (with how full the mod is) and players. The active tab has the
--- list's color and touches it, same idea as the editor tabs
+-- tabs for the list area: objects, joints and players (how full the mod is shows in the footer). The
+-- active tab has the list's color and touches it, same idea as the editor tabs
 local TAB_PANEL_COLOR = Widgets.TAB_PANEL_COLOR -- darkens the window, buttons inside (DARKER) stay visible
 local TAB_PADDING = 6 -- space between a tab panel's edge and its content
 
@@ -123,9 +127,8 @@ local listHeader = content:addChild({
 })
 updateContentHeight(listHeader.size.h, 0) -- no gap, the list panel starts right under the tabs
 local listTabNames = {
-    { id = "objects", label = function()
-        return "Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS
-    end },
+    { id = "objects", label = "Objects" },
+    { id = "joints", label = "Joints" },
     { id = "players", label = "Players" },
 }
 local listTabItems = {}
@@ -161,22 +164,41 @@ local tabRow = content:addChild({
 })
 updateContentHeight(tabRow.size.h, 0) -- no gap, the panel starts right under the tabs
 
--- editor panels for objects. The Players list hides the tab row and shows its own panel in the
--- same area (Main.applyTab, ui/editor_player.lua)
-local tabNames = {
-    { id = "core", label = "Core" },
-    { id = "advanced", label = "Advanced" },
-    { id = "thrust", label = "Thrust" },
-    { id = "generate", label = "Generate" },
+-- editor tabs of each list, a tab's id is the editor panel it shows (PANELS in ui/editor.lua). The
+-- Players and Joints lists have one tab so far, their tab row is there for more. Each list has its own
+-- row, shown with the list (Main.applyTab)
+local TAB_SETS = {
+    objects = {
+        { id = "core", label = "Core" },
+        { id = "advanced", label = "Advanced" },
+        { id = "thrust", label = "Thrust" },
+        { id = "generate", label = "Generate" },
+    },
+    players = { { id = "player", label = "Core" } },
+    joints = { { id = "jointLink", label = "Link" }, { id = "joint", label = "Properties" } },
 }
-local tabItems = {}
-for i, tab in ipairs(tabNames) do
-    tabItems[i] = { label = tab.label, onClick = function() Main.setTab(tab.id) end }
-end
----@type table<string, UIElement>
+-- every tab is as wide as an object tab, so a list with fewer tabs lines up with the objects' row
+local TAB_SLOTS = #TAB_SETS.objects
+local tabW = (tabRow.size.w - TAB_GAP * (TAB_SLOTS - 1)) / TAB_SLOTS
+---@type table<string, UIElement> tab rows by list
+local tabRows = {}
+---@type table<string, UIElement> tab buttons by panel id
 local tabButtons = {}
-for i, btn in ipairs(Widgets.buttonRow(tabRow, 0, tabRow.size.h, tabItems, TAB_GAP)) do
-    tabButtons[tabNames[i].id] = btn
+---@type table<string, string> list each panel id belongs to
+local tabList = {}
+for list, tabs in pairs(TAB_SETS) do
+    tabRows[list] = tabRow:addChild({
+        pos = { 0, 0 },
+        size = { #tabs * tabW + (#tabs - 1) * TAB_GAP, tabRow.size.h },
+    })
+    local items = {}
+    for i, tab in ipairs(tabs) do
+        items[i] = { label = tab.label, onClick = function() Main.setTab(tab.id) end }
+        tabList[tab.id] = list
+    end
+    for i, btn in ipairs(Widgets.buttonRow(tabRows[list], 0, tabRow.size.h, items, TAB_GAP)) do
+        tabButtons[tabs[i].id] = btn
+    end
 end
 
 -- the editor area inside the tab panel: fits the panels (8 rows each, see PANELS in ui/editor.lua)
@@ -222,7 +244,7 @@ local function addFooterRow(text)
     updateContentHeight(row.size.h, 0)
     return row
 end
-local limitsRow = addFooterRow() -- dynamic id and joint usage, set by setDynamicStrings
+local limitsRow = addFooterRow() -- object, dynamic id and joint usage, set by setDynamicStrings
 local fileRow = addFooterRow() -- the file Save writes and whether there are unsaved changes
 addFooterRow("Project Mod Group Editor by joopez")
 
@@ -252,31 +274,31 @@ dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by the li
 dofile(MGE.scriptPath .. "ui/file_picker.lua") -- MGE.FilePicker, folder browser: asset import, Model row
 dofile(MGE.scriptPath .. "ui/assets.lua") -- MGE.Assets, export / import overlay for the lists' buttons
 local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
+local joint_list = dofile(MGE.scriptPath .. "ui/joint_list.lua")
 local player_list = dofile(MGE.scriptPath .. "ui/player_list.lua")
 local editor = dofile(MGE.scriptPath .. "ui/editor.lua")
 
----Shows the tab row and the active editor panel. The Players list has no tabs, the players panel
----shows instead. hide(true) keeps hidden parts hidden when the window is re-shown (F1)
+---Shows the shown list's tab row and its active editor panel. hide(true) keeps hidden parts hidden when
+---the window is re-shown (F1)
 function Main.applyTab()
-    if Main.listTab == "players" then
-        -- the players' own panel (ui/editor_player.lua) instead of the object tabs
-        tabRow:hide(true)
-        tabPanel:show(true)
-        editor.applyPanel("player")
-        return
+    for list, row in pairs(tabRows) do
+        if list == Main.listTab then row:show(true) else row:hide(true) end
     end
-    tabRow:show(true)
     tabPanel:show(true)
-    editor.applyPanel(Main.activeTab)
+    local active = Main.activeTabs[Main.listTab]
+    editor.applyPanel(active)
     for id, btn in pairs(tabButtons) do
-        styleTab(btn, id == Main.activeTab)
+        styleTab(btn, id == active)
     end
 end
 
----@param id "core"|"advanced"|"thrust"|"generate"
+---Makes a tab its list's active one (shown when that list is), e.g. "core" or "player"
+---@param id string panel id, see TAB_SETS
 function Main.setTab(id)
-    if not tabButtons[id] then return end
-    Main.activeTab = id
+    local list = tabList[id]
+    if not list then return end
+    Main.activeTabs[list] = id
+    if list == "objects" then Main.activeTab = id --[[@as "core"|"advanced"|"thrust"|"generate"]] end
     Main.applyTab()
 end
 
@@ -350,18 +372,121 @@ function Main.toggleSelectAllPlayers()
     Main.updateWindow()
 end
 
----Switches the list area between objects and players, the top level choice: the editor tabs are
----only there for objects
----@param id "objects"|"players"
+---Selected joints in id order, only joints the mod has. Selected empty slots (Main.selectedJoints keeps
+---them: the Link tab makes a joint there) are left out
+---@return FileParserEnvObjJoint[]
+function Main.selectedJointList()
+    local list = {}
+    for _, joint in ipairs(ModData.parsed.env_obj_joint) do
+        if joint.id and Main.selectedJoints[joint.id] then table.insert(list, joint) end
+    end
+    table.sort(list, function(a, b) return a.id < b.id end)
+    return list
+end
+
+---The current joint slot: the last one clicked, always selected (a joint or empty). The Link tab edits it
+---@return integer
+function Main.selectedSlot()
+    return Main.jointSlot
+end
+
+---The slot whose objects a world click picks: the current slot while the Joints list's Link tab shows
+---@return integer?
+function Main.linkSlot()
+    if Main.listTab ~= "joints" or Main.activeTabs.joints ~= "jointLink" then return nil end
+    return Main.jointSlot
+end
+
+---Camera follow on the Joints list: frames the objects the selected joints link
+local function followJoints()
+    local ids = MGE.Joints.getObjectIds(Main.selectedJointList())
+    local objects = {}
+    for _, obj in ipairs(ModData.parsed.env_obj) do
+        if ids[obj.id] then table.insert(objects, obj) end
+    end
+    if MGE.Camera.followMoves and #objects > 0 then MGE.Camera.focus(objects) end
+end
+
+---After the joint selection changed: a draft for another slot is dropped (the Link tab starts from the
+---saved link again)
+local function dropOtherDraft()
+    local draft = MGE.Joints.draft
+    if draft and draft.jointId ~= Main.jointSlot then MGE.Joints.resetDraft() end
+end
+
+---Picks a joint slot (its cell in the Joints list): a click makes it the current slot and selects only
+---it, Shift (additive) adds it or takes it out (the Properties tab edits all selected). One slot always
+---stays selected. An empty slot opens the Link tab: linking two objects is what it needs
+---@param id integer joint id
+---@param additive boolean?
+function Main.selectJoint(id, additive)
+    local selected = Main.selectedJoints
+    if additive and selected[id] then
+        if next(selected, nil) ~= id or next(selected, id) ~= nil then -- not the last selected one
+            selected[id] = nil
+            if Main.jointSlot == id then Main.jointSlot = next(selected) end
+        end
+    elseif additive then
+        selected[id] = true
+        Main.jointSlot = id
+    else
+        Main.selectedJoints = { [id] = true }
+        Main.jointSlot = id
+    end
+    dropOtherDraft()
+    if Main.selectedJoints[id] then
+        followJoints()
+        if not MGE.Joints.find(id) and Main.activeTabs.joints ~= "jointLink" then Main.setTab("jointLink") end
+    end
+    Main.onSelectionChanged() -- the panel; the cells are restyled by the grid
+end
+
+---Selects only these joint slots, the first is the current one, e.g. a new joint
+---@param ids integer[]
+function Main.selectJointsOnly(ids)
+    if not ids[1] then return end
+    Main.selectedJoints = {}
+    for _, id in ipairs(ids) do Main.selectedJoints[id] = true end
+    Main.jointSlot = ids[1]
+    dropOtherDraft()
+end
+
+---Ctrl + A on the Joints list: every joint, or back to only the current slot when all are selected
+---already. Empty slots aren't selected by it, the current slot stays selected
+function Main.toggleSelectAllJoints()
+    local joints = ModData.parsed.env_obj_joint
+    local all = #joints > 0
+    for _, joint in ipairs(joints) do
+        if not Main.selectedJoints[joint.id] then all = false break end
+    end
+    Main.selectedJoints = { [Main.jointSlot] = true }
+    if not all then
+        for _, joint in ipairs(joints) do
+            if joint.id then Main.selectedJoints[joint.id] = true end
+        end
+        followJoints()
+    end
+    Main.updateWindow()
+end
+
+---Switches the list area between objects, joints and players, the top level choice: the editor tabs
+---are only there for objects
+---@param id "objects"|"joints"|"players"
 function Main.setListTab(id)
     local changed = Main.listTab ~= id
     Main.listTab = id
     applyListTab()
     Main.applyTab()
     Main.updateWindow()
-    -- with camera follow on: the picked player's camera, back on objects the selection again
+    -- with camera follow on: the picked player's camera, the selected joints, or the object selection
     if changed then
-        if id == "players" then MGE.Camera.followPlayer(Main.selectedPlayerList()) else MGE.Camera.followSelection() end
+        if id == "players" then
+            MGE.Camera.followPlayer(Main.selectedPlayerList())
+        elseif id == "joints" then
+            followJoints()
+        else
+            MGE.Camera.followSelection()
+        end
     end
 end
 
@@ -380,7 +505,8 @@ end
 local function setDynamicStrings()
     local warning = Main.dynamicWarning()
     limitsRow.uiColor = warning and WARNING_COLOR or UICOLORWHITE
-    Widgets.infoText(limitsRow, "Dynamic " .. ModData.countDynamic() .. "/" .. MGE.MAX_NONSTATIC_OBJECTS ..
+    Widgets.infoText(limitsRow, "Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS ..
+        "    Dynamic " .. ModData.countDynamic() .. "/" .. MGE.MAX_NONSTATIC_OBJECTS ..
         (warning and " (" .. warning .. ")" or "") ..
         "    Joints " .. #ModData.parsed.env_obj_joint .. "/" .. MGE.MAX_ENV_JOINTS)
 end
@@ -388,6 +514,8 @@ end
 local function createObjSelector()
     if Main.listTab == "players" then
         player_list.create(obj_selector_container)
+    elseif Main.listTab == "joints" then
+        joint_list.create(obj_selector_container)
     else
         obj_selector.create(obj_selector_container, ModData.parsed.env_obj)
     end
@@ -432,6 +560,8 @@ end
 function Main.resetWindow()
     Main.page = 1
     Main.toggleAll = false
+    Main.selectedJoints, Main.jointSlot = { [1] = true }, 1 -- another mod: its joints are other joints
+    MGE.Joints.resetDraft() -- its slot belongs to the old mod
     Main.updateWindow()
 end
 

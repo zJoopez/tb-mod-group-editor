@@ -201,17 +201,19 @@ end
 ---@param keepTab boolean? stay on the shown editor tab instead of switching to Core
 ---@param inView boolean? move them in front of the camera first (imports, New), otherwise they keep
 ---their positions (Generate places its own)
-local function importObjects(parser, keepTab, inView)
+---@param jointIds integer[]? ids for the asset's joints in order (newPair: the Link tab's slot)
+---@return boolean added
+local function importObjects(parser, keepTab, inView, jointIds)
     -- only joints with both objects in the asset are imported, so only those objects need low ids
     local linkedJoints = Joints.getLinked(Joints.idSet(parser.env_obj), parser.env_obj_joint)
-    if not Joints.haveRoom(#linkedJoints) then return end
+    if not Joints.haveRoom(#linkedJoints) then return false end
     local linkedIds = Joints.getObjectIds(linkedJoints)
     local plans = {}
     for i, assetObj in ipairs(parser.env_obj) do
         plans[i] = { pool = ModData.isStatic(assetObj) and "static" or "nonStatic", linked = linkedIds[assetObj.id] or false }
     end
     local ids = ModData.allocateIds(plans) -- all or nothing
-    if not ids then return end
+    if not ids then return false end
     if inView then placeInView(parser) end
 
     -- selection moves to the imported objects so they can be moved right away
@@ -226,7 +228,7 @@ local function importObjects(parser, keepTab, inView)
             selected = true })
         idMap[assetObj.id] = newId
     end
-    local importedJoints = Joints.copyLinked(parser.env_obj_joint, idMap)
+    local importedJoints = Joints.copyLinked(parser.env_obj_joint, idMap, jointIds)
 
     ModData.sortObjects()
     History.commit()
@@ -236,6 +238,7 @@ local function importObjects(parser, keepTab, inView)
     MGE.focusAfterReload = true
     MGE.apply() -- the reload refreshes the window
     print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints")
+    return true
 end
 
 ---@param assetName string
@@ -264,7 +267,7 @@ end
 
 ---Saves the mod's `player N` section (body/joint parts, the player's model) as a player asset.
 ---Player values are relative to the player's own spawn, so the section is copied as is. One player:
----the export icon on its row in the Players list
+---the Players list's Export saves the first selected one
 ---@param playerId integer? default the last picked player
 local function savePlayerToAsset(playerId)
     Main.getPlayerCount() -- resets a player id the mod doesn't have
@@ -374,6 +377,23 @@ function assetsView.newObject()
     assetsView.addObjects({ { kind = "env_obj", id = 1, props = assetsView.defaultProps() } }, false, true)
 end
 
+---Create with nothing picked (the Joints list's Link tab): two DEFAULT_OBJECTs side by side, touching, in front of the
+---camera, and a joint between them with its anchor on the face they share. One undo step
+---@param jointId integer the joint's id (the picked empty slot)
+---@return boolean added
+function assetsView.newPair(jointId)
+    local objects = {}
+    for i, dx in ipairs({ -0.25, 0.25 }) do -- DEFAULT_OBJECT is 0.5 wide: the two touch at its pos
+        local props = assetsView.defaultProps()
+        local x, y, z = props.pos:match("(%S+)%s+(%S+)%s+(%S+)")
+        props.pos = FileHandler.formatNumbers(tonumber(x) + dx, tonumber(y), tonumber(z))
+        objects[i] = { kind = "env_obj", id = i, props = props }
+    end
+    local joint = { kind = "env_obj_joint", id = jointId, obj1 = 1, obj2 = 2, lines = {},
+        props = { pos = assetsView.defaultProps().pos } }
+    return importObjects({ env_obj = objects, env_obj_joint = { joint }, ignores = {} }, true, true, { jointId })
+end
+
 ---@return "obj"|"player" asset kind for what the list shows
 local function listKind()
     return Main.listTab == "players" and "player" or "obj"
@@ -385,7 +405,7 @@ function assetsView.export()
     if assetKind == "obj" then saveSelectedToAsset() else savePlayerToAsset() end
 end
 
----Export icon on a player's row: saves that player's model as a player asset
+---Export on the Players list: saves that player's model as a player asset
 ---@param playerId integer
 function assetsView.exportPlayer(playerId)
     assetKind = "player"

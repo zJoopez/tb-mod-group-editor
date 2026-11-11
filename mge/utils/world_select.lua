@@ -1,6 +1,7 @@
 -- Click objects in the world to select them: click selects only that object, Shift + click adds /
 -- removes it (ModData.clickSelect, same as the object list). On the Players list a click picks the
--- player under the cursor instead (pickPlayer).
+-- player under the cursor instead (pickPlayer). On the Joints list it selects the clicked object's
+-- joints, or on its Link tab it fills the selected slot's draft (Joints.offerDraft).
 --
 -- The click is turned into a camera ray by MGE itself and intersected exactly with every object's
 -- shape (box, sphere, capsule). The nearest hit along the ray wins, so objects in front block the
@@ -303,7 +304,60 @@ add_hook("mouse_button_up", HOOK_SET, function(button, x, y)
     pendingClick = { x = x, y = y, additive = get_keyboard_shift() ~= 0 } -- Shift read at the click
 end)
 
+---Joints list click on an object: selects the joints linking it (only those, or added with Shift,
+---like the list's cells), the lowest of them becomes the current slot. One slot always stays selected,
+---so an object without joints leaves the selection as it is
+---@param obj FileParserEnvObj
+---@param additive boolean
+function WorldSelect.selectJointsOf(obj, additive)
+    local Main = MGE.Main
+    local ids = {}
+    for _, joint in ipairs(ModData.parsed.env_obj_joint) do
+        if joint.id and (joint.obj1 == obj.id or joint.obj2 == obj.id) then table.insert(ids, joint.id) end
+    end
+    if #ids == 0 then return end
+    table.sort(ids)
+    if additive then
+        for _, id in ipairs(ids) do Main.selectedJoints[id] = true end
+        Main.jointSlot = ids[1]
+        local draft = MGE.Joints.draft
+        if draft and draft.jointId ~= ids[1] then MGE.Joints.resetDraft() end -- it was another slot's
+    else
+        Main.selectJointsOnly(ids)
+    end
+    Main.updateWindow() -- the cells and the panel follow
+end
+
+---@type { x: number, y: number }? mouse position to test for the hovered object on the next draw3d
+local pendingHover = nil
+---@type FileParserEnvObj? object under the cursor on the Joints list's Link tab (highlight.lua shows it)
+WorldSelect.hover = nil
+
+---@return integer? the joint slot a world click links objects to (Main.linkSlot), nil when clicks select
+local function linkSlot()
+    local Main = MGE.Main -- created after this module loads
+    return Main and Main.linkSlot and Main.linkSlot() or nil
+end
+
+-- on the Link tab the object under the cursor is highlighted, it's what a click would pick. Tested
+-- only after the mouse moved, not every frame
+add_hook("mouse_move", HOOK_SET, function(x, y)
+    if not linkSlot() then return end
+    if not isActive() or isOverUI(x, y) then
+        pendingHover, WorldSelect.hover = nil, nil
+        return
+    end
+    pendingHover = { x = x, y = y }
+end)
+
 add_hook("draw3d", HOOK_SET, function()
+    if not linkSlot() then
+        pendingHover, WorldSelect.hover = nil, nil
+    elseif pendingHover then
+        local ok, obj = pcall(WorldSelect.pick, pendingHover.x, pendingHover.y)
+        WorldSelect.hover = ok and obj or nil
+        pendingHover = nil
+    end
     local click = pendingClick
     if not click then return end
     pendingClick = nil
@@ -322,6 +376,16 @@ add_hook("draw3d", HOOK_SET, function()
         return
     end
     if not obj then return end
+    if MGE.Main.listTab == "joints" then
+        -- the Link tab: the click picks / unpicks the object in the draft. Otherwise it selects its joints
+        local slot = linkSlot()
+        if slot then
+            MGE.Joints.offerDraft(slot, obj.id)
+        else
+            WorldSelect.selectJointsOf(obj, click.additive)
+        end
+        return
+    end
     local selected = ModData.clickSelect(obj, click.additive)
     MGE.Main.updateWindow() -- list checkboxes and editor values follow the selection
     if selected then MGE.Camera.followSelection() end -- like selecting in the list

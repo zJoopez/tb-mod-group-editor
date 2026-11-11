@@ -348,15 +348,25 @@ local TOOL_KEYS = {
 
 local KEY_DELETE = 127 -- SDLK_DELETE (toriui's text fields use the same code)
 
--- Ctrl + N / D: new / duplicate selected, the list's New and Duplicate buttons: objects, or players on
--- the Players list (ui/player_list.lua)
+-- Ctrl + N / D and Delete: the shown list's New, Duplicate and Delete buttons: objects, or the
+-- Players / Joints list's own (ui/player_list.lua, ui/joint_list.lua)
+---@param action "new"|"duplicate"|"delete"
+local function listAction(action)
+    local tab, actions = MGE.Main.listTab, nil
+    if tab == "players" then
+        local L = MGE.PlayerList
+        actions = { new = L.newPlayer, duplicate = L.duplicate, delete = L.deleteSelected }
+    elseif tab == "joints" then
+        local L = MGE.JointList
+        actions = { new = L.newJoint, duplicate = L.duplicate, delete = L.deleteSelected }
+    else
+        actions = { new = MGE.Assets.newObject, duplicate = MGE.Editor.duplicate, delete = MGE.Editor.deleteSelected }
+    end
+    actions[action]()
+end
 local OBJECT_KEYS = {
-    [string.byte("n")] = function()
-        if MGE.Main.listTab == "players" then MGE.PlayerList.newPlayer() else MGE.Assets.newObject() end
-    end,
-    [string.byte("d")] = function()
-        if MGE.Main.listTab == "players" then MGE.PlayerList.duplicate() else MGE.Editor.duplicate() end
-    end,
+    [string.byte("n")] = function() listAction("new") end,
+    [string.byte("d")] = function() listAction("duplicate") end,
 }
 
 ---True while a prompt, popup or picker of MGE's is open, or one of the game's overlays
@@ -413,9 +423,7 @@ add_hook("key_down", MGE.hookname, function(key)
     if get_keyboard_alt() ~= 0 or not MGE.Main.window.displayed then return end
     local shift, ctrl = get_keyboard_shift() ~= 0, get_keyboard_ctrl() ~= 0
     if key == KEY_DELETE and not shift and not ctrl then
-        if not overlayOpen() then -- confirmation popup
-            if MGE.Main.listTab == "players" then MGE.PlayerList.deleteSelected() else MGE.Editor.deleteSelected() end
-        end
+        if not overlayOpen() then listAction("delete") end -- confirmation popup
         return 1
     elseif ctrl and not shift and OBJECT_KEYS[key] then
         if not overlayOpen() then OBJECT_KEYS[key]() end
@@ -439,8 +447,15 @@ add_hook("key_down", MGE.hookname, function(key)
         if not overlayOpen() then MGE.saveAs() end -- save under another name
         return 1
     elseif ctrl and not shift and key == string.byte("a") then
-        -- same as the list's select all icon. On the Players list: the players, not the objects
-        if MGE.Main.listTab == "players" then MGE.Main.toggleSelectAllPlayers() else MGE.Main.toggleSelectAll() end
+        -- same as the list's select all icon. On the Players / Joints list: those, not the objects
+        local tab = MGE.Main.listTab
+        if tab == "players" then
+            MGE.Main.toggleSelectAllPlayers()
+        elseif tab == "joints" then
+            MGE.Main.toggleSelectAllJoints()
+        else
+            MGE.Main.toggleSelectAll()
+        end
         return 1
     end
 end)

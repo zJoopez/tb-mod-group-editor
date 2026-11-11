@@ -1,6 +1,6 @@
--- Players tab of the list area: one row per player, its export icon saves that player's model. Click
--- picks the player the players panel works on (Main.selectedPlayer), Shift + click adds more players
--- (Main.selectedPlayers): the gizmo, the highlight and Import (the bottom bar) work on all of them
+-- Players tab of the list area: one row per player. Click picks the player the players panel works on
+-- (Main.selectedPlayer), Shift + click adds more players (Main.selectedPlayers): the gizmo, the
+-- highlight and Import (the bottom bar) work on all of them, Export on the first selected one
 
 local player_list = {}
 MGE.PlayerList = player_list -- the shortcuts (main.lua) use its New / Duplicate / Delete
@@ -80,6 +80,17 @@ function player_list.deleteSelected()
     end)
 end
 
+---Export (the bottom bar): saves one player's model, the first selected player's (lowest number).
+---Players on the default body have nothing to save, Assets says so
+function player_list.exportFirst()
+    local first = Main.selectedPlayerList()[1]
+    if not first then
+        TBMenu:showStatusMessage("Select the player to export the model of first")
+        return
+    end
+    MGE.Assets.exportPlayer(first)
+end
+
 ---@return boolean every player is selected
 local function allSelected()
     for id = 0, Main.getPlayerCount() - 1 do
@@ -95,8 +106,8 @@ function player_list.create(view)
         size = { view.size.w, view.size.h },
     })
     -- same bottom bar as the object list, same order: Select all, New, Duplicate, Import (gives every
-    -- selected player the picked model), Delete. Export is one model, so it's on each player's row
-    -- instead. New / Duplicate change numplayers (at most Players.MAX), Delete keeps one player
+    -- selected player the picked model), Export (one model: the first selected player's), Delete.
+    -- New / Duplicate change numplayers (at most Players.MAX), Delete keeps one player
     local barH = ScrollList.rowHeight
     local botBar = toReload:addChild({
         pos = { 0, -barH },
@@ -113,6 +124,8 @@ function player_list.create(view)
             onClick = player_list.duplicate },
         { label = "Import model to the selected players", icon = MGE.scriptPath .. "textures/import.tga", wide = true,
             onClick = function() MGE.Assets.openImport() end },
+        { label = "Export the first selected player's model", icon = MGE.scriptPath .. "textures/export.tga", wide = true,
+            onClick = player_list.exportFirst },
         { label = "Delete selected players (Del)", icon = "../textures/menu/general/buttons/trash.tga", wide = true,
             onClick = player_list.deleteSelected }, -- asks first
     })
@@ -127,18 +140,9 @@ function player_list.create(view)
 
     ScrollList.create(view, { x = 0, y = 0, w = view.size.w, h = view.size.h - barH }, ids, function(row, id)
         row:addAdaptedText("Player " .. id, 8, nil, nil, LEFTMID, 0.7, nil, nil)
-        -- export icon at the row's end, players with a model only (the default body has nothing to save)
-        local iconSize = row.size.h - 4
-        local exportW = 0
-        if MGE.Assets.playerParts(id) then
-            exportW = iconSize + 6
-            local export = MGE.Widgets.iconButton(row, { x = row.size.w - iconSize - 4, y = 2, w = iconSize, h = iconSize },
-                MGE.scriptPath .. "textures/export.tga", function() MGE.Assets.exportPlayer(id) end)
-            TBMenu:displayPopup(export, "Export player " .. id .. "'s model")
-        end
         local info = row:addChild({
             pos = { row.size.w / 2, 0 },
-            size = { row.size.w / 2 - 8 - exportW, row.size.h },
+            size = { row.size.w / 2 - 8, row.size.h },
         })
         info:addAdaptedText(describeModel(id), nil, nil, nil, RIGHTMID, 0.6, nil, nil)
         if Main.selectedPlayers[id] then row.bgColor = ScrollList.selectedColor end
