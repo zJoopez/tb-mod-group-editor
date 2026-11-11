@@ -1,8 +1,10 @@
--- Click objects in the world to select them: click selects only that object, Shift + click adds /
--- removes it (ModData.clickSelect, same as the object list). On the Players list a click picks the
--- player under the cursor instead (pickPlayer). On the Joints list a click on a joint's anchor selects
--- that joint (pickJoint); a click on an object picks it for the current slot's draft on the Link tab
--- (Joints.offerDraft), on the Properties tab it selects the object's joints.
+-- Click anything in the world to select it, whichever list shows (pickAny): a joint's anchor (any joint
+-- on the Joints list, which draws them; elsewhere the ones the game shows, visible 1), else the nearest
+-- player or object under the cursor. A joint, player or object from
+-- another list switches the list to Joints / Players / Objects with only it selected; on
+-- its own list a click selects only it, Shift + click adds / removes it (ModData.clickSelect,
+-- Main.selectPlayer, Main.selectJoint, like the lists). On the Joints list's Link tab an object is
+-- picked for the current slot's draft instead (Joints.offerDraft).
 --
 -- The click is turned into a camera ray by MGE itself and intersected exactly with every object's
 -- shape (box, sphere, capsule). The nearest hit along the ray wins, so objects in front block the
@@ -214,6 +216,7 @@ end
 ---@param x number
 ---@param y number
 ---@return FileParserEnvObj?
+---@return number? distance along the ray
 function WorldSelect.pick(x, y)
     local origin, dir = WorldSelect.cameraRay(x, y)
     if not origin or not dir then return nil end
@@ -222,7 +225,7 @@ function WorldSelect.pick(x, y)
         local t = WorldSelect.hitObject(origin, dir, obj.id - 1)
         if t and t < bestT then best, bestT = obj, t end
     end
-    return best
+    return best, best and bestT
 end
 
 ---Joint whose anchor (the sphere the highlight draws, Highlight.anchorPickRadius) is under the screen
@@ -230,14 +233,17 @@ end
 ---no anchor to click
 ---@param x number
 ---@param y number
+---@param visibleOnly boolean? only joints the game draws itself (visible 1): off the Joints list MGE
+---draws no anchors, a hidden joint there would be an invisible target
 ---@return FileParserEnvObjJoint?
-function WorldSelect.pickJoint(x, y)
+function WorldSelect.pickJoint(x, y, visibleOnly)
     local origin, dir = WorldSelect.cameraRay(x, y)
     if not origin or not dir then return nil end
     local radius = MGE.Highlight.anchorPickRadius
     local best, bestT = nil, math.huge
     for _, joint in ipairs(ModData.parsed.env_obj_joint) do
-        local p = joint.id and MGE.Joints.anchorOf(joint)
+        local shown = not visibleOnly or joint.props.visible == "1"
+        local p = shown and joint.id and MGE.Joints.anchorOf(joint)
         local t = p and hitSphere(origin, dir, p, radius)
         if t and t < bestT then best, bestT = joint, t end
     end
@@ -265,10 +271,11 @@ local function hitBody(origin, dir, player, id)
 end
 
 ---Player under the screen position (its body parts and joints), nearest along the camera ray. Must be
----called from draw3d. The Players list picks with this instead of objects
+---called from draw3d
 ---@param x number
 ---@param y number
 ---@return integer? player 0-based
+---@return number? distance along the ray
 function WorldSelect.pickPlayer(x, y)
     local origin, dir = WorldSelect.cameraRay(x, y)
     if not origin or not dir or not MGE.Players then return nil end
@@ -286,7 +293,25 @@ function WorldSelect.pickPlayer(x, y)
             end
         end
     end
-    return best
+    return best, best and bestT
+end
+
+---What a world click hits: a joint's anchor first (they sit on the faces between objects, the ray
+---reaches an object first), else the nearer of a player and an object. Any joint on the Joints list
+---(it draws every anchor, utils/highlight.lua), elsewhere only the ones the game shows (visible 1).
+---Must be called from draw3d
+---@param x number
+---@param y number
+---@return "joint"|"player"|"object"|nil kind
+---@return any hit FileParserEnvObjJoint / player id (0-based) / FileParserEnvObj
+function WorldSelect.pickAny(x, y)
+    local joint = WorldSelect.pickJoint(x, y, MGE.Main.listTab ~= "joints")
+    if joint then return "joint", joint end
+    local obj, objT = WorldSelect.pick(x, y)
+    local player, playerT = WorldSelect.pickPlayer(x, y)
+    if player and (not obj or playerT < objT) then return "player", player end
+    if obj then return "object", obj end
+    return nil
 end
 
 local function isOverUI(x, y)
@@ -324,30 +349,6 @@ add_hook("mouse_button_up", HOOK_SET, function(button, x, y)
     pendingClick = { x = x, y = y, additive = get_keyboard_shift() ~= 0 } -- Shift read at the click
 end)
 
----Joints list click on an object: selects the joints linking it (only those, or added with Shift,
----like the list's cells), the lowest of them becomes the current slot. One slot always stays selected,
----so an object without joints leaves the selection as it is
----@param obj FileParserEnvObj
----@param additive boolean
-function WorldSelect.selectJointsOf(obj, additive)
-    local Main = MGE.Main
-    local ids = {}
-    for _, joint in ipairs(ModData.parsed.env_obj_joint) do
-        if joint.id and (joint.obj1 == obj.id or joint.obj2 == obj.id) then table.insert(ids, joint.id) end
-    end
-    if #ids == 0 then return end
-    table.sort(ids)
-    if additive then
-        for _, id in ipairs(ids) do Main.selectedJoints[id] = true end
-        Main.jointSlot = ids[1]
-        local draft = MGE.Joints.draft
-        if draft and draft.jointId ~= ids[1] then MGE.Joints.resetDraft() end -- it was another slot's
-    else
-        Main.selectJointsOnly(ids)
-    end
-    Main.updateWindow() -- the cells and the panel follow
-end
-
 ---@type { x: number, y: number }? mouse position to test for the hovered object on the next draw3d
 local pendingHover = nil
 ---@type FileParserEnvObj? object under the cursor on the Joints list's Link tab (highlight.lua shows it)
@@ -370,61 +371,78 @@ add_hook("mouse_move", HOOK_SET, function(x, y)
     pendingHover = { x = x, y = y }
 end)
 
+---A clicked object: on the Link tab it's picked for the current slot's draft, on the Objects list the
+---usual click select, on any other list it switches to Objects with only that object selected
+---@param obj FileParserEnvObj
+---@param additive boolean
+local function clickObject(obj, additive)
+    local Main = MGE.Main
+    local slot = linkSlot()
+    if slot then
+        MGE.Joints.offerDraft(slot, obj.id)
+    elseif Main.listTab == "objects" then
+        local selected = ModData.clickSelect(obj, additive)
+        Main.updateWindow() -- list checkboxes and editor values follow the selection
+        if selected then MGE.Camera.followSelection() end -- like selecting in the list
+    else
+        for _, other in ipairs(ModData.parsed.env_obj) do other.selected = nil end
+        obj.selected = true
+        Main.setListTab("objects") -- rebuilds the window, camera follow frames the selection
+    end
+end
+
+---A clicked player: the usual click select on the Players list, from any other list it switches there
+---with only that player selected
+---@param player integer 0-based
+---@param additive boolean
+local function clickPlayer(player, additive)
+    local Main = MGE.Main
+    if Main.listTab == "players" then
+        Main.selectPlayer(player, additive) -- Shift + click adds / removes, like objects
+        return
+    end
+    Main.selectedPlayers, Main.selectedPlayer = { [player] = true }, player
+    Main.setListTab("players") -- rebuilds the window, camera follow frames the player
+end
+
+---A clicked joint anchor: the usual click select on the Joints list, from any other list it switches
+---there with only that joint selected (on the Joints tab used last)
+---@param joint FileParserEnvObjJoint
+---@param additive boolean
+local function clickJoint(joint, additive)
+    local Main = MGE.Main
+    if Main.listTab == "joints" then
+        Main.selectJoint(joint.id, additive) -- Shift adds / removes it, like its cell
+        Main.updateWindow() -- the list's cells follow (a cell click restyles them itself)
+        return
+    end
+    Main.selectJointsOnly({ joint.id })
+    Main.setListTab("joints") -- rebuilds the window, camera follow frames the joint's objects
+end
+
 add_hook("draw3d", HOOK_SET, function()
     if not linkSlot() then
         pendingHover, WorldSelect.hover = nil, nil
     elseif pendingHover then
-        -- over a joint's anchor a click selects the joint instead of picking an object: no object hover
-        local okJoint, joint = pcall(WorldSelect.pickJoint, pendingHover.x, pendingHover.y)
-        local ok, obj = pcall(WorldSelect.pick, pendingHover.x, pendingHover.y)
-        WorldSelect.hover = ok and not (okJoint and joint) and obj or nil
+        -- only an object a click would pick for the draft: not one behind a joint's anchor or a player
+        local ok, kind, hit = pcall(WorldSelect.pickAny, pendingHover.x, pendingHover.y)
+        WorldSelect.hover = ok and kind == "object" and hit or nil
         pendingHover = nil
     end
     local click = pendingClick
     if not click then return end
     pendingClick = nil
-    if MGE.Main.listTab == "players" then -- the Players list: clicks pick players, not objects
-        local ok, player = pcall(WorldSelect.pickPlayer, click.x, click.y)
-        if not ok then
-            echo("[MGE] world select error: " .. tostring(player))
-        elseif player then
-            MGE.Main.selectPlayer(player, click.additive) -- Shift + click adds / removes, like objects
-        end
-        return
-    end
-    if MGE.Main.listTab == "joints" then
-        -- a click on a joint's anchor selects that joint (Shift adds / removes it, like its cell), on both
-        -- tabs. Before objects: anchors sit on the faces between them, the ray reaches an object first
-        local okJoint, joint = pcall(WorldSelect.pickJoint, click.x, click.y)
-        if not okJoint then
-            echo("[MGE] world select error: " .. tostring(joint))
-            return
-        end
-        if joint then
-            MGE.Main.selectJoint(joint.id, click.additive)
-            MGE.Main.updateWindow() -- the list's cells follow (a cell click restyles them itself)
-            return
-        end
-    end
-    local ok, obj = pcall(WorldSelect.pick, click.x, click.y)
+    -- whatever is under the cursor, whichever list shows: a joint, player or object switches to its list
+    local ok, kind, hit = pcall(WorldSelect.pickAny, click.x, click.y)
     if not ok then
-        echo("[MGE] world select error: " .. tostring(obj))
-        return
+        echo("[MGE] world select error: " .. tostring(kind))
+    elseif kind == "joint" then
+        clickJoint(hit, click.additive)
+    elseif kind == "player" then
+        clickPlayer(hit, click.additive)
+    elseif kind == "object" then
+        clickObject(hit, click.additive)
     end
-    if not obj then return end
-    if MGE.Main.listTab == "joints" then
-        -- the Link tab: the click picks / unpicks the object in the draft. Otherwise it selects its joints
-        local slot = linkSlot()
-        if slot then
-            MGE.Joints.offerDraft(slot, obj.id)
-        else
-            WorldSelect.selectJointsOf(obj, click.additive)
-        end
-        return
-    end
-    local selected = ModData.clickSelect(obj, click.additive)
-    MGE.Main.updateWindow() -- list checkboxes and editor values follow the selection
-    if selected then MGE.Camera.followSelection() end -- like selecting in the list
 end)
 
 -- MGE.quit removes hooks of MGE.hookname only
