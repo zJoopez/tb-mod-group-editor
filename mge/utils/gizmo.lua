@@ -39,6 +39,9 @@ local Gizmo = {
     moveStep = 0.1,   -- Ctrl while dragging an arrow / square: the offset moves in these steps
     rotateStep = 15,  -- Ctrl while dragging a ring: degrees
     scaleStep = 0.1,  -- Ctrl while dragging a scale handle: factor steps
+    ---@type (fun(mode: GizmoMode): GizmoTarget?)? when set, the gizmo works on what this gives instead
+    ---of the selection (ui/map_place.lua: the region or the map being placed)
+    targetOverride = nil,
 }
 MGE.Gizmo = Gizmo
 
@@ -113,9 +116,13 @@ end
 ---@return GizmoTarget?
 local function gizmoTarget()
     local Main = MGE.Main
-    if not MODES[Gizmo.mode] or not Main or not Main.window or not Main.window.displayed then return nil end
+    if not MODES[Gizmo.mode] or not Main or not Main.window then return nil end
+    -- MGE's window hidden: no gizmo, except for an override (the map placement view hides the window)
+    if not Main.window.displayed and not Gizmo.targetOverride then return nil end
     -- the gizmo draws in draw2d, on top of everything: hidden (and not grabbable) under an overlay
     if MGE.overlayOpen and MGE.overlayOpen() then return nil end
+    -- something else has the gizmo (the map placement view, ui/map_place.lua), nil: no gizmo
+    if Gizmo.targetOverride then return Gizmo.targetOverride(Gizmo.mode) end
     if Main.listTab == "joints" then
         -- the selected joints' anchors, Move only, on both of the list's tabs
         if Gizmo.mode ~= "move" then return nil end

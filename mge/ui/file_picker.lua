@@ -8,7 +8,7 @@
 ---@field title string
 ---@field root string folder to browse, e.g. "data/mod_assets" (get_files / get_folders paths)
 ---@field rootLabel string? shown for the root in the folder bar, defaults to root
----@field extension string file type listed, without the dot, e.g. "obj"
+---@field extension string file types listed, without the dot, space separated for several: "obj", "vmf bsp"
 ---@field keepExtension boolean? picked paths keep the extension (asset files) or not (model names)
 ---@field selected string? path relative to root (as passed to onConfirm), opens in its folder selected
 ---@field confirmLabel string?
@@ -45,10 +45,15 @@ local function listFolder(dir, extension)
     for _, name in ipairs(get_folders(dir) or {}) do
         if not name:find("^%.") then table.insert(folders, name) end
     end
-    local suffix = "%." .. extension:lower() .. "$"
+    local suffixes = {}
+    for ext in extension:lower():gmatch("%S+") do table.insert(suffixes, "%." .. ext .. "$") end
     for _, fileName in ipairs(get_files(dir, "") or {}) do
         local name = tostring(fileName):gsub("^.*[/\\]", "")
-        if not name:find("^%.") and name:lower():find(suffix) then table.insert(files, name) end
+        local listed = false
+        for _, suffix in ipairs(suffixes) do
+            if name:lower():find(suffix) then listed = true end
+        end
+        if listed and not name:find("^%.") then table.insert(files, name) end
     end
     table.sort(folders, function(a, b) return a:lower() < b:lower() end)
     table.sort(files, function(a, b) return a:lower() < b:lower() end)

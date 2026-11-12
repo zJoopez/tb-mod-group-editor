@@ -254,7 +254,12 @@ local function importAssetFromFile(assetName)
         print("Asset file contains no objects")
         return
     end
-    importObjects(parser, false, true)
+    -- converted maps say where they go (MGE.KEEP_POSITION_TAG), other assets go in front of the camera
+    local keepPosition = false
+    for _, line in ipairs(parser.ignores) do
+        if line:match("^%s*(%S+)") == MGE.KEEP_POSITION_TAG then keepPosition = true end
+    end
+    importObjects(parser, false, not keepPosition)
 end
 
 ---The model parts a player uses: its own `player N` section, or parts written for all players

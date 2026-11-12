@@ -416,3 +416,6 @@ MGE.MIN_SIDE = 0.0001
 -- the dojo center (middle between the players) in mod file / world coordinates. The Pos row shows
 -- positions relative to it, exported assets and generated shapes are centered on it
 MGE.POS_ORIGIN = { 1, -0.1, 0 }
+-- a line before the first object of an asset file: Import keeps the objects where the file has them
+-- instead of moving them in front of the camera (maps from tools/mapconv.lua)
+MGE.KEEP_POSITION_TAG = "#mge_keep_position"

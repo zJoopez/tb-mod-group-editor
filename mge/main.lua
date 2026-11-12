@@ -47,11 +47,15 @@
 ---@field MAX_NONSTATIC_OBJECTS integer
 ---@field MAX_ENV_JOINTS integer env_obj_joint ids 1-24
 ---@field MIN_SIDE number smallest object side written, zero sides crash physics
+---@field KEEP_POSITION_TAG string asset file line: Import keeps the objects' positions (converted maps)
+---@field MapConv table map converter (mapconv/*.lua): Advanced tab's Map row, also tools/mapconv.lua
 ---@field saveOverlay UIElement? open name prompt (ui/save_overlay.lua)
 ---@field confirmOverlay UIElement? open confirmation popup (TBMenu:showConfirmationWindow)
 ---@field saveOverlayContext table? options for the next name prompt
 ---@field pickerOverlay UIElement? open file picker: asset import, Model row (ui/file_picker.lua)
 ---@field settingsOverlay UIElement? open settings: camera follow, world clicking (ui/settings_overlay.lua)
+---@field mapOverlay UIElement? open Convert Map overlay (ui/map_overlay.lua)
+---@field MapPlace table? map placement view (ui/map_place.lua), loaded by the overlay's Place button
 ---@field closeTopOverlay fun(): boolean Esc: closes the topmost of the overlays above
 ---@field overlayOpen fun(): boolean one of the overlays above, or a game overlay, is open
 ---@field apply fun() writes the working copy and reloads it (shows edits), not a save of the mod
@@ -89,6 +93,14 @@ loadModule("utils/world_select.lua")
 loadModule("utils/camera.lua")
 loadModule("utils/transforms.lua")
 loadModule("utils/shape_gen.lua")
+-- map converter (Advanced tab > Map), pure Lua shared with tools/mapconv.lua, after mat3 / file_handler / mod_export
+loadModule("mapconv/vmf.lua")
+loadModule("mapconv/bsp.lua")
+loadModule("mapconv/props.lua")
+loadModule("mapconv/brush.lua")
+loadModule("mapconv/boxfit.lua")
+loadModule("mapconv/merge.lua")
+loadModule("mapconv/convert.lua")
 loadModule("utils/players.lua") -- players' start positions (engageplayerpos), after highlight and history
 loadModule("utils/gizmo_math.lua")
 loadModule("utils/gizmo.lua") -- after world_select, highlight and transforms
@@ -288,7 +300,7 @@ function MGE.quit(fromWindow)
         pcall(callback)
     end
     -- not ipairs: a nil entry (overlay not open) would stop it before the ones after it
-    for _, overlay in pairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay, MGE.settingsOverlay }) do
+    for _, overlay in pairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay, MGE.settingsOverlay, MGE.mapOverlay }) do
         if overlay and not overlay.destroyed then
             pcall(function() overlay:kill() end)
         end
@@ -374,7 +386,7 @@ local OBJECT_KEYS = {
 ---until it's closed, so a key doesn't change the list behind it, and the gizmo isn't drawn over it
 ---@return boolean
 local function overlayOpen()
-    for _, overlay in pairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay, MGE.settingsOverlay }) do
+    for _, overlay in pairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay, MGE.settingsOverlay, MGE.mapOverlay }) do
         if not overlay.destroyed then return true end
     end
     return TB_MENU_POPUPS_DISABLED == true
@@ -399,13 +411,20 @@ function MGE.closeTopOverlay()
         escFrame = frame
         return true
     end
-    for _, key in ipairs({ "saveOverlay", "pickerOverlay", "settingsOverlay" }) do
+    -- the picker first: it can be open over the map overlay (its Map button)
+    for _, key in ipairs({ "saveOverlay", "pickerOverlay", "settingsOverlay", "mapOverlay" }) do
         local overlay = MGE[key]
         if overlay and not overlay.destroyed then
             overlay:kill() -- their killActions clean up (keyboard, MGE.*Overlay, camera movement)
             escFrame = frame
             return true
         end
+    end
+    -- the map placement view isn't an overlay (the gizmo works under it), Esc goes back to its settings
+    if MGE.MapPlace and MGE.MapPlace.active then
+        MGE.MapPlace.cancel()
+        escFrame = frame
+        return true
     end
     return false
 end
@@ -420,8 +439,17 @@ add_hook("key_down", MGE.hookname, function(key)
         return
     end
     if TB_MENU_INPUT_ISACTIVE then return end -- typing in a text field
-    if get_keyboard_alt() ~= 0 or not MGE.Main.window.displayed then return end
+    if get_keyboard_alt() ~= 0 then return end
     local shift, ctrl = get_keyboard_shift() ~= 0, get_keyboard_ctrl() ~= 0
+    -- the map placement view hides the window: only its gizmo tools work, the rest acts on objects
+    if MGE.MapPlace and MGE.MapPlace.active then
+        if shift and not ctrl and TOOL_KEYS[key] then
+            MGE.Gizmo.toggle(TOOL_KEYS[key])
+            return 1
+        end
+        return
+    end
+    if not MGE.Main.window.displayed then return end
     if key == KEY_DELETE and not shift and not ctrl then
         if not overlayOpen() then listAction("delete") end -- confirmation popup
         return 1
@@ -462,6 +490,7 @@ end)
 
 add_hook("key_up", MGE.hookname, function(key)
     if key ~= 282 then return end --F1
+    if MGE.MapPlace and MGE.MapPlace.active then return end -- the placement view shows it again when it ends
     local Main = MGE.Main
     if Main.window.displayed then
         Main.window:hide(false)

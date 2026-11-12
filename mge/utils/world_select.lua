@@ -25,6 +25,7 @@ local HOOK_SET = MGE.hookname .. "_worldselect" -- own set, MGE's draw3d hook is
 ---@class WorldSelect
 local WorldSelect = {
     clickMoveLimit = 4, -- pixels the mouse may move between down and up to still count as a click
+    clicksOff = false, -- true: clicks in the world don't select, only the gizmo works (ui/map_place.lua)
 }
 
 ---@type { x: number, y: number }?
@@ -320,7 +321,8 @@ end
 
 local function isActive()
     local Main = MGE.Main -- created after this module loads
-    return Main and Main.window and Main.window.displayed and not TB_MENU_INPUT_ISACTIVE
+    -- clicksOff: the map placement view, it hides the window but its gizmo takes clicks
+    return Main and Main.window and (Main.window.displayed or WorldSelect.clicksOff) and not TB_MENU_INPUT_ISACTIVE
 end
 
 -- The gizmo (utils/gizmo.lua, loads after this module) gets the mouse first: a press on one of its
@@ -332,6 +334,7 @@ add_hook("mouse_button_down", HOOK_SET, function(button, x, y)
     pressed = nil
     if button ~= 1 or not isActive() or isOverUI(x, y) then return end
     if Gizmo and Gizmo.press(x, y) then return 1 end
+    if WorldSelect.clicksOff then return end -- only the gizmo (map placement), drags still turn the camera
     pressed = { x = x, y = y }
 end)
 

@@ -208,8 +208,11 @@ function Camera.release()
     remove_hooks(HOOK_SET)
 end
 
+---MGE's camera works while the window is shown, or while the map placement view has it hidden
+---(ui/map_place.lua: orbit and zoom keep working there)
 local function windowShown()
     local Main = MGE.Main
+    if MGE.MapPlace and MGE.MapPlace.active then return true end
     return Main and Main.window and Main.window.displayed
 end
 

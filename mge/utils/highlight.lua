@@ -17,6 +17,8 @@ local Highlight = {
     previewAlpha = 0.2,
     ---@type (fun(): HighlightBox[]?, number[][]?)? set by the Generate tab, boxes and joint anchors to draw this frame
     preview = nil,
+    ---@type fun()? set while the map placement view is open (ui/map_place.lua), draws with Highlight.drawBox
+    placement = nil,
     errorShown = false,
 }
 MGE.Highlight = Highlight
@@ -34,15 +36,29 @@ end
 
 Highlight.toMatrixTB = toMatrixTB -- also used by the gizmo
 
----Translucent box with an outline, for boxes that aren't objects
+---Box that isn't an object: translucent fill, and an outline (a negative-size pass) unless outline is
+---false. fillAlpha 0 draws only the outline
+---@param box HighlightBox
+---@param color number[]
+---@param fillAlpha number
+---@param outline boolean?
+function Highlight.drawBox(box, color, fillAlpha, outline)
+    local p, s, c = box.pos, box.sides, color
+    local rot = toMatrixTB(box.frame)
+    if fillAlpha > 0 then
+        set_color(c[1], c[2], c[3], fillAlpha)
+        draw_box_m(p[1], p[2], p[3], s[1], s[2], s[3], rot)
+    end
+    if outline ~= false then
+        set_color(c[1], c[2], c[3], 1.0)
+        draw_box_m(p[1], p[2], p[3], -(s[1] + 0.02), -(s[2] + 0.02), -(s[3] + 0.02), rot)
+    end
+end
+
+---The Generate tab's preview boxes
 ---@param box HighlightBox
 local function drawPreviewBox(box)
-    local p, s, c = box.pos, box.sides, Highlight.previewColor
-    local rot = toMatrixTB(box.frame)
-    set_color(c[1], c[2], c[3], Highlight.previewAlpha)
-    draw_box_m(p[1], p[2], p[3], s[1], s[2], s[3], rot)
-    set_color(c[1], c[2], c[3], 1.0)
-    draw_box_m(p[1], p[2], p[3], -(s[1] + 0.02), -(s[2] + 0.02), -(s[3] + 0.02), rot)
+    Highlight.drawBox(box, Highlight.previewColor, Highlight.previewAlpha, true)
 end
 
 ---get_obj_rot can return a flat number array, draw_*_m expects a MatrixTB (r0..r15)
@@ -203,8 +219,11 @@ end
 
 add_hook("draw3d", MGE.hookname, function()
     local Main = MGE.Main -- created after this module loads
-    if not Main or not Main.window or not Main.window.displayed then return end
+    if not Main or not Main.window then return end
+    if not Main.window.displayed and not Highlight.placement then return end
     local ok, err = pcall(function()
+        if Highlight.placement then Highlight.placement() end -- map placement, on any list
+        if not Main.window.displayed then return end -- the placement view hides the window, only it draws
         if Main.listTab == "players" then
             -- the players list: the selected players, not the objects (they aren't what's edited there).
             -- During a scale drag the scaled players instead

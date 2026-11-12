@@ -4,8 +4,9 @@
 -- one is first doesn't matter to the game. Nothing changes in the mod until Create (an empty slot) or
 -- Update (a joint's new objects), so a stray click can't rewire a joint.
 --   row 0:    the slot and what the draft would do                             (block jointLinkHead)
---   rows 1-6: every object, picked ones pale, static ones faint. Linking one above id
---             MAX_NONSTATIC_OBJECTS reindexes it down (Joints.linkSlots)        (block jointLinkGrid)
+--   rows 1-6: every object, picked ones pale, static ones faint, on pages when there are more than
+--             fit. Linking one above id MAX_NONSTATIC_OBJECTS reindexes it down (Joints.linkSlots)
+--                                                                               (block jointLinkGrid)
 --   row 7:    Create / Update, Reset (the saved link; Delete is in the list's bar). Create with nothing
 --             picked makes two default objects joined in the slot              (block jointLinkButtons)
 -- A pick only rebuilds the heading and the buttons, the grid restyles its cells in place: rebuilding it
@@ -20,10 +21,14 @@ local Joints = MGE.Joints
 local ModData = MGE.ModData
 
 local ROW_H = 30
-local GRID_COLUMNS = 8 -- 48 objects in the 6 rows without scrolling, more scroll
+local GRID_COLUMNS = 8
 
 ---@type fun()? restyles the grid's cells from the current draft (ObjSelector.grid), set by its build
 local restyleGrid = nil
+-- the grid's page when there are more objects than fit: pages, not scrolling. A scrolled list shows
+-- rows half out of its area and needs bars drawn over them, here those would cover the heading and
+-- the Create / Reset row (objects spilled over them in a big mod: a converted map)
+local gridPage = 1
 
 -- a click in the grid or the world changed the draft: only this tab shows it (no reload, nothing saved)
 Joints.onDraftChanged = function()
@@ -100,7 +105,8 @@ local function buildHeading(holder)
 end
 
 ---Every object, a click picks or unpicks one. Picked ones read from the draft on every restyle (the
----draft is replaced when it's first edited, see Joints.editDraft)
+---draft is replaced when it's first edited, see Joints.editDraft). As many rows as fit the block
+---(7: 56 objects), more objects go on pages with a pager under them, picks are kept across pages
 ---@param holder UIElement
 local function buildGrid(holder)
     restyleGrid = nil
@@ -114,6 +120,20 @@ local function buildGrid(holder)
         empty:addAdaptedText("No objects: Create 2 new ones", nil, nil, nil, CENTERMID, 0.65, nil, nil)
         return
     end
+    local ScrollList = MGE.ScrollList
+    local rowH = ScrollList.rowHeight
+    local rows = math.floor(holder.size.h / rowH)
+    if #objects > rows * GRID_COLUMNS then
+        rows = math.floor((holder.size.h - rowH) / rowH) -- one row for the pager
+        local pageCount
+        objects, gridPage, pageCount = ScrollList.paginate(objects, gridPage, rows * GRID_COLUMNS)
+        ScrollList.createPager(holder, { x = 0, y = rows * rowH, w = holder.size.w, h = rowH }, gridPage, pageCount,
+            function(page)
+                gridPage = page
+                Rows.refreshBlocks({ "jointLinkGrid" })
+            end)
+    end
+    rect.h = rows * rowH -- whole rows only: nothing scrolls, nothing shows outside the block
     local max = MGE.MAX_NONSTATIC_OBJECTS
     restyleGrid = MGE.ObjSelector.grid(holder, rect, objects, {
         columns = GRID_COLUMNS,

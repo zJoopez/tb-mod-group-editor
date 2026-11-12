@@ -1,4 +1,4 @@
--- Advanced tab: Friction, Bounce, Hardness, Flags, Model, Ids (Reindex)
+-- Advanced tab: Friction, Bounce, Hardness, Flags, Model, Ids (Reindex), Map (Convert map overlay)
 local Rows = MGE.EditorRows
 local Widgets = MGE.Widgets
 local ModData = MGE.ModData
@@ -194,10 +194,25 @@ local function buildIdRows(holder)
         "Acts on all objects, joints follow.")
 end
 
+---Map row (advanced panel), built once: opens the Convert Map overlay (ui/map_overlay.lua)
+---@param holder UIElement
+local function buildMapRow(holder)
+    Rows.begin()
+    createToggleButtonRow("Map", holder, {
+        { label = "Convert map", active = false, onClick = function()
+            if not MGE.overlayOpen() then dofile(MGE.scriptPath .. "ui/map_overlay.lua") end
+        end },
+    }, "Turns a .vmf (Hammer) or Source .bsp map (CS:S,\n" ..
+        "CS:GO, TF2...) into static boxes, added where\nthe map puts them. Maps go in assets/maps.")
+end
+
 
 ---@type EditorPanelModule
 return {
-    fixed = { { build = buildIdRows, panel = "advanced", row = 5, rows = 1 } },
+    fixed = {
+        { build = buildIdRows, panel = "advanced", row = 5, rows = 1 },
+        { build = buildMapRow, panel = "advanced", row = 6, rows = 1 },
+    },
     blocks = {
         { name = "advancedProps", build = buildAdvancedProps, panel = "advanced", row = 0, rows = 3 },
         { name = "flags", build = buildFlags, panel = "advanced", row = 3, rows = 1 },
