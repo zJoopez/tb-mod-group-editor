@@ -342,6 +342,24 @@ Tests: `hidden and covered boxes`, `hidden boxes in a conversion` in `tests/test
   - `de_dust2_asite.tbm`: region 612 1980 −200 to 1612 2980 600, anchor 1112 2480 96, tolerance 16. 200 boxes, with 33 small ones cut by the budget.
 - Terrain grid ordering was checked: 56% of edge points are shared with neighbouring grids, against 43% for the transposed or reversed orderings.
 
+### More CS:GO Legacy maps (copied to `mge/mge/assets/maps/` on 2026-11-13)
+
+`assets/` is gitignored and not in the release zip, so these are local test maps only. Whole-map runs of the command-line tool with the defaults (budget 200, anchor at the T spawn) all read without errors:
+
+| Map | File | Brushes | Terrain grids → slabs | Boxes left out inside others | Sky clips left out | Time |
+|---|---|---|---|---|---|---|
+| `cs_office.bsp` | 32 MB | 4,940 | 119 → 1,436 | 366 | 0 | 2.8 s |
+| `de_cache.bsp` | 486 MB | 5,560 | 10,852 → 13,444 | 3,197 | 13 | 12.3 s |
+| `de_inferno.bsp` | 102 MB | 5,707 | 2,223 → 6,501 | 597 | 15 | 5.2 s |
+| `de_mirage.bsp` | 63 MB | 8,189 | 954 → 1,443 | 1,714 | 3 | 4.8 s |
+
+Later the same day, every other defusal and hostage map in CS:GO Legacy was copied too: cs_agency, cs_assault, cs_italy, cs_militia, de_ancient, de_anubis, de_bank, de_boyard, de_canals, de_cbble, de_chalice, de_lake, de_nuke, de_overpass, de_safehouse, de_shortdust, de_shortnuke, de_stmarc, de_sugarcane, de_train, de_tuscan and de_vertigo (2.4 GB). All 22 convert as whole maps without errors, in 0.7–6.7 s each. Brush counts range from 991 (boyard) to 7,847 (train).
+
+- Like dust2, each whole map is far over the budget, so convert by region (Place).
+- Newer maps such as cs_agency, de_boyard and de_chalice have few brushes for their size. Much of their geometry is probably models (props), which the converter doesn't read, so expect holes.
+- "Boxes under the ground" in these runs only means the T spawn isn't the map's lowest point. A region with its own anchor doesn't have that.
+- cache is the heaviest: most of its floors are terrain. Expect its Place view to take noticeably longer to open than dust2's. Not yet tried in game.
+
 ## Testing
 
 - **Test suite:** `lua5.1 mge/tests/run.lua mapconv` (and `bsp`). `tests/test_mapconv.lua` builds hand-written VMFs and checks the whole conversion; `tests/test_bsp.lua` reads `tf2_test2.bsp` when it's in `assets/maps`. Add new converter checks there. The 2026-11-12 harness below was a throwaway one, and the suite rebuilds most of it.

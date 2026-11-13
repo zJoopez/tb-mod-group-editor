@@ -363,10 +363,32 @@ local function linkSlot()
     return Main and Main.linkSlot and Main.linkSlot() or nil
 end
 
--- on the Link tab the object under the cursor is highlighted, it's what a click would pick. Tested
--- only after the mouse moved, not every frame
+---@type { done: fun(obj: FileParserEnvObj), ended: fun()? }? a one-shot pick (the Core tab's color
+---picker): the next world click hands its object to done instead of selecting, a click on nothing
+---cancels. ended runs either way (and on cancelPick)
+WorldSelect.picking = nil
+
+---Starts a one-shot pick, replacing one in progress
+---@param done fun(obj: FileParserEnvObj)
+---@param ended fun()? after done, or when cancelled
+function WorldSelect.startPick(done, ended)
+    WorldSelect.cancelPick()
+    WorldSelect.picking = { done = done, ended = ended }
+end
+
+---Ends a pick in progress without picking (Esc, its button again)
+---@return boolean cancelled one was in progress
+function WorldSelect.cancelPick()
+    local p = WorldSelect.picking
+    WorldSelect.picking, WorldSelect.hover = nil, nil
+    if p and p.ended then p.ended() end
+    return p ~= nil
+end
+
+-- on the Link tab, and while picking, the object under the cursor is highlighted: it's what a click
+-- would pick. Tested only after the mouse moved, not every frame
 add_hook("mouse_move", HOOK_SET, function(x, y)
-    if not linkSlot() then return end
+    if not linkSlot() and not WorldSelect.picking then return end
     if not isActive() or isOverUI(x, y) then
         pendingHover, WorldSelect.hover = nil, nil
         return
@@ -442,17 +464,37 @@ local function clickJoint(joint, additive)
 end
 
 add_hook("draw3d", HOOK_SET, function()
-    if not linkSlot() then
+    local picking = WorldSelect.picking
+    if not linkSlot() and not picking then
         pendingHover, WorldSelect.hover = nil, nil
     elseif pendingHover then
-        -- only an object a click would pick for the draft: not one behind a joint's anchor or a player
-        local ok, kind, hit = pcall(WorldSelect.pickAny, pendingHover.x, pendingHover.y)
+        -- only an object a click would pick for the draft: not one behind a joint's anchor or a player.
+        -- A pick (color picker) takes objects only, whatever is in front
+        local ok, kind, hit
+        if picking then
+            ok, hit = pcall(WorldSelect.pick, pendingHover.x, pendingHover.y)
+            kind = hit and "object"
+        else
+            ok, kind, hit = pcall(WorldSelect.pickAny, pendingHover.x, pendingHover.y)
+        end
         WorldSelect.hover = ok and kind == "object" and hit or nil
         pendingHover = nil
     end
     local click = pendingClick
     if not click then return end
     pendingClick = nil
+    if picking then
+        WorldSelect.picking, WorldSelect.hover = nil, nil
+        local ok, obj = pcall(WorldSelect.pick, click.x, click.y)
+        if ok and obj then
+            local done, err = pcall(picking.done, obj)
+            if not done then echo("^04[MGE] pick error: " .. tostring(err)) end
+        else
+            echo("^04[MGE] no object there, pick cancelled")
+        end
+        if picking.ended then picking.ended() end
+        return
+    end
     -- whatever is under the cursor, whichever list shows: a joint, player or object switches to its list
     local ok, kind, hit = pcall(WorldSelect.pickAny, click.x, click.y)
     if not ok then
@@ -467,6 +509,9 @@ add_hook("draw3d", HOOK_SET, function()
 end)
 
 -- MGE.quit removes hooks of MGE.hookname only
-table.insert(MGE.onQuit, function() remove_hooks(HOOK_SET) end)
+table.insert(MGE.onQuit, function()
+    WorldSelect.picking = nil -- its ended callback would touch the closing window
+    remove_hooks(HOOK_SET)
+end)
 
 MGE.WorldSelect = WorldSelect

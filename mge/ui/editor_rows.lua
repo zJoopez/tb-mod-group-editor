@@ -287,10 +287,10 @@ local function buildPropertyRows(holder, selected, entries)
     for _, entry in ipairs(entries) do
         local label, key = entry[1], entry[2]
         local property = PROPERTIES[key] ---@type EditorProperty
-        -- value shared by the selection ("mixed" when they differ), the game default without a
-        -- selection or for objects without the line in the file
+        -- value shared by the selection ("mixed" when they differ): the file's line (what MGE writes,
+        -- undoes and saves), else the live value, else the game default
         local hint = sharedChoice(selected, function(obj)
-            local value = property.getter and property.getter(obj.id - 1) or tonumber(obj.props[key])
+            local value = tonumber(obj.props[key]) or (property.getter and property.getter(obj.id - 1))
             return formatProperty(property, value or property.default)
         end) or formatProperty(property, property.default)
         local row = createInputRow(label, holder, function(rowInputs) setProperty(key, rowInputs[1]) end,

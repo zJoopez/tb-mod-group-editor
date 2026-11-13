@@ -220,8 +220,11 @@ end
 add_hook("draw3d", MGE.hookname, function()
     local Main = MGE.Main -- created after this module loads
     if not Main or not Main.window then return end
-    if not Main.window.displayed and not Highlight.placement then return end
     local ok, err = pcall(function()
+        -- asked every frame, also when it isn't drawn (another list, window hidden): that's how it sees
+        -- the Generate tab being left, coming back looks at the shape again
+        local boxes, anchors
+        if Highlight.preview then boxes, anchors = Highlight.preview() end
         if Highlight.placement then Highlight.placement() end -- map placement, on any list
         if not Main.window.displayed then return end -- the placement view hides the window, only it draws
         if Main.listTab == "players" then
@@ -246,8 +249,11 @@ add_hook("draw3d", MGE.hookname, function()
                 drawObjectHighlight(obj.id - 1)
             end
         end
-        local boxes, anchors
-        if Highlight.preview then boxes, anchors = Highlight.preview() end
+        -- a pick in progress (the Core tab's color picker): the object a click would take, in white
+        local WorldSelect = MGE.WorldSelect
+        if WorldSelect and WorldSelect.picking and WorldSelect.hover then
+            drawObjectHighlight(WorldSelect.hover.id - 1, HOVER_COLOR)
+        end
         for _, box in ipairs(boxes or {}) do drawPreviewBox(box) end
         for _, p in ipairs(anchors or {}) do drawAnchor(p[1], p[2], p[3]) end -- Generate's joints
     end)

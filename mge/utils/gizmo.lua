@@ -42,6 +42,10 @@ local Gizmo = {
     ---@type (fun(mode: GizmoMode): GizmoTarget?)? when set, the gizmo works on what this gives instead
     ---of the selection (ui/map_place.lua: the region or the map being placed)
     targetOverride = nil,
+    ---@type (fun(mode: GizmoMode): GizmoTarget|false|nil)? on the Objects list, before the selection:
+    ---a target takes the gizmo, false takes it but shows none, nil leaves it to the selection
+    ---(ui/editor_generate.lua: the Generate tab's preview, Move only)
+    previewTarget = nil,
 }
 MGE.Gizmo = Gizmo
 
@@ -132,6 +136,10 @@ local function gizmoTarget()
         local t = MGE.Players and MGE.Players.target(Main.selectedPlayerList()) -- all selected, as a group
         if t and Gizmo.mode == "scale" and not t.scalable then return nil end
         return t
+    end
+    if Gizmo.previewTarget then
+        local t = Gizmo.previewTarget(Gizmo.mode)
+        if t ~= nil then return t or nil end
     end
     local objects = {}
     for _, obj in ipairs(ModData.getSelected()) do

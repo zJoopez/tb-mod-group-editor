@@ -442,6 +442,12 @@ function MGE.closeTopOverlay()
         escFrame = frame
         return true
     end
+    -- a pick in progress (the Core tab's color picker)
+    if MGE.WorldSelect and MGE.WorldSelect.cancelPick() then
+        echo("^04[MGE] pick cancelled")
+        escFrame = frame
+        return true
+    end
     -- the map placement view isn't an overlay (the gizmo works under it), Esc goes back to its settings
     if MGE.isPlacing() then
         MGE.MapPlace.cancel()

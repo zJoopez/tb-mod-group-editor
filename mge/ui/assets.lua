@@ -196,6 +196,28 @@ local function placeInView(parser)
     end
 end
 
+---Gives the asset's joints without a pos line one, halfway between the two objects each links (like a
+---joint MGE makes), before the objects move. Mods always write it (every shipped mod with object joints
+---does); without it the anchor isn't where the asset's objects are: MGE can't show or select it, and an
+---asset placed away from the dojo center (in front of the camera on a converted map) folded up, its
+---rigid joints holding the parts to a far point. Changes the parser's joints in place
+---@param parser FileParserResult
+---@return integer filled
+local function fillJointAnchors(parser)
+    local byId = {}
+    for _, obj in ipairs(parser.env_obj) do byId[obj.id] = obj end
+    local filled = 0
+    for _, joint in ipairs(parser.env_obj_joint) do
+        local a, b = byId[joint.obj1], byId[joint.obj2]
+        -- only from the asset's own pos lines: these objects aren't in the world yet
+        if not joint.props.pos and a and b and readVector(a.props.pos) and readVector(b.props.pos) then
+            joint.props.pos = Joints.midpoint(a, b)
+            filled = filled + 1
+        end
+    end
+    return filled
+end
+
 ---Adds an asset's objects (and joints between them) to the mod, selected, then saves and reloads
 ---@param parser FileParserResult asset contents, positions relative to the spawn point
 ---@param keepTab boolean? stay on the shown editor tab instead of switching to Core
@@ -214,6 +236,8 @@ local function importObjects(parser, keepTab, inView, jointIds)
     end
     local ids = ModData.allocateIds(plans) -- all or nothing
     if not ids then return false end
+    local filled = fillJointAnchors(parser) -- before placeInView: the anchors move with the objects
+    if filled > 0 then echo("^04[MGE] " .. filled .. " joints had no anchor (pos), placed between their objects") end
     if inView then placeInView(parser) end
 
     -- selection moves to the imported objects so they can be moved right away

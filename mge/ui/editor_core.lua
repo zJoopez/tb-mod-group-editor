@@ -127,37 +127,116 @@ local function buildMeasuredRows(holder, selected)
     highlightTransformLabels() -- rebuilt rows start with the panel look
 end
 
--- empty color fields count as these (0-255), shown as the fields' placeholders
+-- an object's color when neither its file line nor the game has one (0-255), and the placeholders
+-- without a selection
 local COLOR_DEFAULTS = { 0, 0, 0, 255 }
 
----Sets the color typed in all four fields (r g b a, 0-255) on selected objects. Empty fields use
----COLOR_DEFAULTS, so what the fields show is exactly what's applied
+---An object's color as the game takes it, r g b a (1 is 255): its file line (what MGE writes and
+---saves), else the game's live color, else COLOR_DEFAULTS
+---@param obj FileParserEnvObj
+---@return number[]
+local function colorUnits(obj)
+    local c = {}
+    for n in (obj.props.color or ""):gmatch("%S+") do c[#c + 1] = tonumber(n) end
+    if #c < 4 then
+        -- a Color (number[] in toriui), or four numbers (pcall: not worth an error in the panel)
+        local ok, r, g, b, a = pcall(get_obj_color, obj.id - 1)
+        if ok and type(r) == "table" then r, g, b, a = r[1], r[2], r[3], r[4] end
+        if ok then c = { tonumber(r), tonumber(g), tonumber(b), tonumber(a) } end
+    end
+    local out = {}
+    for i = 1, 4 do out[i] = c[i] or COLOR_DEFAULTS[i] / 255 end
+    return out
+end
+
+---An object's color as 0-255 r g b a, what the fields show
+---@param obj FileParserEnvObj
+---@return integer[]
+local function colorOf(obj)
+    local out = colorUnits(obj)
+    for i = 1, 4 do out[i] = math.floor(out[i] * 255 + 0.5) end
+    return out
+end
+
+---Gives each selected object a color (r g b a, 1 is 255): set live and written, one undo step
+---@param objects FileParserEnvObj[]
+---@param colorFor fun(obj: FileParserEnvObj): number[]
+local function setColors(objects, colorFor)
+    for _, v in ipairs(objects) do
+        local color = colorFor(v)
+        set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
+        Transforms.writeVector(v, "color", color)
+    end
+    History.commit()
+    refreshProperties() -- the placeholders show the new color
+end
+
+---Sets the channels typed in the color fields (r g b a, 0-255) on the selected objects; an empty field
+---keeps each object's own value of that channel
 local function adjustColor()
     local selectedObjects = getSelected()
     if #selectedObjects == 0 then return end
-
     local typed = readInputs(inwuts.color)
-    local color = {}
-    for i = 1, 4 do
-        -- 255 is the official max, the game accepts up to 500 and draws those brighter
-        color[i] = math.max(0, math.min(500, typed[i] or COLOR_DEFAULTS[i])) / 255
-    end
-    for _, v in ipairs(selectedObjects) do
-        set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
-        Transforms.writeVector(v, "color", { color[1], color[2], color[3], color[4] })
-    end
-    History.commit() -- no panel refresh needed, color placeholders don't depend on the selection
+    if not (typed[1] or typed[2] or typed[3] or typed[4]) then return end
+    setColors(selectedObjects, function(v)
+        local current, color = colorOf(v), {}
+        for i = 1, 4 do
+            -- 255 is the official max, the game accepts up to 500 and draws those brighter
+            color[i] = math.max(0, math.min(500, typed[i] or current[i])) / 255
+        end
+        return color
+    end)
 end
 
----Color and mass rows (core panel). Color placeholders show the defaults empty fields use
+---@type UIElement? the Color row's name button, lit while picking (rebuilt with the panel)
+local colorLabel = nil
+
+---Color picker (the Color row's name): the next object clicked in the world gives the selection its
+---exact color, all four channels. The name again or Esc cancels (MGE.closeTopOverlay)
+local function pickColor()
+    local WorldSelect = MGE.WorldSelect
+    if WorldSelect.picking then
+        WorldSelect.cancelPick()
+        return
+    end
+    local targets = getSelected()
+    if #targets == 0 then
+        echo("^04[MGE] select the objects to color first, then pick")
+        return
+    end
+    WorldSelect.startPick(function(source)
+        local color = colorUnits(source)
+        -- the objects selected now: the selection may have changed in the list meanwhile
+        local now = getSelected()
+        if #now == 0 then return end
+        setColors(now, function() return color end)
+        echo(string.format("^04[MGE] %d objects got object %d's color", #now, source.id))
+    end, function()
+        Rows.setHighlighted(colorLabel, false)
+    end)
+    Rows.setHighlighted(colorLabel, true)
+    echo("^04[MGE] click an object: the selection gets its color (Esc cancels)")
+end
+
+---Color and mass rows (core panel). Placeholders show the selection's values per channel, "mixed"
+---where the objects differ
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
 local function buildCoreProps(holder, selected)
     Rows.begin()
+    local colors = {}
+    for _, obj in ipairs(selected) do colors[obj] = colorOf(obj) end
     local colorHints = {}
-    for i = 1, 4 do colorHints[i] = tostring(COLOR_DEFAULTS[i]) end
-    inwuts.color = createInputRow("Color", holder, function() adjustColor() end, colorHints,
-        "RGBA 0-255 (up to 500 is brighter).\nEnter applies all four, empty fields: 0 0 0 255.")
+    for i = 1, 4 do
+        colorHints[i] = sharedChoice(selected, function(obj) return tostring(colors[obj][i]) end)
+            or tostring(COLOR_DEFAULTS[i])
+    end
+    local _
+    inwuts.color, _, colorLabel = createInputRow("Color", holder, function() adjustColor() end, colorHints,
+        "RGBA 0-255 (up to 500 is brighter). Enter applies\nthe typed fields, empty ones keep each object's own.\n" ..
+        "\"mixed\": the selected objects differ.\nName click: pick a color from an object in the world.",
+        pickColor)
+    Rows.setHighlighted(colorLabel, MGE.WorldSelect.picking ~= nil) -- rebuilt while picking
     inwuts.coreProps = Rows.buildPropertyRows(holder, selected, { { "Mass", "mass" } })
 end
 
