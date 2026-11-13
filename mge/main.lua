@@ -35,6 +35,7 @@
 ---@field Transforms table move / rotate / scale for the selection, utils/transforms.lua
 ---@field ShapeGen table Generate tab geometry, utils/shape_gen.lua
 ---@field Gizmo Gizmo drag handles in the world, utils/gizmo.lua
+---@field Parking Parking objects over the game's limit, kept in the file as comments, utils/parking.lua
 ---@field Players Players players' start positions and rotations (engageplayerpos), utils/players.lua
 ---@field GizmoMath GizmoMath utils/gizmo_math.lua
 ---@field Highlight table selection highlight and generate preview, utils/highlight.lua
@@ -111,6 +112,7 @@ loadModule("utils/mat3.lua")
 loadModule("utils/file_handler.lua")
 loadModule("utils/mod_export.lua")
 loadModule("utils/history.lua")
+loadModule("utils/parking.lua") -- objects over the game's limit, after history
 loadModule("utils/joints.lua")
 loadModule("utils/highlight.lua")
 loadModule("utils/world_select.lua")
@@ -199,6 +201,9 @@ function MGE.apply()
     MGE.keptSelection = {}
     for _, obj in ipairs(ModData.parsed.env_obj) do
         if obj.selected then MGE.keptSelection[obj.id] = true end
+    end
+    for i, obj in ipairs(ModData.parsed.parked) do -- parked ones by their place in the list, negative
+        if obj.selected then MGE.keptSelection[-i] = true end
     end
     MGE.loadMod(outputName)
 end
@@ -368,6 +373,9 @@ add_hook("match_begin", MGE.hookname, function()
         -- our own save: same objects, restore selection and keep the list page
         for _, obj in ipairs(ModData.parsed.env_obj) do
             obj.selected = MGE.keptSelection and MGE.keptSelection[obj.id] or nil
+        end
+        for i, obj in ipairs(ModData.parsed.parked) do
+            obj.selected = MGE.keptSelection and MGE.keptSelection[-i] or nil
         end
         MGE.Main.updateWindow()
         -- e.g. an asset import: the new objects are selected and only exist in the world now

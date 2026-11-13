@@ -1,4 +1,5 @@
--- Advanced tab: Friction, Bounce, Hardness, Flags, Model, Ids (Reindex), Map (Convert map overlay)
+-- Advanced tab: Friction, Bounce, Hardness, Flags, Model, Ids (Reindex), Map (Convert map overlay),
+-- Parked (Park / Unpark / Export atmo, utils/parking.lua)
 local Rows = MGE.EditorRows
 local Widgets = MGE.Widgets
 local ModData = MGE.ModData
@@ -213,12 +214,28 @@ local function buildMapRow(holder)
         "CS:GO, TF2...) into static boxes, added where\nthe map puts them. Maps go in assets/maps.")
 end
 
+---Parked row (advanced panel), built once: objects past the game's limit (utils/parking.lua)
+---@param holder UIElement
+local function buildParkedRow(holder)
+    Rows.begin()
+    local Parking = MGE.Parking
+    createToggleButtonRow("Parked", holder, {
+        { label = "Park", active = false, onClick = Parking.park },
+        { label = "Unpark", active = false, onClick = Parking.unpark },
+        { label = "Export atmo", active = false, onClick = Parking.exportAtmo },
+    }, "Park: the selected objects leave the game (ids freed),\n" ..
+        "kept in the mod file and drawn faint (P in the list).\n" ..
+        "Unpark: selected parked ones back, ids allowing.\n" ..
+        "Export atmo: parked objects into data/atmospheres,\n" ..
+        "drawn by the game without collisions (load it there).")
+end
 
 ---@type EditorPanelModule
 return {
     fixed = {
         { build = buildIdRows, panel = "advanced", row = 5, rows = 1 },
         { build = buildMapRow, panel = "advanced", row = 6, rows = 1 },
+        { build = buildParkedRow, panel = "advanced", row = 7, rows = 1 },
     },
     blocks = {
         { name = "advancedProps", build = buildAdvancedProps, panel = "advanced", row = 0, rows = 3 },

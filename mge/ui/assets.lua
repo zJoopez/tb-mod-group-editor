@@ -224,12 +224,25 @@ end
 ---@param inView boolean? move them in front of the camera first (imports, New), otherwise they keep
 ---their positions (Generate places its own)
 ---@param jointIds integer[]? ids for the asset's joints in order (newPair: the Link tab's slot)
+---@param parkExcess boolean? objects past the free ids are parked (utils/parking.lua) instead of the
+---import failing: the last ones, so objects should come most important first (the map converter's do)
 ---@return boolean added
-local function importObjects(parser, keepTab, inView, jointIds)
+local function importObjects(parser, keepTab, inView, jointIds, parkExcess)
     -- only joints with both objects in the asset are imported, so only those objects need low ids
     local linkedJoints = Joints.getLinked(Joints.idSet(parser.env_obj), parser.env_obj_joint)
     if not Joints.haveRoom(#linkedJoints) then return false end
     local linkedIds = Joints.getObjectIds(linkedJoints)
+    ---@type FileParserEnvObj[] the ones that get parked, in order
+    local excess = {}
+    if parkExcess and #linkedJoints == 0 then
+        local free = #ModData.freeIds.static + #ModData.freeIds.nonStatic
+        local over = #parser.env_obj - free
+        if over > MGE.Parking.room() then
+            print("Not enough room: " .. over .. " objects over the free ids, " .. MGE.Parking.room() .. " more can be parked")
+            return false
+        end
+        for _ = 1, over do table.insert(excess, 1, table.remove(parser.env_obj)) end
+    end
     local plans = {}
     for i, assetObj in ipairs(parser.env_obj) do
         plans[i] = { pool = ModData.isStatic(assetObj) and "static" or "nonStatic", linked = linkedIds[assetObj.id] or false }
@@ -244,6 +257,9 @@ local function importObjects(parser, keepTab, inView, jointIds)
     for _, obj in ipairs(ModData.parsed.env_obj) do
         obj.selected = nil
     end
+    for _, obj in ipairs(ModData.parsed.parked) do
+        obj.selected = nil
+    end
 
     local idMap = {} -- asset object id -> id in the mod
     for i, assetObj in ipairs(parser.env_obj) do
@@ -253,6 +269,11 @@ local function importObjects(parser, keepTab, inView, jointIds)
         idMap[assetObj.id] = newId
     end
     local importedJoints = Joints.copyLinked(parser.env_obj_joint, idMap, jointIds)
+    local parked = {}
+    for i, assetObj in ipairs(excess) do
+        parked[i] = { kind = "env_obj", id = 0, props = ModData.copy(assetObj.props) }
+    end
+    MGE.Parking.add(parked)
 
     ModData.sortObjects()
     History.commit()
@@ -261,7 +282,8 @@ local function importObjects(parser, keepTab, inView, jointIds)
     if not keepTab then MGE.Main.setTab("core") end
     MGE.focusAfterReload = true
     MGE.apply() -- the reload refreshes the window
-    print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints")
+    print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints" ..
+        (#parked > 0 and (", " .. #parked .. " parked (over the free ids)") or ""))
     return true
 end
 
@@ -399,8 +421,10 @@ end
 ---@param inView boolean? see importObjects
 ---@param joints FileParserEnvObjJoint[]? joints between the objects (their obj1 / obj2 are the objects'
 ---ids here), they get new ids with them (Generate's joined pieces)
-function assetsView.addObjects(objects, keepTab, inView, joints)
-    importObjects({ env_obj = objects, env_obj_joint = joints or {}, ignores = {} }, keepTab, inView)
+---@param parkExcess boolean? see importObjects (map conversions)
+---@return boolean added
+function assetsView.addObjects(objects, keepTab, inView, joints, parkExcess)
+    return importObjects({ env_obj = objects, env_obj_joint = joints or {}, ignores = {} }, keepTab, inView, nil, parkExcess)
 end
 
 ---New button of the object list: adds DEFAULT_OBJECT in front of the camera, like an import

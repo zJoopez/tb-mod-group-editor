@@ -94,7 +94,12 @@ function obj_selector.grid(view, rect, items, opts, toReload)
     return restyleAll
 end
 
+---@param view UIElement
+---@param fullList FileParserEnvObj[] the objects, then the parked ones (ui/main.lua)
 local function create(view, fullList)
+    ---@type table<FileParserEnvObj, boolean>
+    local parked = {}
+    for _, obj in ipairs(ModData.parsed.parked or {}) do parked[obj] = true end
 
     local list, page, pageCount = ScrollList.paginate(fullList, Main.page, Main.pageSize)
     Main.page = page -- clamped, e.g. after deleting objects on last page
@@ -132,8 +137,12 @@ local function create(view, fullList)
         w = view.size.w,
         h = view.size.h - topBar.size.h - botBar.size.h
     }, list, {
-        label = function(obj) return tostring(obj.id) end,
+        label = function(obj) return (parked[obj] and "P" or "") .. tostring(obj.id) end,
         isSelected = function(obj) return obj.selected end,
+        isDimmed = function(obj) return parked[obj] end,
+        popup = function(obj)
+            return parked[obj] and "Parked: not in the game, drawn by MGE only.\nAdvanced > Unpark brings it back." or nil
+        end,
         onClick = function(obj, additive)
             local selected = ModData.clickSelect(obj, additive)
             -- the selection is framed when the Camera button is on
@@ -148,9 +157,11 @@ local function create(view, fullList)
             Main.updateWindow()
         end)
 
+    -- Select All takes the objects in the game, not the parked ones (Main.toggleSelectAll)
     local function allSelected()
-        if #fullList == 0 then return false end
-        for _, obj in ipairs(fullList) do
+        local objects = ModData.parsed.env_obj
+        if #objects == 0 then return false end
+        for _, obj in ipairs(objects) do
             if not obj.selected then return false end
         end
         return true

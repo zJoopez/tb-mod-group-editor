@@ -55,7 +55,9 @@ local FIELDS = {
     { label = "Scale", keys = { "scale" }, hints = { tostring(DEFAULTS.scale) },
         info = "Toribash units per map unit.\nSource: a player is 72 units, a tori about 2.5." },
     { label = "Budget", keys = { "budget" }, hints = { tostring(freeIds()) },
-        info = "Most boxes added, the biggest surfaces first.\nEmpty: all " .. freeIds() .. " object ids free in this mod." },
+        info = "Most boxes added, the biggest surfaces first.\nEmpty: all " .. freeIds() .. " object ids free in this mod.\n" ..
+            "More: the rest are parked (drawn only, no\ncollisions, Advanced > Export atmo), up to " ..
+            (freeIds() + MGE.Parking.room()) .. "." },
     { label = "Min size", keys = { "minSize" }, hints = { tostring(DEFAULTS.minSize) },
         info = "Brushes smaller than this on every side are\nleft out (trims, details). Map units." },
     { label = "Terrain tol.", keys = { "terrainTolerance" }, hints = { tostring(DEFAULTS.terrainTolerance) },
@@ -243,7 +245,11 @@ local function readOptions()
     if scale and scale <= 0 then return nil, "Scale must be above 0" end
     local free = freeIds()
     budget = math.floor(budget or free) -- empty: every free object id
-    if budget < 1 or budget > free then return nil, "Budget must be 1-" .. free .. " (free object ids)" end
+    -- over the free ids the rest are parked (Assets.addObjects' parkExcess), as many as there's room for
+    local most = free + MGE.Parking.room()
+    if budget < 1 or budget > most then
+        return nil, "Budget must be 1-" .. most .. " (" .. free .. " free ids, the rest parked)"
+    end
     options.scale, options.budget, options.minSize = scale, budget, minSize
     -- region, anchor and yaw are picked in the placement view
     return options
@@ -339,7 +345,9 @@ local function place(options)
             if #result.objects == 0 then return nil, "No boxes in the region" end
             -- run by the view once it's closed and MGE's window is shown again
             return function()
-                MGE.Assets.addObjects(result.objects, false, false) -- new ids, selected, one undo step, kept in place
+                -- new ids, selected, one undo step, kept in place. Over the free ids the last ones (the
+                -- smallest, the converter's order) are parked
+                MGE.Assets.addObjects(result.objects, false, false, nil, true)
                 for _, line in ipairs(MapConv.reportLines(result.report)) do echo("^04[MGE] " .. line) end
             end
         end,

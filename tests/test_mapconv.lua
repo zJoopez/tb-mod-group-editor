@@ -153,15 +153,40 @@ T.test("sky clips", function()
     r = convert(vmf({ floor, lid }), { clips = true, merge = false, simplify = false })
     T.eq(r.report.dropped.skyClip, 0, "no sky over it: not a sky clip")
 
-    -- sky high above (more than the gap): a wide clip far below it stays
+    -- sky far above (office, nuke: thin sheets up to 1150 under the sky): still a lid
     local highSky = solid(91, { -2000, -2000, 2000 }, { 2000, 2000, 2064 }, SKY)
-    r = convert(vmf({ highSky, floor, lid }), { clips = true, merge = false, simplify = false })
-    T.eq(r.report.dropped.skyClip, 0, "sky far above: kept")
+    local sheet = solid(6, { -500, -500, 448 }, { 500, 500, 464 }, CLIP)
+    r = convert(vmf({ highSky, floor, sheet }), { clips = true, merge = false, simplify = false })
+    T.eq(r.report.dropped.skyClip, 1, "a thin sheet far under the sky: a lid")
 
     -- sky over only a corner of it: kept
     local cornerSky = solid(92, { 300, 300, 700 }, { 2000, 2000, 764 }, SKY)
     r = convert(vmf({ cornerSky, floor, lid }), { clips = true, merge = false, simplify = false })
     T.eq(r.report.dropped.skyClip, 0, "sky over 4% of it: kept")
+
+    -- the sheet far under the sky, with something in the way (the floating rule alone decides)
+    -- a roof between it and the sky (a ceiling clip): kept
+    local roof = solid(7, { -600, -600, 600 }, { 600, 600, 640 })
+    r = convert(vmf({ highSky, floor, sheet, roof }), { clips = true, merge = false, simplify = false })
+    T.eq(r.report.dropped.skyClip, 0, "under a roof: kept")
+
+    -- something to stand on right under it (a clip over stairs, a ledge): kept
+    local ledge = solid(8, { -500, -500, 400 }, { 500, 500, 440 })
+    r = convert(vmf({ highSky, floor, sheet, ledge }), { clips = true, merge = false, simplify = false })
+    T.eq(r.report.dropped.skyClip, 0, "lies on a ledge: kept")
+
+    -- standing on something under more than half of it: kept, under less: a lid
+    local half = solid(9, { -500, -500, 400 }, { 100, 500, 440 })  -- 60% of the footprint
+    r = convert(vmf({ highSky, floor, sheet, half }), { clips = true, merge = false, simplify = false })
+    T.eq(r.report.dropped.skyClip, 0, "something under 60% of it: kept")
+    local strip = solid(10, { -500, -500, 400 }, { -200, 500, 440 }) -- 30%
+    r = convert(vmf({ highSky, floor, sheet, strip }), { clips = true, merge = false, simplify = false })
+    T.eq(r.report.dropped.skyClip, 1, "something under 30% of it: a lid")
+
+    -- a roof cap: a block on a roof filling the air up to the sky (inferno), close under the sky
+    local cap = solid(11, { -500, -500, 440 }, { 500, 500, 680 }, CLIP)
+    r = convert(vmf({ sky, floor, ledge, cap }), { clips = true, merge = false, simplify = false })
+    T.eq(r.report.dropped.skyClip, 1, "on a roof, 20 under the sky: a lid")
 end)
 
 T.test("clip colors", function()

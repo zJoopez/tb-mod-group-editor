@@ -57,12 +57,24 @@ function ModData.clickSelect(obj, additive)
         return obj.selected == true
     end
     local onlySelected = obj.selected
-    for _, other in ipairs(ModData.parsed.env_obj) do
-        if other ~= obj and other.selected then onlySelected = false end
-        other.selected = nil
+    for _, list in ipairs({ ModData.parsed.env_obj, ModData.parsed.parked or {} }) do -- parked: the list's P cells
+        for _, other in ipairs(list) do
+            if other ~= obj and other.selected then onlySelected = false end
+            other.selected = nil
+        end
     end
     obj.selected = not onlySelected or nil
     return obj.selected == true
+end
+
+---Selected parked objects (utils/parking.lua). getSelected has only the objects in the game
+---@return FileParserEnvObj[]
+function ModData.getSelectedParked()
+    local selected = {}
+    for _, obj in ipairs(ModData.parsed.parked or {}) do
+        if obj.selected then table.insert(selected, obj) end
+    end
+    return selected
 end
 
 ---@return FileParserEnvObj[]
@@ -375,7 +387,7 @@ local function rebaseModels()
 end
 
 local function init()
-    ModData.parsed = { env_obj = {}, env_obj_joint = {}, ignores = {} }
+    ModData.parsed = { env_obj = {}, env_obj_joint = {}, parked = {}, ignores = {} }
     ModData.freeIds = { nonStatic = {}, static = {} }
     ModData.jointIds = {}
 end

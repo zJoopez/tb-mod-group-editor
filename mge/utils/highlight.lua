@@ -70,6 +70,31 @@ local function getObjRotTB(id)
     return Utils3D.MatrixToMatrixTB(rot)
 end
 
+---Parked objects (utils/parking.lua): not in the game, drawn as translucent ghosts in Parking.color,
+---selected ones in the highlight color with an outline. Fill only for the others, there can be hundreds
+local function drawParked()
+    local Parking = MGE.Parking
+    for _, obj in ipairs(ModData.parsed.parked or {}) do
+        local g = Parking.ghost(obj)
+        if g then
+            local c = obj.selected and Highlight.color or Parking.color
+            local alpha = obj.selected and Parking.selectedAlpha or Parking.alpha
+            local p, s = g.pos, g.sides
+            if g.shape == "box" then
+                Highlight.drawBox(g, c, alpha, obj.selected == true)
+            else
+                local rot = toMatrixTB(g.frame)
+                set_color(c[1], c[2], c[3], alpha)
+                if g.shape == "sphere" then
+                    draw_sphere_m(p[1], p[2], p[3], s[1], rot)
+                else -- pill: x radius, y length
+                    draw_capsule_m(p[1], p[2], p[3], s[2], s[1], rot)
+                end
+            end
+        end
+    end
+end
+
 ---Draws translucent fill slightly larger than the object, then a negative-size pass
 ---which renders the inverted shell and reads as an outline
 ---@param id integer 0-based object id
@@ -249,6 +274,7 @@ add_hook("draw3d", MGE.hookname, function()
                 drawObjectHighlight(obj.id - 1)
             end
         end
+        drawParked()
         -- a pick in progress (the Core tab's color picker): the object a click would take, in white
         local WorldSelect = MGE.WorldSelect
         if WorldSelect and WorldSelect.picking and WorldSelect.hover then

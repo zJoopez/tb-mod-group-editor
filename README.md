@@ -21,7 +21,7 @@ The window has three lists, each with its own tabs.
 
 | List | Tabs |
 |---|---|
-| **Objects** | **Core**: position, rotation, scale, color, mass, shape, visibility. **Advanced**: friction, bounce, flags, model, reindexing ids, map import. **Thrust**: frames, direction, axes. **Generate**: rows, rings and grids of new objects. |
+| **Objects** | **Core**: position, rotation, scale, color, mass, shape, visibility. **Advanced**: friction, bounce, flags, model, reindexing ids, map import, parked objects. **Thrust**: frames, direction, axes. **Generate**: rows, rings and grids of new objects. |
 | **Joints** | **Link**: the two objects a joint connects. **Properties**: position, axis, range, strength, velocity, type. |
 | **Players** | Start position, rotation, scale and body parts of each player. |
 
@@ -48,6 +48,20 @@ lua5.1 mge/tools/mapconv.lua <map.vmf|map.bsp> [options]
 ```
 
 `--help` lists the options. The result goes to `assets/obj`, and Import keeps its position.
+
+### Parked objects and atmospheres (experimental)
+
+A mod holds 256 objects. To build scenery beyond that, park objects: Advanced tab → **Park** takes the
+selected objects out of the game and frees their ids. Parked objects stay in the mod file as comments
+the game skips, and MGE draws them faint. They're listed after the objects as P1, P2…
+
+- **Unpark** brings selected parked objects back while there are free ids. To edit a parked object,
+  unpark it, edit, and park it again. Objects joined by a joint can't be parked.
+- **Convert map** can go past the free ids: a Budget above them parks the rest (the smallest boxes),
+  up to 512 parked in all. The placement view draws those in purple.
+- **Export atmo** writes the parked objects to `data/atmospheres/MGE - <mod>.atmo`. The game draws
+  atmosphere objects but they don't collide. Players load the atmosphere themselves (main menu → Shaders &
+  Atmos → Atmos); it doesn't come with the mod.
 
 ## Keyboard shortcuts
 

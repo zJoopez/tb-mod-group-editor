@@ -25,9 +25,10 @@ end
 ---@param parsed FileParserResult
 ---@return FileParserResult
 local function copyParsed(parsed)
-    local copy = { ignores = parsed.ignores, trailer = parsed.trailer, env_obj = {}, env_obj_joint = {} }
+    local copy = { ignores = parsed.ignores, trailer = parsed.trailer, env_obj = {}, env_obj_joint = {}, parked = {} }
     for i, obj in ipairs(parsed.env_obj or {}) do copy.env_obj[i] = copyObject(obj) end
     for i, obj in ipairs(parsed.env_obj_joint or {}) do copy.env_obj_joint[i] = copyObject(obj) end
+    for i, obj in ipairs(parsed.parked or {}) do copy.parked[i] = copyObject(obj) end
     return copy
 end
 
@@ -80,6 +81,12 @@ local function sameObjects(a, b)
         local other = b.env_obj_joint[i]
         if obj.id ~= other.id or obj.obj1 ~= other.obj1 or obj.obj2 ~= other.obj2 or
             not sameProps(obj.props, other.props) then return false end
+    end
+    -- parked objects aren't in the world, only the file has them: any difference needs a save
+    local pa, pb = a.parked or {}, b.parked or {}
+    if #pa ~= #pb then return false end
+    for i, obj in ipairs(pa) do
+        if not sameProps(obj.props, pb[i].props) then return false end
     end
     return true
 end
@@ -168,6 +175,9 @@ local function restore(index)
     local selected = {}
     for _, obj in ipairs(current.env_obj) do selected[obj.id] = obj.selected end
     for _, obj in ipairs(ModData.parsed.env_obj) do obj.selected = selected[obj.id] end
+    local parkedSelected = {}
+    for i, obj in ipairs(current.parked or {}) do parkedSelected[i] = obj.selected end
+    for i, obj in ipairs(ModData.parsed.parked) do obj.selected = parkedSelected[i] end
 
     if sameObjects(current, ModData.parsed) then
         applyLive(ModData.parsed)

@@ -299,6 +299,21 @@ The rule (`SKY_CLIP` and `MapConv.isSkyClip` in `convert.lua`) leaves a clip out
 
 On dust2 it drops exactly the 5 lids. The 712×160×500 clip at the lids' edge (`1382`) stays, because it's taller than it is wide. Sky brushes come from `MapBrush.sky`, which the `.bsp` reader sets from the sky surface flags; in a `.vmf` they're found by their `TOOLSSKYBOX` material. The report says how many were left out. `--sky-clips` on the command line (option `skyClips`) keeps them; the overlay always leaves them out. Clips inside dust2's 3D skybox (z ~3570–3790) aren't lids and aren't dropped, and a region around the play area leaves them out anyway. Tests: `sky clips` in `tests/test_mapconv.lua`.
 
+**Floating lids (the user: office and nuke keep big flat sky clips, 2026-11-13).** Office's and nuke's lids are thin 16-unit sheets 250–1150 units under the sky, so the 256 gap missed them (office: 0 left out). Distance to the sky can't separate them from useful clips, but what's under them can. The rule (`dropSkyClips` in `convert.lua`, run once every piece exists, since what's under a clip can be terrain) now also leaves out a wide, flat clip when, on 6×6 points of its footprint:
+
+- **floating**: on at least half, nothing solid (terrain included) from 72 units (a player's height) under it up to its top
+- **open**: on at least half, sky directly over it with nothing solid in between
+
+The old "close under the sky" rule stays as the other way in: thick blocks resting on roofs right under the sky (inferno's, overpass's roof caps) don't float.
+
+Measured: office's 8 sheets float on 75–100% and are open on 97–100%. Nuke's sheets at z 208 and −64 float on 94–100%, open 78–100%. Kept: nuke's clips under roofs (open 0%), its clips lying on geometry (floating 3–11%), and dust2's ceiling clip over CT spawn (738×562, open 47%). Also dropped now: the 512×1024 sheets in the 3D skyboxes (dust2, nuke, mirage), mirage's 6144×5504 lid over the whole map, and dust2's 1256×448 clip at (−1596, 1184, 372). None of these is inside the dust2 bombsite regions.
+
+Sky clips left out, whole maps: office 0 → 8, nuke 22, dust2 5 → 11, inferno 15 → 16, mirage 3 → 9, overpass 5 → 9, train 16, cache 13 → 28, ancient 11, vertigo 2. Times unchanged.
+
+### Parking the excess (2026-11-13)
+
+The overlay's Budget may go above the mod's free object ids, up to the free ids plus the room left for parked objects (`Parking.maxParked`, 512). Convert adds the boxes in the converter's order (most important first): the first ones get the free ids, the rest become parked objects (`utils/parking.lua`: kept in the mod file as comments, drawn by MGE, exportable as an atmo without collisions). The placement view draws the boxes that will be parked in purple and counts them in the bar. Imports that don't ask for it (`Assets.addObjects`' `parkExcess`) stay all or nothing.
+
 ### Clip colors (the user: clips hold a big share of the core geometry, 2026-11-13)
 
 With Clips on, 74 of the 200 boxes of a dust2 mid area are clips: ramps over stairs, smoothed wall corners, rails. See-through red made a big part of the map look unfinished, so clips are now **always solid, in the color of the map geometry they cover**. A `clipColor` option with a Red mode existed briefly and was removed the same day; the user found no use for red.
@@ -345,6 +360,8 @@ Tests: `hidden and covered boxes`, `hidden boxes in a conversion` in `tests/test
 ### More CS:GO Legacy maps (copied to `mge/mge/assets/maps/` on 2026-11-13)
 
 `assets/` is gitignored and not in the release zip, so these are local test maps only. Whole-map runs of the command-line tool with the defaults (budget 200, anchor at the T spawn) all read without errors:
+
+Sky clip counts in this table are from before the floating-lid rule (see Sky clips above for the new ones).
 
 | Map | File | Brushes | Terrain grids → slabs | Boxes left out inside others | Sky clips left out | Time |
 |---|---|---|---|---|---|---|

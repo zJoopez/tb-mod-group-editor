@@ -18,7 +18,7 @@ local formatNumbers = FileHandler.formatNumbers
 ---@field minSize number map units, brushes whose box is smaller on every side are left out (detail)
 ---@field clips boolean keep player clip brushes (the map's invisible walls, ramps over stairs), colored like
 ---the map geometry they cover (borrowMaterials)
----@field skyClips boolean with clips: also keep sky clips, the big lids close under the sky (see SKY_CLIP)
+---@field skyClips boolean with clips: also keep sky clips, the big lids under the open sky (see SKY_CLIP)
 ---@field invisible boolean keep solid brushes nobody sees (only nodraw and other undrawn tool textures)
 ---@field ungrippable boolean flag the boxes ungrippable too
 ---@field slabError number see BoxFitOptions
@@ -99,16 +99,23 @@ local CLIP_ALL = { TOOLSPLAYERCLIP = true, TOOLSCLIP = true }
 -- a side with one of these: a sky brush (a .bsp marks them itself, MapBrush.sky)
 local SKY_ANY = { TOOLSSKYBOX = true, TOOLSSKYBOX2D = true }
 
--- Sky clips: mappers fill the air between the roofs and the sky with huge clip brushes, so players
--- can't jump onto the roofs or out of the map. In Toribash they're giant see-through lids over the
--- map (dust2: 5 of them, up to 2650 x 3100 units). A clip is one when it's
---   wide:    both horizontal sides at least `width` map units (walls and pillars stay)
---   flat:    lower than it is wide (a tall block next to the sky is a wall)
---   high:    sky starts at most `gap` above its top (floor clips far below the sky stay)
---   covered: sky over at least `cover` of its top (a floor clip at the edge of open sky stays)
--- Measured on dust2: the 5 lids are 76-236 under the sky, fully covered; the widest flat clip that
--- isn't a lid (a stair ramp, 738 x 562) has 1% sky over it
-local SKY_CLIP = { width = 256, gap = 256, cover = 0.5 }
+-- Sky clips: mappers fill the open parts of the map with huge clip brushes, so players can't jump
+-- onto the roofs or out of the map. In Toribash they're giant lids (dust2: up to 2650 x 3100 units,
+-- office and nuke: thin 16 unit sheets 250-1150 under the sky). A clip is one when it's
+--   wide:     both horizontal sides at least `width` map units (walls and pillars stay)
+--   flat:     lower than it is wide (a tall block next to the sky is a wall)
+-- and either
+--   close:    sky starts at most `gap` above its top over at least `cover` of it (blocks filling
+--             the air from the roofs up to the sky, dust2's lids, inferno's roof caps)
+-- or
+--   floating: on at least `floating` of its footprint nothing solid (terrain too) from `clearance`
+--             under it up to its top: nothing to stand on under it, it's not a floor or a ramp
+--   open:     on at least `open` of its footprint sky right over it, nothing solid in between (a
+--             ceiling clip under a roof stays)
+-- Checked on `samples` x `samples` points of its footprint. Measured: the sheets of office and nuke
+-- float on 75-100% and are open on 78-100%; dust2's ceiling clip over CT spawn is open on 47%,
+-- nuke's clips under roofs on 0%, its clips lying on geometry float on 0-11%
+local SKY_CLIP = { width = 256, gap = 256, cover = 0.5, clearance = 72, floating = 0.5, open = 0.5, samples = 6 }
 
 ---@param material string
 ---@return string last part of the name, upper case
@@ -343,26 +350,6 @@ local function skyBounds(map)
     return skies
 end
 
----A clip that's a lid over the map, close under the sky (SKY_CLIP)
----@param geometry MapGeometry the clip brush
----@param skies { min: number[], max: number[] }[] skyBounds
----@return boolean
-function MapConv.isSkyClip(geometry, skies)
-    local min, max = geometry.min, geometry.max
-    local w, d, h = max[1] - min[1], max[2] - min[2], max[3] - min[3]
-    if math.min(w, d) < SKY_CLIP.width or h >= math.min(w, d) then return false end
-    local covered = 0
-    for _, sky in ipairs(skies) do
-        local above = sky.min[3] - max[3]
-        if above >= -1 and above <= SKY_CLIP.gap then
-            local ox = math.min(sky.max[1], max[1]) - math.max(sky.min[1], min[1])
-            local oy = math.min(sky.max[2], max[2]) - math.max(sky.min[2], min[2])
-            if ox > 0 and oy > 0 then covered = covered + ox * oy end
-        end
-    end
-    return covered >= SKY_CLIP.cover * w * d
-end
-
 ---World-axis bounds of a box (map units)
 ---@param box MapBox
 ---@return number[] min, number[] max
@@ -374,6 +361,92 @@ local function boundsOf(box)
         min[k], max[k] = box.center[k] - half, box.center[k] + half
     end
     return min, max
+end
+
+local SKY_CELL = 512 -- grid of the solids' footprints, map units
+
+---Leaves out the clips that are lids over the map (SKY_CLIP), once every piece is there: what's under
+---a clip can be terrain
+---@param pieces MapConvPiece[]
+---@param skies { min: number[], max: number[] }[] skyBounds
+---@return MapConvPiece[] kept, integer lids
+local function dropSkyClips(pieces, skies)
+    local candidates = {}
+    for _, piece in ipairs(pieces) do
+        if piece.role == "clip" then
+            local min, max = boundsOf(piece)
+            local across = math.min(max[1] - min[1], max[2] - min[2])
+            if across >= SKY_CLIP.width and max[3] - min[3] < across then
+                candidates[#candidates + 1] = { piece = piece, min = min, max = max }
+            end
+        end
+    end
+    if #candidates == 0 or #skies == 0 then return pieces, 0 end
+
+    -- solids by footprint cell
+    local grid = {}
+    for _, piece in ipairs(pieces) do
+        if piece.role ~= "clip" then
+            local min, max = boundsOf(piece)
+            local entry = { min = min, max = max }
+            for x = math.floor(min[1] / SKY_CELL), math.floor(max[1] / SKY_CELL) do
+                for y = math.floor(min[2] / SKY_CELL), math.floor(max[2] / SKY_CELL) do
+                    local key = x .. "," .. y
+                    grid[key] = grid[key] or {}
+                    table.insert(grid[key], entry)
+                end
+            end
+        end
+    end
+
+    ---Close under the sky: sky starting at most SKY_CLIP.gap over its top covers enough of it
+    local function close(min, max)
+        local covered = 0
+        for _, sky in ipairs(skies) do
+            local above = sky.min[3] - max[3]
+            if above >= -1 and above <= SKY_CLIP.gap then
+                local ox = math.min(sky.max[1], max[1]) - math.max(sky.min[1], min[1])
+                local oy = math.min(sky.max[2], max[2]) - math.max(sky.min[2], min[2])
+                if ox > 0 and oy > 0 then covered = covered + ox * oy end
+            end
+        end
+        return covered >= SKY_CLIP.cover * (max[1] - min[1]) * (max[2] - min[2])
+    end
+
+    local n = SKY_CLIP.samples
+    local lids = {}
+    for _, c in ipairs(candidates) do
+        local min, max = c.min, c.max
+        if close(min, max) then lids[c.piece] = true end
+        local floating, open = 0, 0
+        for i = 0, n - 1 do
+            for j = 0, n - 1 do
+                local x = min[1] + (i + 0.5) * (max[1] - min[1]) / n
+                local y = min[2] + (j + 0.5) * (max[2] - min[2]) / n
+                local skyZ = math.huge -- lowest sky bottom over this point
+                for _, sky in ipairs(skies) do
+                    if x >= sky.min[1] and x <= sky.max[1] and y >= sky.min[2] and y <= sky.max[2]
+                        and sky.min[3] >= max[3] - 1 and sky.min[3] < skyZ then skyZ = sky.min[3] end
+                end
+                local free, clear = true, skyZ < math.huge
+                for _, s in ipairs(grid[math.floor(x / SKY_CELL) .. "," .. math.floor(y / SKY_CELL)] or {}) do
+                    if x >= s.min[1] and x <= s.max[1] and y >= s.min[2] and y <= s.max[2] then
+                        if s.max[3] > min[3] - SKY_CLIP.clearance and s.min[3] < max[3] then free = false end
+                        if s.max[3] > max[3] + 1 and s.min[3] < skyZ - 1 then clear = false end
+                    end
+                end
+                if free then floating = floating + 1 end
+                if clear then open = open + 1 end
+            end
+        end
+        if floating >= SKY_CLIP.floating * n * n and open >= SKY_CLIP.open * n * n then lids[c.piece] = true end
+    end
+
+    local kept, count = {}, 0
+    for _, piece in ipairs(pieces) do
+        if lids[piece] then count = count + 1 else kept[#kept + 1] = piece end
+    end
+    return kept, count
 end
 
 -- clips borrow the material of solid geometry within this many map units (touching walls, the stairs
@@ -456,8 +529,6 @@ function MapConv.pieces(map, options)
             local geometry = MapConv.Brush.build(brush.sides)
             if not geometry then
                 drop("broken")
-            elseif role == "clip" and skies and MapConv.isSkyClip(geometry, skies) then
-                drop("skyClip")
             else
                 local box = MapConv.BoxFit.fit(geometry, opts) --[[@as MapConvPiece]]
                 box.role = role --[[@as "solid"|"clip"]]
@@ -496,6 +567,11 @@ function MapConv.pieces(map, options)
                 report.terrainSlabs = report.terrainSlabs + 1
             end
         end
+    end
+    if skies then
+        local lids
+        pieces, lids = dropSkyClips(pieces, skies)
+        report.dropped.skyClip = report.dropped.skyClip + lids
     end
     if opts.clips then borrowMaterials(pieces) end
     return pieces, report

@@ -506,7 +506,9 @@ end
 local function setDynamicStrings()
     local warning = Main.dynamicWarning()
     limitsRow.uiColor = warning and WARNING_COLOR or UICOLORWHITE
+    local parked = #ModData.parsed.parked
     Widgets.infoText(limitsRow, "Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS ..
+        (parked > 0 and (" +" .. parked .. " parked") or "") ..
         "    Dynamic " .. ModData.countDynamic() .. "/" .. MGE.MAX_NONSTATIC_OBJECTS ..
         (warning and " (" .. warning .. ")" or "") ..
         "    Joints " .. #ModData.parsed.env_obj_joint .. "/" .. MGE.MAX_ENV_JOINTS)
@@ -518,7 +520,11 @@ local function createObjSelector()
     elseif Main.listTab == "joints" then
         joint_list.create(obj_selector_container)
     else
-        obj_selector.create(obj_selector_container, ModData.parsed.env_obj)
+        -- parked objects after the objects, as P1, P2... (utils/parking.lua)
+        local items = {}
+        for _, obj in ipairs(ModData.parsed.env_obj) do items[#items + 1] = obj end
+        for _, obj in ipairs(ModData.parsed.parked) do items[#items + 1] = obj end
+        obj_selector.create(obj_selector_container, items)
     end
 end
 
@@ -552,6 +558,10 @@ function Main.toggleSelectAll(value)
     Main.toggleAll = value
     for _, obj in ipairs(objects) do
         obj.selected = value or nil
+    end
+    -- parked objects aren't part of Select All, deselecting clears them too
+    if not value then
+        for _, obj in ipairs(ModData.parsed.parked) do obj.selected = nil end
     end
     Main.updateWindow()
     -- selecting everything frames it when the camera button is on, like selecting in the list

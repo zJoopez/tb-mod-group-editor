@@ -259,13 +259,14 @@ local function delete()
         end
     end
     Joints.removeLinkedToAny(deleted) -- a joint can't point to a missing object
+    MGE.Parking.removeSelected() -- selected parked objects (P in the list) go too
     History.commit()
     MGE.apply()
 end
 
 ---Asks for confirmation with Toribash's own popup (TBMenu:showConfirmationWindow) before deleting
 local function onDeleteClick()
-    local count = #getSelected()
+    local count = #getSelected() + #ModData.getSelectedParked()
     if count == 0 or (MGE.confirmOverlay and not MGE.confirmOverlay.destroyed) then return end
     local message = "Delete " .. count .. " selected object" .. (count == 1 and "" or "s") .. "?\nUndo can bring them back."
     -- stored so MGE.quit can close it, cleared by either button
