@@ -248,6 +248,8 @@ end
 ---@param offset number[]
 function Players.moveBy(players, offset)
     local list = asList(players)
+    -- camera follow, like moving objects: measured now, the bodies are placed after the reload
+    MGE.Camera.followPlayer(list, { offset = offset })
     ensurePositions(function()
         local pos, rot = readList(POS) or {}, readList(ROT) or {}
         for _, player in ipairs(list) do
@@ -649,6 +651,7 @@ end
 function Players.scaleBy(players, factor, pivot)
     local list = asList(players)
     if #list == 0 or factor <= 0 or math.abs(factor - 1) < 1e-9 then return end -- nothing selected / no change
+    MGE.Camera.followPlayer(list, { factor = factor, pivot = pivot or Players.groupCenter(list) }) -- like moveBy
     ensurePositions(function()
         local p = pivot or Players.groupCenter(list)
         local targets = {}

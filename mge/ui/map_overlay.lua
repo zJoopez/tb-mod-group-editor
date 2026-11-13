@@ -11,7 +11,7 @@ if MGE.mapOverlay and not MGE.mapOverlay.destroyed then return end
 local Widgets = MGE.Widgets
 local Rows = MGE.EditorRows
 local ModData = MGE.ModData
-local MapConv = MGE.MapConv
+local MapConv = MGE.loadMapConv() -- already loaded by the Map row, a no-op then
 local DEFAULTS = MapConv.DEFAULTS
 
 local MAPS_DIR = MGE.scriptPath .. "assets/maps" -- under data/script, like the object assets
@@ -21,17 +21,15 @@ local RUN_HOOK = MGE.hookname .. "_mapconv" -- one-shot draw2d hook that runs th
 ---@field path string? picked map, relative to MAPS_DIR
 ---@field texts table<string, string> typed field texts by field key
 ---@field clips boolean
----@field ungrippable boolean
 ---@field terrain boolean
----@field props boolean
 ---@field placements table<string, MapPlacement> where each map was placed last, by path
 ---@field floorsFirst boolean? the placement view's budget order toggles, nil: the converter's default
 ---@field centerFirst boolean?
 ---@field simplify boolean? the placement view's Simplify toggle
+---@field dropCovered boolean? the placement view's Covered toggle
 ---@field cache { key: string, map: MapFile, pieces: MapConvPiece[], report: MapConvReport }? see loadPieces
 MapConv.overlayState = MapConv.overlayState or
-    { texts = {}, clips = DEFAULTS.clips, ungrippable = DEFAULTS.ungrippable, terrain = DEFAULTS.terrain, placements = {} }
-if MapConv.overlayState.props == nil then MapConv.overlayState.props = DEFAULTS.props end
+    { texts = {}, clips = DEFAULTS.clips, terrain = DEFAULTS.terrain, placements = {} }
 local state = MapConv.overlayState --[[@as MapOverlayState]]
 state.placements = state.placements or {}
 
@@ -56,16 +54,14 @@ end
 local FIELDS = {
     { label = "Scale", keys = { "scale" }, hints = { tostring(DEFAULTS.scale) },
         info = "Toribash units per map unit.\nSource: a player is 72 units, a tori about 2.5." },
-    { label = "Budget", keys = { "budget" }, hints = { tostring(math.min(DEFAULTS.budget, freeIds())) },
-        info = "Most boxes added, the biggest surfaces first.\n" .. freeIds() .. " object ids are free in this mod." },
+    { label = "Budget", keys = { "budget" }, hints = { tostring(freeIds()) },
+        info = "Most boxes added, the biggest surfaces first.\nEmpty: all " .. freeIds() .. " object ids free in this mod." },
     { label = "Min size", keys = { "minSize" }, hints = { tostring(DEFAULTS.minSize) },
         info = "Brushes smaller than this on every side are\nleft out (trims, details). Map units." },
     { label = "Terrain tol.", keys = { "terrainTolerance" }, hints = { tostring(DEFAULTS.terrainTolerance) },
         info = "How bumpy one terrain slab may be, map units.\nBigger: fewer boxes (dust2 B site fits at 16)." },
     { label = "Simplify tol.", keys = { "simplifyTolerance" }, hints = { tostring(DEFAULTS.simplifyTolerance) },
         info = "Simplify: how much thicker joined floor tiles and\nstrips may get (bumps, tilt), map units." },
-    { label = "Ledge size", keys = { "simplifyShell" }, hints = { tostring(DEFAULTS.simplifyShell) },
-        info = "Simplify: strips of one ledge (top, face, rail)\nbecome one solid block up to this big across.\nMap units, 0 off." },
 }
 
 local PANEL_W = 420
@@ -76,7 +72,7 @@ local ROW_GAP = 4
 local LABEL_W = 110
 local HELP_SIZE = 22
 local BUTTON_H = 32
-local ROWS = 1 + #FIELDS + 4 -- Map, fields, Terrain, Props, Clips and Nogrip
+local ROWS = 1 + #FIELDS + 2 -- Map, fields, Terrain and Clips
 local panelH = TITLE_H + ROWS * (ROW_H + ROW_GAP) + Widgets.INFO_HEIGHT * 2 + 8 + BUTTON_H + PAD * 2
 
 local overlay = TBMenu:spawnWindowOverlay(true) -- true: a click on the dark background closes it
@@ -180,7 +176,7 @@ end
 
 ---On / Off pair for a state flag, the current one lit
 ---@param label string
----@param key "clips"|"ungrippable"|"terrain"|"props"
+---@param key "clips"|"terrain"
 ---@param help string
 local function addToggle(label, key, help)
     local content = addRow(y, label, help)
@@ -201,10 +197,8 @@ local function addToggle(label, key, help)
 end
 addToggle("Terrain", "terrain", "Terrain of compiled maps (.bsp displacements),\n" ..
     "dust2's ground: slabs under it, neighbours joined.")
-addToggle("Props", "props", "Models placed in the map (crates, doors, cars),\n" ..
-    "a box each. Sizes from the game's files (CS:GO's\nnext to Toribash) or <map>.models from mapconv.")
-addToggle("Clips", "clips", "Player clips: the map's invisible walls,\nadded as see-through red boxes.")
-addToggle("Nogrip", "ungrippable", "Boxes can't be grabbed.")
+addToggle("Clips", "clips", "Player clips: the map's invisible walls, ramps\nover stairs, smoothed corners. Colored like\n" ..
+    "what they cover. The big lids under the sky\nare left out.")
 
 local info = panel:addChild({
     pos = { PAD, y + 4 },
@@ -227,12 +221,12 @@ end
 ---@return MapConvOptions? options
 ---@return string? error
 local function readOptions()
-    local options = { clips = state.clips, ungrippable = state.ungrippable, terrain = state.terrain, props = state.props,
-        source = state.path }
+    local options = { clips = state.clips, terrain = state.terrain, source = state.path }
     -- the placement view's budget order toggles, kept from its last use
     if state.floorsFirst ~= nil then options.floorsFirst = state.floorsFirst end
     if state.centerFirst ~= nil then options.centerFirst = state.centerFirst end
     if state.simplify ~= nil then options.simplify = state.simplify end
+    if state.dropCovered ~= nil then options.dropCovered = state.dropCovered end
     for _, field in ipairs(FIELDS) do
         for _, key in ipairs(field.keys) do
             local _, ok = typed(key)
@@ -243,13 +237,12 @@ local function readOptions()
     local tolerance = typed("terrainTolerance")
     if tolerance and tolerance <= 0 then return nil, "Terrain tol. must be above 0" end
     options.terrainTolerance = tolerance
-    local simplifyTolerance, shell = typed("simplifyTolerance"), typed("simplifyShell")
+    local simplifyTolerance = typed("simplifyTolerance")
     if simplifyTolerance and simplifyTolerance < 0 then return nil, "Simplify tol. can't be below 0" end
-    if shell and shell < 0 then return nil, "Ledge size can't be below 0" end
-    options.simplifyTolerance, options.simplifyShell = simplifyTolerance, shell
+    options.simplifyTolerance = simplifyTolerance
     if scale and scale <= 0 then return nil, "Scale must be above 0" end
     local free = freeIds()
-    budget = math.floor(budget or math.min(DEFAULTS.budget, free))
+    budget = math.floor(budget or free) -- empty: every free object id
     if budget < 1 or budget > free then return nil, "Budget must be 1-" .. free .. " (free object ids)" end
     options.scale, options.budget, options.minSize = scale, budget, minSize
     -- region, anchor and yaw are picked in the placement view
@@ -275,7 +268,7 @@ end
 local function loadPieces(options)
     local opts = MapConv.withDefaults(options)
     local key = table.concat({ state.path, tostring(opts.terrain), opts.terrainTolerance, tostring(opts.clips),
-        tostring(opts.props), opts.slabThickness, opts.slabError }, "|")
+        opts.slabThickness, opts.slabError }, "|")
     if state.cache and state.cache.key == key then return state.cache end
     -- io.open, not Files: a .bsp is read in parts (dust2 is 325 MB, 9 MB of it is used). Desktop only,
     -- like the rest of MGE. The game's io.open starts at data/script
@@ -283,34 +276,6 @@ local function loadPieces(options)
     local file = io.open(mapPath, "rb")
     if not file then return nil, "Can't read " .. state.path end
     local ok, map = pcall(MapConv.parse, file, state.path)
-    if ok and opts.props and #map.props > 0 then
-        -- prop sizes: <map>.models next to the map (also made by tools/mapconv.lua), else the map's packed
-        -- files and the game archives next to Toribash (its root is where the game's io.open starts with
-        -- root true; Steam keeps the games side by side). Found sizes go back into the cache file
-        local cached = io.open(mapPath .. ".models", "rb")
-        local cacheText = cached and cached:read("*a") or nil
-        if cached then cached:close() end
-        local archives = {}
-        for _, known in ipairs(MapConv.Props.GAME_ARCHIVES) do archives[#archives + 1] = "../" .. known end
-        local resolvedOk, resolved, newCache = pcall(MapConv.resolveProps, map, file, {
-            cacheText = cacheText,
-            archivePaths = archives,
-            open = function(path) return io.open(path, "rb", true) end,
-        })
-        if resolvedOk and newCache then
-            local out = io.open(mapPath .. ".models", "wb")
-            if out then
-                out:write(newCache)
-                out:close()
-            end
-        end
-        if not resolvedOk then
-            echo("^04[MGE] prop sizes couldn't be read: " .. tostring(resolved))
-        elseif resolved.missing > 0 then
-            echo("^04[MGE] " .. resolved.missing .. " prop models not found: the game's files weren't readable, "
-                .. "tools/mapconv.lua with --game-dir makes " .. state.path .. ".models")
-        end
-    end
     file:close()
     if not ok then return nil, "Not a readable map: " .. tostring(map) end
     local pieces, report = MapConv.pieces(map, opts)
@@ -352,7 +317,9 @@ local function place(options)
     local function keep(p)
         state.placements[path] = { region = p.region, anchor = p.anchor, yaw = p.yaw, lift = p.lift }
         state.texts.scale = fieldText(p.scale, 4)
-        state.floorsFirst, state.centerFirst, state.simplify = p.floorsFirst, p.centerFirst, p.simplify -- for every map
+        -- for every map
+        state.floorsFirst, state.centerFirst, state.simplify = p.floorsFirst, p.centerFirst, p.simplify
+        state.dropCovered = p.dropCovered
     end
     overlay:kill()
     if not MGE.MapPlace then dofile(MGE.scriptPath .. "ui/map_place.lua") end

@@ -212,7 +212,7 @@ end
 ---(ui/map_place.lua: orbit and zoom keep working there)
 local function windowShown()
     local Main = MGE.Main
-    if MGE.MapPlace and MGE.MapPlace.active then return true end
+    if MGE.isPlacing() then return true end
     return Main and Main.window and Main.window.displayed
 end
 
@@ -314,8 +314,13 @@ end
 ---camera follow is on, around their shared center (where the gizmo is). MGE's own camera for every
 ---player, so orbit and zoom work the same as for objects (the game's tori / uke cameras would take
 ---those away and only exist for two players)
+---
+---After a move or scale (gizmo, the Players panel's rows) `after` says where they're going: the game
+---places them a few frames after the edit's reload, so their bodies now are moved by after.offset or
+---scaled by after.factor around after.pivot, like Camera.focus after moving objects (keepDistance)
 ---@param players integer|integer[] 0-based
-function Camera.followPlayer(players)
+---@param after { offset: number[]?, factor: number?, pivot: number[]? }?
+function Camera.followPlayer(players, after)
     if not Camera.followMoves then return end
     local Players = MGE.Players
     if not Players then return end
@@ -331,7 +336,16 @@ function Camera.followPlayer(players)
             radius = math.max(radius, math.sqrt((p.x - center[1]) ^ 2 + (p.y - center[2]) ^ 2 + (p.z - center[3]) ^ 2))
         end
     end
-    Camera.focusOn(center, math.min(radius + 0.5, Camera.maxObjectRadius))
+    if after and after.offset then
+        for k = 1, 3 do center[k] = center[k] + after.offset[k] end
+    end
+    if after and after.factor then
+        local pivot = after.pivot or center
+        for k = 1, 3 do center[k] = pivot[k] + (center[k] - pivot[k]) * after.factor end
+        radius = radius * after.factor
+    end
+    -- after an edit, like moving objects: back off only when they no longer fit on screen
+    Camera.focusOn(center, math.min(radius + 0.5, Camera.maxObjectRadius), after ~= nil)
 end
 
 table.insert(MGE.onQuit, Camera.release)

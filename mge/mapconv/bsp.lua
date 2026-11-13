@@ -16,7 +16,6 @@ local LUMP = {
     ENTITIES = 0, PLANES = 1, TEXDATA = 2, VERTEXES = 3, NODES = 5, TEXINFO = 6, FACES = 7, LEAFS = 10,
     EDGES = 12, SURFEDGES = 13, MODELS = 14, LEAFBRUSHES = 17, BRUSHES = 18, BRUSHSIDES = 19,
     DISPINFO = 26, DISP_VERTS = 33, TEXDATA_STRING_DATA = 43, TEXDATA_STRING_TABLE = 44,
-    GAME_LUMP = 35, PAKFILE = 40,
 }
 local HEADER_LUMPS = 64
 local HEADER_SIZE = 8 + HEADER_LUMPS * 16 + 4
@@ -59,7 +58,7 @@ local function f32(s, pos)
     if exponent == 255 then return mantissa == 0 and sign * math.huge or 0 / 0 end
     return sign * (1 + mantissa / 8388608) * 2 ^ (exponent - 127)
 end
-Bsp.f32 = f32 -- also props.lua, the offline tests
+Bsp.f32 = f32 -- also the offline tests
 Bsp.u16, Bsp.i16, Bsp.i32 = u16, i16, i32
 local function vec3(s, pos) return { f32(s, pos), f32(s, pos + 4), f32(s, pos + 8) } end
 
@@ -319,6 +318,7 @@ function Bsp.parse(read, fileSize)
         end
         if sky then
             brush.role, brush.reason = "drop", "tool"
+            brush.sky = true -- MapConv.pieces: clips close under the sky are left out (sky clips)
         elseif has(contents, CONTENTS.SOLID) or has(contents, CONTENTS.WINDOW) or has(contents, CONTENTS.GRATE)
             or has(contents, CONTENTS.MOVEABLE) then
             brush.role = "solid"
@@ -331,12 +331,6 @@ function Bsp.parse(read, fileSize)
     end
 
     map.terrain = readTerrain(lumps, planes, texinfo)
-    -- models placed in the map (crates, doors, cars): their list, the sizes come from the model files
-    -- (props.lua). The map's own packed files (a zip) may have custom models
-    map.props = MapConv.Props.staticProps(read, lumps.get(LUMP.GAME_LUMP, 1))
-    if lumps.length(LUMP.PAKFILE) > 0 then
-        map.pakfile = { offset = lumps.offset(LUMP.PAKFILE), length = lumps.length(LUMP.PAKFILE) }
-    end
     return map
 end
 

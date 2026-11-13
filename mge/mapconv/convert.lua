@@ -16,8 +16,9 @@ local formatNumbers = FileHandler.formatNumbers
 ---@field scale number Toribash units per map unit. Source: a player is 72 units, a tori about 2.5
 ---@field budget integer most boxes written, the biggest are kept
 ---@field minSize number map units, brushes whose box is smaller on every side are left out (detail)
----@field clips boolean keep player clip brushes (the map's invisible walls), drawn see-through red
----@field props boolean solid props (crates, doors, cars) as boxes, sized by their models (props.lua)
+---@field clips boolean keep player clip brushes (the map's invisible walls, ramps over stairs), colored like
+---the map geometry they cover (borrowMaterials)
+---@field skyClips boolean with clips: also keep sky clips, the big lids close under the sky (see SKY_CLIP)
 ---@field invisible boolean keep solid brushes nobody sees (only nodraw and other undrawn tool textures)
 ---@field ungrippable boolean flag the boxes ungrippable too
 ---@field slabError number see BoxFitOptions
@@ -32,7 +33,8 @@ local formatNumbers = FileHandler.formatNumbers
 ---@field simplify boolean also join nearly flat neighbouring slabs (Merge.flat): terrain floors, floor tiles
 ---@field simplifyTolerance number map units a joined slab may be thicker than its parts (bumps, tilt)
 ---@field simplifyFill number share of a joined slab its parts must cover, 0-1
----@field simplifyShell number map units: strips of one ledge (top, face, lip) join into a solid block up to this big across, 0 off
+---@field dropHidden boolean leave out boxes entirely inside another box (Merge.hidden): nothing changes in game
+---@field dropCovered boolean also leave out boxes COVERED_SHARE covered by other boxes together
 ---@field floorsFirst boolean budget order: what can be stood on counts extra (MapConv.priority)
 ---@field centerFirst boolean budget order: the nearer the region's middle the better (MapConv.priority)
 ---@field source string? file name written in the header
@@ -42,8 +44,8 @@ MapConv.DEFAULTS = {
     scale = 0.035,
     budget = 200,
     minSize = 4,
-    clips = false, -- invisible walls are rarely useful in Toribash
-    props = true,
+    clips = true, -- ramps over stairs, smoothed corners: much of what players actually walk on
+    skyClips = false, -- lids over the map: never what's wanted from clips
     invisible = false,
     ungrippable = false,
     slabError = 0.2,
@@ -56,13 +58,18 @@ MapConv.DEFAULTS = {
     simplify = true,
     simplifyTolerance = 12,
     simplifyFill = 0.75, -- edges must line up, so this only limits gaps between parts
-    simplifyShell = 96, -- the strips must touch, so it only fills a ledge's inside corner, never a corridor
+    dropHidden = true, -- dust2 B site and its approaches: 60 of 247 boxes, mostly stairs inside their ramp clips
+    dropCovered = false, -- 33 more there, but the uncovered 5% can be a visible ledge: check the preview
     floorsFirst = true,
     centerFirst = false,
 }
 
 -- floorsFirst: the walkable top's area counts this many times extra
 local FLOOR_WEIGHT = 3
+
+-- dropCovered: a box goes when at least this share of its inside is covered by other boxes together
+local COVERED_SHARE = 0.95
+MapConv.COVERED_SHARE = COVERED_SHARE
 
 -- marks an asset file whose objects keep their positions on import (ui/assets.lua)
 local KEEP_POSITION_TAG = MGE.KEEP_POSITION_TAG
@@ -89,6 +96,19 @@ local DROP_ALL = {
 }
 -- all sides these: an invisible wall
 local CLIP_ALL = { TOOLSPLAYERCLIP = true, TOOLSCLIP = true }
+-- a side with one of these: a sky brush (a .bsp marks them itself, MapBrush.sky)
+local SKY_ANY = { TOOLSSKYBOX = true, TOOLSSKYBOX2D = true }
+
+-- Sky clips: mappers fill the air between the roofs and the sky with huge clip brushes, so players
+-- can't jump onto the roofs or out of the map. In Toribash they're giant see-through lids over the
+-- map (dust2: 5 of them, up to 2650 x 3100 units). A clip is one when it's
+--   wide:    both horizontal sides at least `width` map units (walls and pillars stay)
+--   flat:    lower than it is wide (a tall block next to the sky is a wall)
+--   high:    sky starts at most `gap` above its top (floor clips far below the sky stay)
+--   covered: sky over at least `cover` of its top (a floor clip at the edge of open sky stays)
+-- Measured on dust2: the 5 lids are 76-236 under the sky, fully covered; the widest flat clip that
+-- isn't a lid (a stair ramp, 738 x 562) has 1% sky over it
+local SKY_CLIP = { width = 256, gap = 256, cover = 0.5 }
 
 ---@param material string
 ---@return string last part of the name, upper case
@@ -162,7 +182,6 @@ local COLOR_RULES = {
 }
 local DEFAULT_COLOR = { 0.70, 0.70, 0.70, 1 }
 local TOOL_COLOR = { 0.35, 0.35, 0.35, 1 } -- nodraw and other tool faces, solid but never seen in the map
-local CLIP_COLOR = { 1.00, 0.20, 0.20, 0.30 }
 
 ---@param material string
 ---@return number[] r g b a
@@ -207,6 +226,7 @@ end
 ---@field material string
 ---@field brushId string
 ---@field merged integer? how many pieces merge.lua joined into it
+---@field lookMaterial string? clips: material of the solid geometry they cover (borrowMaterials)
 
 ---Highest point of a box above its center, along world Z
 ---@param box MapBox
@@ -260,8 +280,6 @@ end
 ---@field terrainSlabs integer slabs they made, before merging
 ---@field merged integer boxes that went into another (merge.lua)
 ---@field simplified integer slabs that went into another by Simplify (Merge.flat)
----@field props integer props made into boxes
----@field propsNoModel integer solid props whose model size wasn't found (game files not read)
 ---@field boxes integer written
 ---@field slabs integer of them, ramps (brushes)
 ---@field terrainBoxes integer of them, from terrain
@@ -292,8 +310,8 @@ local function newReport()
     return {
         brushes = 0,
         dropped = { entity = 0, tool = 0, clip = 0, region = 0, broken = 0, small = 0, budget = 0, terrain = 0,
-            propsOff = 0, propNotSolid = 0, propSkipped = 0, invisible = 0 },
-        props = 0, propsNoModel = 0, simplified = 0,
+            invisible = 0, skyClip = 0, hidden = 0, covered = 0 },
+        simplified = 0,
         displacements = 0, terrain = 0, terrainSlabs = 0, terrainBoxes = 0, merged = 0, boxes = 0, slabs = 0,
         roughFits = 0, belowGround = 0, anchor = { 0, 0, 0 }, anchorFrom = "",
     }
@@ -307,6 +325,104 @@ local function copyReport(report)
     copy.dropped = {}
     for k, v in pairs(report.dropped) do copy.dropped[k] = v end
     return copy
+end
+
+---Bounds of the map's sky brushes, for sky clips (SKY_CLIP)
+---@param map MapFile
+---@return { min: number[], max: number[] }[]
+local function skyBounds(map)
+    local skies = {}
+    for _, brush in ipairs(map.brushes) do
+        local sky = brush.sky
+        for _, side in ipairs(brush.sides) do
+            if SKY_ANY[shortName(side.material)] then sky = true end
+        end
+        local geometry = sky and MapConv.Brush.build(brush.sides)
+        if geometry then skies[#skies + 1] = { min = geometry.min, max = geometry.max } end
+    end
+    return skies
+end
+
+---A clip that's a lid over the map, close under the sky (SKY_CLIP)
+---@param geometry MapGeometry the clip brush
+---@param skies { min: number[], max: number[] }[] skyBounds
+---@return boolean
+function MapConv.isSkyClip(geometry, skies)
+    local min, max = geometry.min, geometry.max
+    local w, d, h = max[1] - min[1], max[2] - min[2], max[3] - min[3]
+    if math.min(w, d) < SKY_CLIP.width or h >= math.min(w, d) then return false end
+    local covered = 0
+    for _, sky in ipairs(skies) do
+        local above = sky.min[3] - max[3]
+        if above >= -1 and above <= SKY_CLIP.gap then
+            local ox = math.min(sky.max[1], max[1]) - math.max(sky.min[1], min[1])
+            local oy = math.min(sky.max[2], max[2]) - math.max(sky.min[2], min[2])
+            if ox > 0 and oy > 0 then covered = covered + ox * oy end
+        end
+    end
+    return covered >= SKY_CLIP.cover * w * d
+end
+
+---World-axis bounds of a box (map units)
+---@param box MapBox
+---@return number[] min, number[] max
+local function boundsOf(box)
+    local min, max = {}, {}
+    for k = 1, 3 do
+        local half = 0
+        for j = 1, 3 do half = half + math.abs(box.frame[k][j]) * box.sides[j] / 2 end
+        min[k], max[k] = box.center[k] - half, box.center[k] + half
+    end
+    return min, max
+end
+
+-- clips borrow the material of solid geometry within this many map units (touching walls, the stairs
+-- under a ramp clip); the grid that finds it has cells this wide
+local BORROW_MARGIN, BORROW_CELL = 8, 512
+
+---Gives every clip piece the material of the solid piece it overlaps most, counting solids within
+---BORROW_MARGIN (a clip along a wall touches it): clip.lookMaterial, the clip's color. Clips have only
+---tool textures, but they mostly cover real geometry: stairs, rails, wall corners
+---@param pieces MapConvPiece[]
+local function borrowMaterials(pieces)
+    local grid = {}
+    local function cells(min, max, fn)
+        for x = math.floor(min[1] / BORROW_CELL), math.floor(max[1] / BORROW_CELL) do
+            for y = math.floor(min[2] / BORROW_CELL), math.floor(max[2] / BORROW_CELL) do fn(x .. "," .. y) end
+        end
+    end
+    local clips = {}
+    for _, piece in ipairs(pieces) do
+        local min, max = boundsOf(piece)
+        if piece.role == "clip" then
+            clips[#clips + 1] = { piece = piece, min = min, max = max }
+        elseif not piece.material:upper():find("^TOOLS/") then
+            local entry = { piece = piece, min = min, max = max }
+            cells(min, max, function(key)
+                grid[key] = grid[key] or {}
+                table.insert(grid[key], entry)
+            end)
+        end
+    end
+    for _, clip in ipairs(clips) do
+        local min, max = {}, {}
+        for k = 1, 3 do min[k], max[k] = clip.min[k] - BORROW_MARGIN, clip.max[k] + BORROW_MARGIN end
+        local best, bestScore, seen = nil, 0, {}
+        cells(min, max, function(key)
+            for _, solid in ipairs(grid[key] or {}) do
+                if not seen[solid] then
+                    seen[solid] = true
+                    local volume = 1
+                    for k = 1, 3 do
+                        local overlap = math.min(max[k], solid.max[k]) - math.max(min[k], solid.min[k])
+                        volume = overlap > 0 and volume * overlap or 0
+                    end
+                    if volume > bestScore then best, bestScore = solid, volume end
+                end
+            end
+        end)
+        clip.piece.lookMaterial = best and best.piece.material or nil
+    end
 end
 
 ---Every brush and terrain slab of the map as a box in map units, before region, merging and budget.
@@ -325,6 +441,9 @@ function MapConv.pieces(map, options)
         return { (bounds.min[1] + bounds.max[1]) / 2, (bounds.min[2] + bounds.max[2]) / 2, (bounds.min[3] + bounds.max[3]) / 2 }
     end
 
+    -- sky brushes, only needed to leave out sky clips
+    local skies = opts.clips and not opts.skyClips and skyBounds(map) or nil
+
     ---@type MapConvPiece[]
     local pieces = {}
     for _, brush in ipairs(map.brushes) do
@@ -337,6 +456,8 @@ function MapConv.pieces(map, options)
             local geometry = MapConv.Brush.build(brush.sides)
             if not geometry then
                 drop("broken")
+            elseif role == "clip" and skies and MapConv.isSkyClip(geometry, skies) then
+                drop("skyClip")
             else
                 local box = MapConv.BoxFit.fit(geometry, opts) --[[@as MapConvPiece]]
                 box.role = role --[[@as "solid"|"clip"]]
@@ -376,23 +497,7 @@ function MapConv.pieces(map, options)
             end
         end
     end
-    -- props (crates, doors, cars): a box each from its model's size (props.lua, Props.resolve sets them)
-    for _, prop in ipairs(map.props or {}) do
-        if not opts.props then
-            drop("propsOff")
-        elseif not prop.solid then
-            drop("propNotSolid")
-        elseif MapConv.Props.skipped(prop.model) then
-            drop("propSkipped")
-        elseif not prop.mins then
-            report.propsNoModel = report.propsNoModel + 1
-        else
-            local box = MapConv.Props.box(prop) --[[@as MapConvPiece]]
-            box.role, box.material, box.brushId, box.at = "solid", prop.model, prop.id, box.center
-            pieces[#pieces + 1] = box
-            report.props = report.props + 1
-        end
-    end
+    if opts.clips then borrowMaterials(pieces) end
     return pieces, report
 end
 
@@ -469,8 +574,14 @@ function MapConv.select(pieces, options, report)
         -- slab thickness limit: terrain slabs and floor brushes, not crates or wall blocks
         boxes, report.simplified = MapConv.Merge.flat(boxes, {
             tolerance = opts.simplifyTolerance, fill = opts.simplifyFill, gap = 16, align = 32, maxThickness = 32,
-            shell = opts.simplifyShell,
         })
+    end
+    -- after merging (a merged wall hides more), before the budget (hidden boxes would take its places)
+    if opts.dropHidden or opts.dropCovered then
+        local hidden, covered
+        boxes, hidden, covered = MapConv.Merge.hidden(boxes, opts.dropCovered and COVERED_SHARE or 0)
+        report.dropped.hidden = report.dropped.hidden + hidden
+        report.dropped.covered = report.dropped.covered + covered
     end
     -- small ones go after merging: a row of small pieces can make one big box
     local sized = {}
@@ -554,13 +665,14 @@ function MapConv.objects(boxes, anchor, options, report)
             end
             if box.kind == "box" and box.fitError > 0.5 then report.roughFits = report.roughFits + 1 end
         end
-        local color = box.role == "clip" and CLIP_COLOR or MapConv.colorFor(box.material)
+        -- clips: the material borrowed from what they cover, plain grey when they touch nothing
+        local color = MapConv.colorFor(box.role == "clip" and (box.lookMaterial or "") or box.material)
         objects[i] = {
             kind = "env_obj",
             id = i,
-            lines = { { raw = "# " .. ((box.brushId:find("^disp") or box.brushId:find("^prop") or box.brushId:find("^entity")) and "" or "brush ") .. box.brushId
+            lines = { { raw = "# " .. (box.brushId:find("^disp") and "" or "brush ") .. box.brushId
                 .. (box.merged and (" + " .. (box.merged - 1) .. " merged") or "") .. " "
-                .. (box.role == "clip" and "clip" or box.material) } },
+                .. (box.role == "clip" and ("clip" .. (box.lookMaterial and (" by " .. box.lookMaterial) or "")) or box.material) } },
             props = {
                 shape = "box",
                 pos = formatNumbers(pos[1], pos[2], pos[3]),
@@ -628,38 +740,7 @@ function MapConv.parse(source, name)
     else
         map = MapConv.Vmf.parse(read(0, size))
     end
-    MapConv.Props.addEntityProps(map) -- prop entities (doors, physics crates; .vmf: static props too)
     return map
-end
-
----Gives the map's props their model sizes (props.lua): from the cache text, else from the map's own
----packed files and the game archives at archivePaths (opened with open). Call it while the map's
----file is still open when it's a .bsp read from a file (the packed files are read from it)
----@param map MapFile
----@param source string|any the same source MapConv.parse had
----@param options { cacheText: string?, archivePaths: string[]?, open: (fun(path: string): any?)? }
----@return PropResolveResult result
----@return string? cacheText new text for the cache file when it changed
-function MapConv.resolveProps(map, source, options)
-    local Props = MapConv.Props
-    local cache = Props.readCache(options.cacheText)
-    local result = Props.resolve(map.props or {}, cache, function()
-        local sources, closers = {}, {}
-        if map.pakfile then
-            local read = type(source) == "string" and MapConv.Bsp.stringReader(source) or MapConv.Bsp.fileReader(source)
-            local zip = Props.zipSource(read, map.pakfile.offset, map.pakfile.length)
-            if zip then sources[#sources + 1] = zip end
-        end
-        for _, path in ipairs(options.archivePaths or {}) do
-            local vpk, close = Props.vpkSource(path, options.open or function(p) return io.open(p, "rb") end)
-            if vpk then
-                sources[#sources + 1] = vpk
-                closers[#closers + 1] = close
-            end
-        end
-        return sources, function() for _, close in ipairs(closers) do close() end end
-    end)
-    return result, result.read and Props.cacheText(cache) or nil
 end
 
 -- file types MapConv.parse reads, for file pickers and checks
@@ -691,10 +772,12 @@ function MapConv.reportLines(report)
             .. report.merged .. " boxes into others"
     end
     if d.terrain > 0 then lines[#lines + 1] = d.terrain .. " terrain grids left out (terrain off)" end
-    if report.props > 0 or report.propsNoModel > 0 then
-        lines[#lines + 1] = report.props .. " props (crates, doors, cars...) as boxes, " .. d.propNotSolid .. " not solid, "
-            .. d.propSkipped .. " plants, cables, frames, arches left out"
-            .. (report.propsNoModel > 0 and (", " .. report.propsNoModel .. " without a model size (game files not found)") or "")
+    if d.skyClip > 0 then
+        lines[#lines + 1] = d.skyClip .. " sky clips left out (big lids between the roofs and the sky)"
+    end
+    if d.hidden > 0 or d.covered > 0 then
+        lines[#lines + 1] = d.hidden .. " boxes left out inside other boxes"
+            .. (d.covered > 0 and (", " .. d.covered .. " covered by others") or "")
     end
     return lines
 end

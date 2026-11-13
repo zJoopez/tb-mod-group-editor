@@ -22,20 +22,18 @@ usage: mapconv.lua <map.vmf|map.bsp> [options]
   --anchor-entity <class>   else the first entity of this class (default info_player_terrorist),
                             else the middle of the boxes at their lowest point
   --yaw <deg>               turn the map around the anchor
-  --clips                   keep player clips (invisible walls), off by default
+  --no-clips                leave out player clips (invisible walls, ramps over stairs). On by default,
+                            colored like the map geometry each one covers
+  --sky-clips               also keep sky clips: the big lids between the roofs and the sky
   --invisible               keep solid brushes nobody sees (only nodraw-like tool textures), off by default
-  --no-props                leave out props (crates, doors, cars: models placed in the map)
-  --game-dir <path>         where prop models are: a game folder (with its *_dir.vpk) or a _dir.vpk.
-                            Default: games next to Toribash in Steam's common folder (CS:GO, CS:S...).
-                            Sizes found are cached in <map>.models next to the map
   --no-terrain              leave out terrain (.bsp displacements), converted to slabs by default
   --terrain-tolerance <n>   how bumpy a terrain slab may be, map units (default 8, smaller: more slabs)
   --no-merge                don't join boxes that make one bigger box
   --no-simplify             don't join nearly flat neighbouring slabs (terrain floors, floor tiles)
   --simplify-tolerance <n>  how much thicker a joined slab may get (bumps, tilt), map units (default 12)
   --simplify-fill <0-1>     how much of a joined slab its parts must cover (default 0.75)
-  --simplify-shell <n>      strips of one ledge (top, face, lip) join into a solid block up to this
-                            big across, map units (default 96, 0 off)
+  --drop-covered            also leave out boxes 95% covered by other boxes together (boxes entirely
+                            inside another box are always left out)
   --no-floors-first         budget order by size only (default: what can be stood on counts extra)
   --center-first            budget order: the region's middle first, its edges left out first
   --ungrippable             boxes can't be grabbed
@@ -45,7 +43,7 @@ usage: mapconv.lua <map.vmf|map.bsp> [options]
 local toolDir = arg[0]:match("^(.*[/\\])") or "./"
 MGE = { scriptPath = toolDir .. "../mge/" }
 for _, module in ipairs({ "utils/mat3.lua", "utils/file_handler.lua", "utils/mod_export.lua",
-    "mapconv/vmf.lua", "mapconv/bsp.lua", "mapconv/props.lua", "mapconv/brush.lua", "mapconv/boxfit.lua",
+    "mapconv/vmf.lua", "mapconv/bsp.lua", "mapconv/brush.lua", "mapconv/boxfit.lua",
     "mapconv/merge.lua", "mapconv/convert.lua" }) do
     dofile(MGE.scriptPath .. module)
 end
@@ -57,7 +55,6 @@ local function fail(message)
 end
 
 local options, input, output = {}, nil, nil
-local gameDir = nil -- --game-dir
 local i = 1
 local function number()
     i = i + 1
@@ -107,11 +104,11 @@ while i <= #arg do
         options.simplify = false
     elseif a == "--simplify-tolerance" then
         options.simplifyTolerance = number()
-    elseif a == "--simplify-shell" then
-        options.simplifyShell = number()
     elseif a == "--simplify-fill" then
         options.simplifyFill = number()
         if options.simplifyFill <= 0 or options.simplifyFill > 1 then fail("--simplify-fill must be above 0, at most 1") end
+    elseif a == "--drop-covered" then
+        options.dropCovered = true
     elseif a == "--no-floors-first" then
         options.floorsFirst = false
     elseif a == "--center-first" then
@@ -122,11 +119,8 @@ while i <= #arg do
         options.invisible = true
     elseif a == "--clips" then
         options.clips = true
-    elseif a == "--no-props" then
-        options.props = false
-    elseif a == "--game-dir" then
-        i = i + 1
-        gameDir = arg[i] or fail("folder or _dir.vpk expected after " .. a)
+    elseif a == "--sky-clips" then
+        options.skyClips = true
     elseif a == "--ungrippable" then
         options.ungrippable = true
     elseif a == "--slab-thickness" then
@@ -157,53 +151,8 @@ local file = io.open(input, "rb") or fail("can't read " .. input)
 ---@cast file -nil
 output = output or (MGE.scriptPath .. "assets/obj/" .. name .. ".tbm")
 
----Game archives to look for prop models in: --game-dir (a _dir.vpk, or a folder: its archives from
----Props.GAME_ARCHIVES), else the games next to Toribash in Steam's common folder
----@return string[]
-local function archivePaths()
-    local paths = {}
-    local function exists(path)
-        local f = io.open(path, "rb")
-        if f then f:close() end
-        return f ~= nil
-    end
-    if gameDir then
-        local dir = gameDir:gsub("[/\\]+$", "")
-        if dir:lower():find("_dir%.vpk$") then return { dir } end
-        for _, known in ipairs(MapConv.Props.GAME_ARCHIVES) do
-            local candidate = dir .. "/" .. known:match("([^/]+)$")
-            if exists(candidate) then paths[#paths + 1] = candidate end
-        end
-        if #paths == 0 then fail("no game archive (*_dir.vpk) found in " .. gameDir) end
-        return paths
-    end
-    local common = toolDir .. "../../../../../" -- mge/tools -> data/script -> Toribash -> Steam's common
-    for _, known in ipairs(MapConv.Props.GAME_ARCHIVES) do
-        if exists(common .. known) then paths[#paths + 1] = common .. known end
-    end
-    return paths
-end
-
 local clock = os.clock()
 local ok, map = pcall(MapConv.parse, file, input) -- a .bsp is read in parts, not whole
-if ok and options.props ~= false and #map.props > 0 then
-    -- model sizes: the cache next to the map, else the map's packed files and the game archives
-    local cachePath = input .. ".models"
-    local cached = io.open(cachePath, "rb")
-    local cacheText = cached and cached:read("*a") or nil
-    if cached then cached:close() end
-    local resolved, newCache = MapConv.resolveProps(map, file, { cacheText = cacheText, archivePaths = archivePaths() })
-    if newCache then
-        local out = io.open(cachePath, "wb")
-        if out then
-            out:write(newCache)
-            out:close()
-        end
-    end
-    if resolved.missing > 0 then
-        print(resolved.missing .. " prop models not found" .. (gameDir and "" or ", point --game-dir at the map's game"))
-    end
-end
 file:close()
 if not ok then fail(input .. ": " .. tostring(map)) end
 options.source = input:match("([^/\\]+)$")

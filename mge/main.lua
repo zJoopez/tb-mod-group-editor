@@ -48,7 +48,9 @@
 ---@field MAX_ENV_JOINTS integer env_obj_joint ids 1-24
 ---@field MIN_SIDE number smallest object side written, zero sides crash physics
 ---@field KEEP_POSITION_TAG string asset file line: Import keeps the objects' positions (converted maps)
----@field MapConv table map converter (mapconv/*.lua): Advanced tab's Map row, also tools/mapconv.lua
+---@field MapConv table map converter (mapconv/*.lua), nil in game until MGE.loadMapConv: Advanced tab's Map row, also tools/mapconv.lua
+---@field loadMapConv fun(): table loads the map converter the first time it's needed, returns MGE.MapConv
+---@field isPlacing fun(): boolean the map placement view is open (it hides the window, gizmo and camera keep working)
 ---@field saveOverlay UIElement? open name prompt (ui/save_overlay.lua)
 ---@field confirmOverlay UIElement? open confirmation popup (TBMenu:showConfirmationWindow)
 ---@field saveOverlayContext table? options for the next name prompt
@@ -82,6 +84,28 @@ local function loadModule(path)
     return dofile(MGE.scriptPath .. path)
 end
 
+---True while the map placement view (ui/map_place.lua) is open: it hides MGE's window, but its gizmo,
+---the camera and its own drawing keep working
+---@return boolean
+function MGE.isPlacing()
+    return MGE.MapPlace ~= nil and MGE.MapPlace.active == true
+end
+
+-- map converter, pure Lua shared with tools/mapconv.lua. Needs mat3 / file_handler / mod_export
+local MAPCONV_MODULES = { "mapconv/vmf.lua", "mapconv/bsp.lua", "mapconv/brush.lua",
+    "mapconv/boxfit.lua", "mapconv/merge.lua", "mapconv/convert.lua" }
+
+---Loads the map converter the first time it's needed (Advanced tab > Map), not at startup: the rest of
+---MGE starts faster and doesn't depend on it. Throws when a module fails to load, the next call tries again
+---@return table MapConv
+function MGE.loadMapConv()
+    if MGE.MapConv and MGE.MapConv.loaded then return MGE.MapConv end
+    MGE.MapConv = nil -- a failed earlier try left it half built
+    for _, path in ipairs(MAPCONV_MODULES) do loadModule(path) end
+    MGE.MapConv.loaded = true
+    return MGE.MapConv
+end
+
 runCmd("reset") --Fixes sync if there are unsaved rotations
 loadModule("utils/mat3.lua")
 loadModule("utils/file_handler.lua")
@@ -93,14 +117,6 @@ loadModule("utils/world_select.lua")
 loadModule("utils/camera.lua")
 loadModule("utils/transforms.lua")
 loadModule("utils/shape_gen.lua")
--- map converter (Advanced tab > Map), pure Lua shared with tools/mapconv.lua, after mat3 / file_handler / mod_export
-loadModule("mapconv/vmf.lua")
-loadModule("mapconv/bsp.lua")
-loadModule("mapconv/props.lua")
-loadModule("mapconv/brush.lua")
-loadModule("mapconv/boxfit.lua")
-loadModule("mapconv/merge.lua")
-loadModule("mapconv/convert.lua")
 loadModule("utils/players.lua") -- players' start positions (engageplayerpos), after highlight and history
 loadModule("utils/gizmo_math.lua")
 loadModule("utils/gizmo.lua") -- after world_select, highlight and transforms
@@ -289,6 +305,22 @@ function MGE.save()
     end
 end
 
+-- MGE's overlays (fields holding an open UIElement), topmost first: Esc closes them in this order
+-- (the picker can be open over the map overlay, the confirmation over anything). A new overlay only
+-- needs adding here for quit, Esc and overlayOpen to handle it
+local OVERLAY_KEYS = { "confirmOverlay", "saveOverlay", "pickerOverlay", "settingsOverlay", "mapOverlay" }
+
+---The topmost open overlay
+---@return string? key its MGE field
+---@return UIElement? overlay
+local function topOverlay()
+    for _, key in ipairs(OVERLAY_KEYS) do
+        local overlay = MGE[key]
+        if overlay and not overlay.destroyed then return key, overlay end
+    end
+    return nil, nil
+end
+
 ---Removes hooks, UI and the MGE global. Safe to call more than once and on a partially started script
 ---@param fromWindow boolean? true when called by the main window's killAction (window is already closing)
 function MGE.quit(fromWindow)
@@ -299,8 +331,8 @@ function MGE.quit(fromWindow)
     for _, callback in ipairs(MGE.onQuit or {}) do
         pcall(callback)
     end
-    -- not ipairs: a nil entry (overlay not open) would stop it before the ones after it
-    for _, overlay in pairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay, MGE.settingsOverlay, MGE.mapOverlay }) do
+    for _, key in ipairs(OVERLAY_KEYS) do
+        local overlay = MGE[key]
         if overlay and not overlay.destroyed then
             pcall(function() overlay:kill() end)
         end
@@ -386,9 +418,7 @@ local OBJECT_KEYS = {
 ---until it's closed, so a key doesn't change the list behind it, and the gizmo isn't drawn over it
 ---@return boolean
 local function overlayOpen()
-    for _, overlay in pairs({ MGE.saveOverlay, MGE.confirmOverlay, MGE.pickerOverlay, MGE.settingsOverlay, MGE.mapOverlay }) do
-        if not overlay.destroyed then return true end
-    end
+    if topOverlay() then return true end
     return TB_MENU_POPUPS_DISABLED == true
 end
 MGE.overlayOpen = overlayOpen
@@ -404,24 +434,16 @@ local escFrame = nil -- UIElement.frameIndex of the last Esc close
 function MGE.closeTopOverlay()
     local frame = UIElement and UIElement.frameIndex
     if frame and frame == escFrame then return true end
-    local confirm = MGE.confirmOverlay
-    if confirm and not confirm.destroyed then
-        confirm:kill()
-        MGE.confirmOverlay = nil -- what its Cancel callback does, killing it doesn't call that
+    local key, overlay = topOverlay()
+    if overlay then
+        overlay:kill() -- their killActions clean up (keyboard, MGE.*Overlay, camera movement)
+        -- the confirmation's Cancel callback clears it, killing it doesn't call that
+        if key == "confirmOverlay" then MGE.confirmOverlay = nil end
         escFrame = frame
         return true
     end
-    -- the picker first: it can be open over the map overlay (its Map button)
-    for _, key in ipairs({ "saveOverlay", "pickerOverlay", "settingsOverlay", "mapOverlay" }) do
-        local overlay = MGE[key]
-        if overlay and not overlay.destroyed then
-            overlay:kill() -- their killActions clean up (keyboard, MGE.*Overlay, camera movement)
-            escFrame = frame
-            return true
-        end
-    end
     -- the map placement view isn't an overlay (the gizmo works under it), Esc goes back to its settings
-    if MGE.MapPlace and MGE.MapPlace.active then
+    if MGE.isPlacing() then
         MGE.MapPlace.cancel()
         escFrame = frame
         return true
@@ -442,7 +464,7 @@ add_hook("key_down", MGE.hookname, function(key)
     if get_keyboard_alt() ~= 0 then return end
     local shift, ctrl = get_keyboard_shift() ~= 0, get_keyboard_ctrl() ~= 0
     -- the map placement view hides the window: only its gizmo tools work, the rest acts on objects
-    if MGE.MapPlace and MGE.MapPlace.active then
+    if MGE.isPlacing() then
         if shift and not ctrl and TOOL_KEYS[key] then
             MGE.Gizmo.toggle(TOOL_KEYS[key])
             return 1
@@ -490,7 +512,7 @@ end)
 
 add_hook("key_up", MGE.hookname, function(key)
     if key ~= 282 then return end --F1
-    if MGE.MapPlace and MGE.MapPlace.active then return end -- the placement view shows it again when it ends
+    if MGE.isPlacing() then return end -- the placement view shows it again when it ends
     local Main = MGE.Main
     if Main.window.displayed then
         Main.window:hide(false)

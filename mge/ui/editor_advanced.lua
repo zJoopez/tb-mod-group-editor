@@ -200,7 +200,14 @@ local function buildMapRow(holder)
     Rows.begin()
     createToggleButtonRow("Map", holder, {
         { label = "Convert map", active = false, onClick = function()
-            if not MGE.overlayOpen() then dofile(MGE.scriptPath .. "ui/map_overlay.lua") end
+            if MGE.overlayOpen() then return end
+            -- loaded on first use (MGE.loadMapConv): a broken converter says so and the editor keeps working
+            local ok, err = pcall(MGE.loadMapConv)
+            if not ok then
+                echo("^04[MGE] the map converter didn't load: " .. tostring(err))
+                return
+            end
+            dofile(MGE.scriptPath .. "ui/map_overlay.lua")
         end },
     }, "Turns a .vmf (Hammer) or Source .bsp map (CS:S,\n" ..
         "CS:GO, TF2...) into static boxes, added where\nthe map puts them. Maps go in assets/maps.")

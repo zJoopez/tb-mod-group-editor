@@ -74,6 +74,7 @@ end
 ---@field sides MapSide[]
 ---@field role "solid"|"clip"|"drop"? set by readers that know it (bsp.lua: contents flags)
 ---@field reason string? why a dropped brush is dropped
+---@field sky boolean? a sky brush (bsp.lua: sky surface flags; .vmf sky brushes are found by material)
 
 ---@class MapEntity
 ---@field classname string
@@ -84,8 +85,6 @@ end
 ---@field brushes MapBrush[]
 ---@field entities MapEntity[]
 ---@field terrain MapTerrain[]? terrain grids (displacements) that aren't brushes (.bsp, bsp.lua)
----@field props MapProp[]? models placed in the map (props.lua): static props of a .bsp, prop entities
----@field pakfile { offset: integer, length: integer }? where a .bsp's packed files (a zip) are
 
 ---@param s string? "x y z"
 ---@return number[]?

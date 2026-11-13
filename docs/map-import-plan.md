@@ -2,6 +2,8 @@
 
 Status (2026-11-12): **Phase 0 answered. Phases 1 and 4 and the `.bsp` reader are built and offline-tested, but none has been tried in game yet.** Phase 1 is the converter and command-line tool. Phase 4 is the in-game Advanced tab → Map → Convert map overlay. The `.bsp` reader handles compiled Source maps (CS:S, CS:GO, TF2...) without a decompiler. Next step: convert `mapconv_test.vmf` and `tf2_test2.bsp` (both in `mge/mge/assets/maps/`) in game and walk on them, then dust2 from CS:GO Legacy.
 
+Update (2026-11-13, after the user's in-game testing): **props, the ledge-shell join, see-through red clips and the overlay's Nogrip toggle were removed.** Clips are now always colored like the geometry they cover. The props code (`mapconv/props.lua`: static props, `.vpk` / packed-zip model reading, the `.models` cache) is in git history at commit `de2ce06`. The sections below keep their measurements, marked where a feature is gone. The `.models` files in `assets/maps` aren't read any more and can be deleted.
+
 Goal: a community tool that turns a brush-based level from another game (Source `.vmf`, later Quake-family `.map`) into:
 
 1. **Collision**: up to ~250 static `env_obj` boxes, imported through MGE like any asset and fine-tuned by hand.
@@ -98,15 +100,15 @@ How to run it: `lua5.1 mge/tools/mapconv.lua map.vmf [--scale 0.035] [--budget 2
 - ✅ **Phase 4: Convert Map overlay** ([ui/map_overlay.lua](../mge/ui/map_overlay.lua)), opened by the Advanced tab's "Map" row.
   - The layout follows `settings_overlay.lua`.
   - The Map button opens `FilePicker` (`.vmf`, `mge/mge/assets/maps`) on top of the overlay. Esc closes the picker first.
-  - Fields: scale, budget (the hint shows the free ids), min size, yaw, anchor x y z, and both region corners. Clips and Nogrip are On/Off toggles.
+  - Fields: scale, budget (the hint shows the free ids), min size, yaw, anchor x y z, and both region corners. Terrain and Clips are On/Off toggles (Nogrip was removed 2026-11-13; `--ungrippable` stays on the command line).
   - Typed values and the picked map are kept in `MapConv.overlayState` while the script runs.
   - Convert (or Enter in a field) shows "Converting…". One frame later, a one-shot `draw2d` hook (`mge_mapconv`, removed by the overlay's `killAction` too) reads the file with `Files`, converts it, closes the overlay and calls `Assets.addObjects(objects, false, false)`: one undo step, kept in place. The report goes to chat.
-  - The mapconv modules load at startup from `main.lua`, and `mapOverlay` is added to quit, overlay-open and Esc handling.
+  - The mapconv modules load on the first Convert map click (`MGE.loadMapConv` in `main.lua`), not at startup, so a broken converter prints an error in chat and the rest of MGE still starts. `mapOverlay` is in `main.lua`'s `OVERLAY_KEYS`, which quit, overlay-open and Esc handling all read.
   - The conversion runs in one go. A dust2-sized file paused for about 1.3 s offline. If it feels bad in game, run it in a coroutine across frames.
 - ✅ **The flow (2026-11-12):** the overlay holds only settings:
   - Map
   - Scale, Budget, Min size, Terrain tol.
-  - Terrain / Clips / Nogrip
+  - Terrain / Clips
   - Cancel | **Place** (Enter in a field does the same)
 
   Region, anchor and yaw are picked only in the placement view, and its bar reads **Region | Map | Settings | Convert**:
@@ -156,6 +158,23 @@ How to run it: `lua5.1 mge/tools/mapconv.lua map.vmf [--scale 0.035] [--budget 2
     - gizmo size on a big map target
 - **Phase 2 adds to the overlay:** a "Model" toggle and the OBJ/TGA writer, using `io.open(path, mode, true)` (root-relative).
 
+## In-game checklist
+
+Everything here passed offline. Only the user can check it in game. Tick each item, or write what went wrong next to it.
+
+- [ ] Advanced → **Convert map** opens the overlay. The converter loads on this first click; a load error shows in chat and MGE keeps working.
+- [ ] `mapconv_test.vmf`: Place, then Convert. The boxes sit where the preview showed them, on the ground, and a tori can walk on them.
+- [ ] `tf2_test2.bsp`: converts, and the terrain slabs are walkable.
+- [ ] One undo (Shift+Z) removes all of a conversion's boxes.
+- [ ] A `.tbm` from `tools/mapconv.lua`, imported through Objects → Import, keeps its position (`#mge_keep_position`).
+- [ ] Ramps and slabs feel right to walk on. If not, tune `slabThickness`.
+- [ ] Placement view: the bar draws, Shift+Q/W/E switch tools, F1 does nothing, and Esc goes back to the overlay.
+- [ ] After placement, MGE's window comes back on the right tab, and the gizmo tool is the one from before Place.
+- [ ] Frame rate with the grey context boxes. Lower `contextLimit` if it's slow.
+- [ ] The gizmo is a usable size on a big map target.
+- [ ] dust2: how long Convert pauses (about 1.3 s offline). Move the conversion into a coroutine if the pause is bad.
+- [ ] Joints → Link with more than 56 objects (a converted map) shows the pager, and picks on page 2 work.
+
 ## Phases
 
 | # | Scope | Done when |
@@ -170,6 +189,8 @@ How to run it: `lua5.1 mge/tools/mapconv.lua map.vmf [--scale 0.035] [--budget 2
 | 5 | Quake `.map` (standard + Valve220), model splitting. | GPL Quake/Xonotic maps convert. |
 
 ### Props (crates, doors, cars), 2026-11-12
+
+> **Removed 2026-11-13.** In-game testing found the prop boxes not useful. The code is in git history (`de2ce06`); what follows is the record of how it worked.
 
 Most map detail is props, not brushes. dust2 has 3,158 static props: 1,258 solid and 1,900 not, including 156 crates, 319 doors and door frames, and 32 cars. [mapconv/props.lua](../mge/mapconv/props.lua) handles them:
 
@@ -187,7 +208,7 @@ Most map detail is props, not brushes. dust2 has 3,158 static props: 1,258 solid
   - The command-line tool finds archives in Steam's `common` folder next to Toribash, or via `--game-dir`. `--no-props` turns props off.
   - The game opens `../<game>/<archive>` from the Toribash root (`io.open(path, "rb", true)`). **Whether the game allows `../` there is unverified.** If it doesn't, the cache the command-line tool writes covers it. `de_dust2.bsp.models` is already in `assets/maps`.
 - **Settings:** a **Props** toggle in the overlay; `DEFAULTS.props = true`.
-- **Clips** are now off by default (`--clips` turns them on).
+- **Clips** are now off by default (`--clips` turns them on). *2026-11-13: on by default again, colored like the geometry they cover, after the user's in-game tests; `--no-clips` turns them off.*
 - **Checks run:**
   - dust2: 629 models found in 0.25 s.
   - The crate named `37x37x74` comes out 43×78×38 (lying along y, with overhang).
@@ -242,6 +263,8 @@ Tests check a doorway wall (3 parts stay 3), the same wall without an opening (j
 
 ### Beams and ledge shells (rails that wouldn't join, 2026-11-12)
 
+> **The shell join was removed 2026-11-13** (the overlay's Ledge size field, `simplifyShell`, `--simplify-shell`): in-game testing found it not useful. Beams joining end to end and the slab rules stay. Beams are now at most `maxThickness` (32) thick.
+
 Rails, curbs and ledge strips are **beams**: thin in two directions. As slabs their "normal" was arbitrary, so an 8×16 rail next to a 16×8 one never joined. A measured diagnostic of the unjoined pairs on dust2 showed most were **strips side by side**: a ledge's top, face and lip, the same length and 15–38 apart. They're the shell of one solid ledge, which is what the user saw as "hollow".
 
 `Merge.flat` now classifies each piece as a beam and/or a slab (re-classified after every join) and tries each rule both qualify for:
@@ -260,6 +283,52 @@ Results:
 
 The only unjoined strip pair left is two big overlapping slanted slabs 7° apart. The hole check flags one 48×368×84 ledge block as half "empty": that's its filled inside, by design.
 
+### Sky clips (the user: clips are useful but bring huge sky boxes, 2026-11-13)
+
+With Clips on, dust2 gave giant see-through lids over the map. Mappers fill the air between the roofs and the sky with big clip brushes, so players can't jump onto the roofs. dust2 has 5 of them, up to 2652×3116 units, all ending at z 820 with the sky starting at 1056. 1,253 clips were measured to find a rule that separates the lids from the useful clips:
+
+- **Touching the sky isn't the test.** Only 7 clips touch a sky brush from below, all thin pillars and walls. The lids stop 76–236 units short of the sky.
+- **Sky somewhere above isn't either.** Every outdoor clip has it. A wide, flat stair ramp clip (`958`, 738×562×27) has the sky 232 above it, but only over 1% of its top.
+
+The rule (`SKY_CLIP` and `MapConv.isSkyClip` in `convert.lua`) leaves a clip out when all of these hold:
+
+- it's **wide**: both horizontal sides are at least 256
+- it's **flat**: lower than it is wide
+- the sky starts at most **256** above its top
+- that sky covers at least **half** of its top
+
+On dust2 it drops exactly the 5 lids. The 712×160×500 clip at the lids' edge (`1382`) stays, because it's taller than it is wide. Sky brushes come from `MapBrush.sky`, which the `.bsp` reader sets from the sky surface flags; in a `.vmf` they're found by their `TOOLSSKYBOX` material. The report says how many were left out. `--sky-clips` on the command line (option `skyClips`) keeps them; the overlay always leaves them out. Clips inside dust2's 3D skybox (z ~3570–3790) aren't lids and aren't dropped, and a region around the play area leaves them out anyway. Tests: `sky clips` in `tests/test_mapconv.lua`.
+
+### Clip colors (the user: clips hold a big share of the core geometry, 2026-11-13)
+
+With Clips on, 74 of the 200 boxes of a dust2 mid area are clips: ramps over stairs, smoothed wall corners, rails. See-through red made a big part of the map look unfinished, so clips are now **always solid, in the color of the map geometry they cover**. A `clipColor` option with a Red mode existed briefly and was removed the same day; the user found no use for red.
+
+- **Borrowed material** (`borrowMaterials` in `convert.lua`): each clip takes the material of the solid piece its bounds overlap most, counting solids within 8 units (a clip along a wall only touches it). Brushes and terrain slabs count; tool-textured solids don't. A clip touching nothing is plain grey. The material is in the object's comment (`clip by <material>`).
+- A 512-unit XY grid keeps it fast: dust2's pieces step went from 0.55 s to 0.67 s.
+- On that dust2 area every clip found a material.
+
+Tests: `clip colors` in `tests/test_mapconv.lua`.
+
+### Hidden and covered boxes (the user: one bombsite takes the whole budget, 2026-11-13)
+
+Clips are on by default now. Measured on dust2 B site with defaults and no budget:
+
+| Region | Boxes | Terrain slabs | Inside another box |
+|---|---|---|---|
+| 1000×1000 | 135 | 98 | 23 |
+| 1500×1500 | 247 | 175 | 60 |
+| 2000×2000 | 321 | 226 | 61 |
+
+Most of the hidden boxes are solids inside clips (stairs under their ramp clip). Terrain tolerance is a weak lever (1500×1500: 247 → 219 at 16, 208 at 24), and a looser tolerance for wall terrain changes nothing: each wall grid is already one slab.
+
+- **`Merge.hidden`** (`merge.lua`), run in `MapConv.select` after merging and before the minimum size and budget. Smallest boxes first, against boxes still kept, so of two identical boxes one stays.
+  - **Inside one other box** (`dropHidden`, on, no toggle): all 8 corners inside the other box's own axes, 1 unit to spare. Lossless: on dust2 B site 1500×1500 every removed box is 100% inside kept boxes. 247 → **187**.
+  - **Covered by several** (`dropCovered`, off; the placement view's **Covered** toggle, `--drop-covered`): at least `COVERED_SHARE` (95%) of 5×5×5 points inside other kept boxes. 187 → **147**. The least covered removed box is 94% covered (finer 7×7×7 check), so a thin ledge can go: check the preview.
+  - A 256-unit XY grid finds neighbours: about 0.1 s per region change. The placement view's grey whole-map context skips it (0.3 s on dust2).
+- **Budget** in the overlay now defaults to every free object id (256 in an empty mod) instead of 200. The command line keeps 200, since the asset may go into a mod that already has objects.
+
+Tests: `hidden and covered boxes`, `hidden boxes in a conversion` in `tests/test_mapconv.lua`.
+
 ### dust2 (CS:GO Legacy `csgo/maps/de_dust2.bsp`, copied to `mge/mge/assets/maps/`)
 
 - The file is 325 MB, of which 294 MB is the packed-texture lump. 9.1 MB is read.
@@ -275,7 +344,7 @@ The only unjoined strip pair left is two big overlapping slanted slabs 7° apart
 
 ## Testing
 
-- **Offline harness**, in the scratchpad and never in this folder. Use the `CLAUDE.md` header, run Lua 5.1 against `mge/mge/mapconv/*`, and stub `MGE` with `Mat3` and `RotatingOld` loaded.
+- **Test suite:** `lua5.1 mge/tests/run.lua mapconv` (and `bsp`). `tests/test_mapconv.lua` builds hand-written VMFs and checks the whole conversion; `tests/test_bsp.lua` reads `tf2_test2.bsp` when it's in `assets/maps`. Add new converter checks there. The 2026-11-12 harness below was a throwaway one, and the suite rebuilds most of it.
   - Hand-written VMFs: one axis-aligned box, a box rotated 30° on Z, a wedge, two boxes that merge, a box with a `TOOLSTRIGGER` face, and a `func_buyzone` entity.
   - Check plane normal signs, the pos/sides/rot values against what the Generate tab would write for the same box, the merge count and the budget cut.
 - **CLI under Lua 5.4** too, because community users may have it. The core must not use `unpack`, `loadstring` or `getn` directly.

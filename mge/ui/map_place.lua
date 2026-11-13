@@ -57,6 +57,7 @@ local COLORS = {
 ---@field floorsFirst boolean the bar's budget order toggles
 ---@field centerFirst boolean
 ---@field simplify boolean the bar's Simplify toggle (Merge.flat)
+---@field dropCovered boolean the bar's Covered toggle (Merge.hidden with MapConv.COVERED_SHARE)
 
 ---@type MapPlaceSession?
 local session = nil
@@ -77,6 +78,8 @@ local live = {}
 local bar = nil
 -- MGE's window was shown when the view opened: it's hidden meanwhile and shown again after
 local windowWasShown = false
+---@type GizmoMode? the gizmo's tool when the view opened: it starts on Move, stop puts this one back
+local modeBefore = nil
 ---@type fun()? the bar's refresh while it's up, also a gizmo mode listener (Gizmo.modeListeners)
 local refreshBar = nil
 ---@type UIElement?
@@ -341,6 +344,7 @@ local function placed(s)
         floorsFirst = s.options.floorsFirst == true,
         centerFirst = s.options.centerFirst == true,
         simplify = s.options.simplify ~= false,
+        dropCovered = s.options.dropCovered == true,
     }
 end
 
@@ -355,6 +359,9 @@ local function stop()
     end
     refreshBar = nil
     if bar and not bar.destroyed then bar:kill() end
+    -- the selection's tool as it was (the view turns Move on), after the bar's listener is gone
+    if modeBefore and not MGE.quitting then MGE.Gizmo.setMode(modeBefore) end
+    modeBefore = nil
     -- MGE's window back, as it was before the view (not while quitting, it's being closed)
     local window = MGE.Main and MGE.Main.window
     if windowWasShown and window and not window.destroyed and not MGE.quitting then
@@ -435,6 +442,7 @@ local function buildBar()
         light(toggles[1], session.options.floorsFirst == true)
         light(toggles[2], session.options.centerFirst == true)
         light(toggles[3], session.options.simplify ~= false)
+        light(toggles[4], session.options.dropCovered == true)
         setInfo()
     end
     refreshBar = refresh
@@ -470,10 +478,13 @@ local function buildBar()
             reselect()
             refresh()
         end },
+        { label = "Covered", onClick = function() flip("dropCovered") end },
     }, 4, 0.6)
     TBMenu:displayPopup(toggles[1], "Over the budget, what can be stood on goes in\nbefore equally big walls and ceilings")
     TBMenu:displayPopup(toggles[2], "Over the budget, the middle of the region goes in\nfirst, its edges are left out first")
     TBMenu:displayPopup(toggles[3], "Joins nearly flat neighbouring slabs (terrain floors,\nfloor tiles) into bigger ones: far fewer boxes")
+    TBMenu:displayPopup(toggles[4], "Also leaves out boxes " .. math.floor(MapConv.COVERED_SHARE * 100 + 0.5) ..
+        "% covered by other boxes\ntogether. Boxes inside one other box always go")
     info = bar:addChild({ pos = { pad, pad + rowH + 4 + toggleH + 4 }, size = { inner, Widgets.INFO_HEIGHT + 4 } })
     table.insert(Gizmo.modeListeners, refresh)
     refresh()
@@ -492,9 +503,11 @@ function MapPlace.start(s)
     local all = MapConv.withDefaults(s.options)
     -- grey background only: Simplify over the whole map (dust2: 11 000 pieces) isn't worth the wait
     all.region, all.budget, all.simplify = nil, math.huge, false
+    all.dropHidden, all.dropCovered = false, false -- the grey context doesn't need them: 0.3 s on dust2
     allContext = MapConv.select(s.pieces, all, s.report)
     reselect()
     MGE.Gizmo.targetOverride = gizmoTarget
+    modeBefore = MGE.Gizmo.mode
     if MGE.Gizmo.mode == "none" then MGE.Gizmo.setMode("move") end
     Highlight.placement = draw
     MGE.WorldSelect.clicksOff = true

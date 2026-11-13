@@ -93,8 +93,6 @@ end
 ---@field align number map units edges count as lined up within: what's left open is at most this deep (a
 ---notch, never a doorway: a lintel differs from the wall beside it by far more)
 ---@field maxThickness number map units: only slabs this thin or thinner join (floors, walls, terrain)
----@field shell number map units: beams spanning the same length side by side (a ledge's top, face and lip:
----its shell) join into one solid block when it's at most this big across
 
 ---A slab's own axes: thin axis (its normal, pointing up or else along the first non-zero world axis)
 ---and the two in its plane, as frame column indexes and vectors
@@ -122,7 +120,7 @@ local function classify(box, options)
     local order = { 1, 2, 3 }
     table.sort(order, function(p, q) return box.sides[p] < box.sides[q] end)
     local small, middle, long = order[1], order[2], order[3]
-    if box.sides[middle] <= math.max(options.maxThickness, options.shell or 0) and box.sides[long] >= box.sides[middle] * 3 then
+    if box.sides[middle] <= options.maxThickness and box.sides[long] >= box.sides[middle] * 3 then
         piece.beam = { long = long, cross = { small, middle }, axis = column(box, long) }
         piece.length = box.sides[long]
     end
@@ -217,13 +215,9 @@ local function slabJoined(a, b, options)
     return boxFrom(a.box, axes, min, max, { s.a, s.b, s.thin }), math.min(covered, area)
 end
 
----Two beams (rails, curbs, trims, ledge strips) running the same way within ~14 degrees, touching or
----overlapping along their length, joined when either
----  end to end: the joined cross-section at most options.tolerance bigger than the thicker one's and
----  options.fill of its length covered (a rail in pieces, a kinked curb)
----  side by side: they span the same length (ends within options.align) and touch across, the joined
----  cross-section at most options.shell on each side (a ledge's top, face and lip are the shell of one
----  solid ledge: its inside can't be reached, filling it saves boxes)
+---Two beams (rails, curbs, trims) running the same way within ~14 degrees, touching or overlapping
+---along their length, joined end to end: the joined cross-section at most options.tolerance bigger than
+---the thicker one's and options.fill of its length covered (a rail in pieces, a kinked curb)
 ---@return MapBox? box, number? length covered
 local function beamJoined(a, b, options)
     local s = a.beam
@@ -241,21 +235,10 @@ local function beamJoined(a, b, options)
     for k = 2, 3 do
         if max[k] - min[k] > math.max(amax[k] - amin[k], bmax[k] - bmin[k]) + options.tolerance then endToEnd = false end
     end
-    if endToEnd then
-        local covered = a.length + b.length
-        if covered >= length * options.fill then
-            return boxFrom(a.box, axes, min, max, columns), math.min(covered, length)
-        end
-    end
-
-    local shell = options.shell or 0
-    if shell <= 0 then return nil end
-    if math.abs(amin[1] - bmin[1]) > options.align or math.abs(amax[1] - bmax[1]) > options.align then return nil end
-    for k = 2, 3 do
-        if bmin[k] > amax[k] + options.gap or amin[k] > bmax[k] + options.gap then return nil end -- not touching
-        if max[k] - min[k] > shell then return nil end
-    end
-    return boxFrom(a.box, axes, min, max, columns), length
+    if not endToEnd then return nil end
+    local covered = a.length + b.length
+    if covered < length * options.fill then return nil end
+    return boxFrom(a.box, axes, min, max, columns), math.min(covered, length)
 end
 
 ---Joins nearly flat neighbouring pieces into bigger ones: a terrain floor's tiles (each tilted and
@@ -271,7 +254,7 @@ function Merge.flat(boxes, options)
     local CELL = 256 -- neighbour grid, map units
     -- missing options: the converter's defaults (MapConv.select passes them all)
     local given = options or {}
-    options = { tolerance = 12, fill = 0.75, gap = 16, align = 32, maxThickness = 32, shell = 96 }
+    options = { tolerance = 12, fill = 0.75, gap = 16, align = 32, maxThickness = 32 }
     for k, v in pairs(given) do options[k] = v end
     local pieces, out = {}, {}
     for _, box in ipairs(boxes) do
@@ -377,6 +360,165 @@ function Merge.boxes(boxes, step)
         total = total + pass
     until pass == 0
     return boxes, total
+end
+
+-- Merge.hidden: map units a box may stick out of what hides it (float noise of compiled maps), the
+-- neighbour grid's cell size, and the sample points per axis for the covered share (n^3 points)
+local HIDDEN_PAD, HIDDEN_CELL, COVER_SAMPLES = 1, 256, 5
+
+---World-axis bounds of a box
+---@param box MapBox
+---@return number[] min, number[] max
+local function aabb(box)
+    local min, max = {}, {}
+    for k = 1, 3 do
+        local half = 0
+        for j = 1, 3 do half = half + math.abs(box.frame[k][j]) * box.sides[j] / 2 end
+        min[k], max[k] = box.center[k] - half, box.center[k] + half
+    end
+    return min, max
+end
+
+---The point is inside the box (its own axes), with pad to spare
+---@param box MapBox
+---@param p number[]
+---@param pad number
+---@return boolean
+local function holds(box, p, pad)
+    for c = 1, 3 do
+        local d = 0
+        for r = 1, 3 do d = d + (p[r] - box.center[r]) * box.frame[r][c] end
+        if math.abs(d) > box.sides[c] / 2 + pad then return false end
+    end
+    return true
+end
+
+---A point of the box at fractions (-0.5..0.5) of its sides
+---@param box MapBox
+---@return number[]
+local function pointAt(box, fx, fy, fz)
+    local s = { fx * box.sides[1], fy * box.sides[2], fz * box.sides[3] }
+    local p = {}
+    for r = 1, 3 do p[r] = box.center[r] + box.frame[r][1] * s[1] + box.frame[r][2] * s[2] + box.frame[r][3] * s[3] end
+    return p
+end
+
+---Leaves out boxes nobody can see or touch: one entirely inside another box (stairs under their ramp
+---clip, a trim inside a wall), and with cover above 0 also one whose inside is at least that share
+---covered by the other boxes together. Smallest first, and only against boxes still kept, so of two
+---identical boxes one stays, and boxes that cover each other never all go
+---@param boxes MapConvBox[]
+---@param cover number? 0 or nil: only boxes inside one other; e.g. 0.95: also 95% covered by several
+---@return MapConvBox[] kept
+---@return integer hidden inside one other box
+---@return integer covered by several together
+function Merge.hidden(boxes, cover)
+    cover = cover or 0
+    local items, cells = {}, {}
+    for i, box in ipairs(boxes) do
+        local min, max = aabb(box)
+        local item = { box = box, min = min, max = max, index = i, volume = box.sides[1] * box.sides[2] * box.sides[3] }
+        items[i] = item
+        for x = math.floor(min[1] / HIDDEN_CELL), math.floor(max[1] / HIDDEN_CELL) do
+            for y = math.floor(min[2] / HIDDEN_CELL), math.floor(max[2] / HIDDEN_CELL) do
+                local key = x .. "," .. y
+                cells[key] = cells[key] or {}
+                table.insert(cells[key], item)
+            end
+        end
+    end
+    ---Kept boxes whose bounds overlap the item's (a fixed order: the same result on any Lua)
+    local function neighbours(item)
+        local found, seen = {}, {}
+        for x = math.floor(item.min[1] / HIDDEN_CELL), math.floor(item.max[1] / HIDDEN_CELL) do
+            for y = math.floor(item.min[2] / HIDDEN_CELL), math.floor(item.max[2] / HIDDEN_CELL) do
+                for _, other in ipairs(cells[x .. "," .. y] or {}) do
+                    if other ~= item and not other.dropped and not seen[other] then
+                        seen[other] = true
+                        local overlaps = true
+                        for k = 1, 3 do
+                            if other.min[k] > item.max[k] + HIDDEN_PAD or other.max[k] < item.min[k] - HIDDEN_PAD then
+                                overlaps = false
+                                break
+                            end
+                        end
+                        if overlaps then found[#found + 1] = other end
+                    end
+                end
+            end
+        end
+        table.sort(found, function(a, b) return a.index < b.index end)
+        return found
+    end
+
+    local order = {}
+    for i, item in ipairs(items) do order[i] = item end
+    table.sort(order, function(a, b)
+        if a.volume ~= b.volume then return a.volume < b.volume end
+        return a.index < b.index
+    end)
+    local hidden, covered = 0, 0
+    for _, item in ipairs(order) do
+        local others = neighbours(item)
+        -- inside one other: every corner in it
+        for _, other in ipairs(others) do
+            local inBounds = true
+            for k = 1, 3 do
+                if item.min[k] < other.min[k] - HIDDEN_PAD or item.max[k] > other.max[k] + HIDDEN_PAD then
+                    inBounds = false
+                    break
+                end
+            end
+            if inBounds then
+                local all = true
+                for _, f in ipairs({ { -1, -1, -1 }, { -1, -1, 1 }, { -1, 1, -1 }, { -1, 1, 1 },
+                    { 1, -1, -1 }, { 1, -1, 1 }, { 1, 1, -1 }, { 1, 1, 1 } }) do
+                    if not holds(other.box, pointAt(item.box, f[1] / 2, f[2] / 2, f[3] / 2), HIDDEN_PAD) then
+                        all = false
+                        break
+                    end
+                end
+                if all then
+                    item.dropped = true
+                    hidden = hidden + 1
+                    break
+                end
+            end
+        end
+        -- covered by several: sample points spread through its inside
+        if not item.dropped and cover > 0 and #others > 0 then
+            local n = COVER_SAMPLES
+            local allowedOut = n ^ 3 - math.ceil(n ^ 3 * cover) -- sample points that may be uncovered
+            local out = 0
+            for i = 1, n do
+                for j = 1, n do
+                    for k = 1, n do
+                        local p = pointAt(item.box, (i - 0.5) / n - 0.5, (j - 0.5) / n - 0.5, (k - 0.5) / n - 0.5)
+                        local held = false
+                        for _, other in ipairs(others) do
+                            if holds(other.box, p, HIDDEN_PAD) then
+                                held = true
+                                break
+                            end
+                        end
+                        if not held then out = out + 1 end
+                        if out > allowedOut then break end
+                    end
+                    if out > allowedOut then break end
+                end
+                if out > allowedOut then break end
+            end
+            if out <= allowedOut then
+                item.dropped = true
+                covered = covered + 1
+            end
+        end
+    end
+    local kept = {}
+    for _, item in ipairs(items) do
+        if not item.dropped then kept[#kept + 1] = item.box end
+    end
+    return kept, hidden, covered
 end
 
 return Merge
