@@ -6,6 +6,12 @@
 -- Objects don't switch away from the Joints list: its Link tab picks them for the current slot's draft
 -- (Joints.offerDraft), on Properties one starts a new joint in the lowest empty slot.
 --
+-- Shift + drag draws a box and adds what's in it to the current list's selection (no list switch):
+-- objects any of its rays hits (a grid of rays over the box plus one through every object center in
+-- it, nearest hit per ray, so hidden objects stay unselected), players with a joint in it, joint
+-- anchors in it (not on the Link tab). Shift + press never turns the camera, a Shift press released
+-- without moving is the usual Shift + click.
+--
 -- The click is turned into a camera ray by MGE itself and intersected exactly with every object's
 -- shape (box, sphere, capsule). The nearest hit along the ray wins, so objects in front block the
 -- ones behind them.
@@ -26,10 +32,15 @@ local HOOK_SET = MGE.hookname .. "_worldselect" -- own set, MGE's draw3d hook is
 local WorldSelect = {
     clickMoveLimit = 4, -- pixels the mouse may move between down and up to still count as a click
     clicksOff = false, -- true: clicks in the world don't select, only the gizmo works (ui/map_place.lua)
+    boxGridStep = 12, -- box select: pixels between its rays
+    boxGridMax = 40, -- box select: at most this many rays + 1 per side (big boxes get a coarser grid)
 }
 
----@type { x: number, y: number }?
+---@type { x: number, y: number, box: boolean?, endX: number?, endY: number?, moved: boolean? }? box:
+---a Shift press, dragging draws a box (endX / endY the mouse, moved once past clickMoveLimit)
 local pressed = nil
+---@type { x1: number, y1: number, x2: number, y2: number }? box waiting for the next draw3d
+local pendingBox = nil
 ---@type { x: number, y: number, additive: boolean }? click waiting for the next draw3d (get_screen_pos only works there)
 local pendingClick = nil
 
@@ -193,24 +204,48 @@ end
 -- ray hits, also used by the gizmo's handles (utils/gizmo.lua)
 WorldSelect.hitSphere, WorldSelect.hitBox, WorldSelect.hitCapsule = hitSphere, hitBox, hitCapsule
 
----Distance along the ray to a world object, nil when missed
+---@class WorldSelectShape a world object read once for many ray tests (box select)
+---@field center number[]
+---@field radius number bounding sphere
+---@field hit fun(origin: number[], dir: number[]): number? distance along the ray, nil when missed
+---@field obj FileParserEnvObj?
+
 ---@param id integer 0-based object id
----@return number?
-function WorldSelect.hitObject(origin, dir, id)
+---@return WorldSelectShape?
+local function objectShape(id)
     local x, y, z = get_obj_pos(id)
     if x == nil then return nil end
     local sx, sy, sz = get_obj_sides(id)
     local shape = get_obj_shape(id)
     local center = { x, y, z }
     if shape == SHAPE.SPHERE then -- x radius
-        return hitSphere(origin, dir, center, sx)
+        return { center = center, radius = sx, hit = function(o, d) return hitSphere(o, d, center, sx) end }
     end
     local axes = getLocalAxes(id)
     if shape == SHAPE.CAPSULE then -- x radius, y length of the straight part along local z
         local halfAxis = scale(axes[3], sy / 2)
-        return hitCapsule(origin, dir, sub(center, halfAxis), add(center, halfAxis), sx)
+        local a, b = sub(center, halfAxis), add(center, halfAxis)
+        return { center = center, radius = sy / 2 + sx, hit = function(o, d) return hitCapsule(o, d, a, b, sx) end }
     end
-    return hitBox(origin, dir, center, axes, { sx / 2, sy / 2, sz / 2 }) -- box, full sizes
+    local half = { sx / 2, sy / 2, sz / 2 } -- box, full sizes
+    return { center = center, radius = length(half), hit = function(o, d) return hitBox(o, d, center, axes, half) end }
+end
+
+---Whether the ray can reach the sphere at all (cheap test before the exact shape)
+local function nearSphere(origin, dir, center, radius)
+    local ox, oy, oz = origin[1] - center[1], origin[2] - center[2], origin[3] - center[3]
+    local c = ox * ox + oy * oy + oz * oz - radius * radius
+    if c <= 0 then return true end -- starts inside
+    local b = ox * dir[1] + oy * dir[2] + oz * dir[3]
+    return b < 0 and b * b >= c
+end
+
+---Distance along the ray to a world object, nil when missed
+---@param id integer 0-based object id
+---@return number?
+function WorldSelect.hitObject(origin, dir, id)
+    local s = objectShape(id)
+    return s and s.hit(origin, dir)
 end
 
 ---Mod object under the screen position, nearest along the camera ray. Must be called from draw3d.
@@ -315,6 +350,103 @@ function WorldSelect.pickAny(x, y)
     return nil
 end
 
+---@param p CameraProjection
+---@param point number[]
+---@param box { left: number, top: number, right: number, bottom: number }
+local function projectsInto(p, point, box)
+    local x, y = WorldSelect.project(p, point)
+    return x ~= nil and x >= box.left and x <= box.right and y >= box.top and y <= box.bottom, x, y
+end
+
+---@return { left: number, top: number, right: number, bottom: number }
+local function boxOf(x1, y1, x2, y2)
+    return { left = math.min(x1, x2), top = math.min(y1, y2), right = math.max(x1, x2), bottom = math.max(y1, y2) }
+end
+
+---Objects the rays through a screen box hit: a grid of rays over it plus one through every object
+---center inside it (small objects between the grid's rays), each ray takes only the nearest object, so
+---objects hidden behind others aren't taken. Must be called from draw3d
+---@return FileParserEnvObj[] in id order
+function WorldSelect.pickBox(x1, y1, x2, y2)
+    local p = WorldSelect.measureProjection()
+    if not p then return {} end
+    local box = boxOf(x1, y1, x2, y2)
+    local shapes = {}
+    for _, obj in ipairs(ModData.parsed.env_obj) do
+        local s = objectShape(obj.id - 1)
+        if s then
+            s.obj = obj
+            shapes[#shapes + 1] = s
+        end
+    end
+    local points = {}
+    local w, h = box.right - box.left, box.bottom - box.top
+    local cols = math.max(1, math.min(WorldSelect.boxGridMax, math.ceil(w / WorldSelect.boxGridStep)))
+    local rows = math.max(1, math.min(WorldSelect.boxGridMax, math.ceil(h / WorldSelect.boxGridStep)))
+    for i = 0, cols do
+        for j = 0, rows do points[#points + 1] = { box.left + w * i / cols, box.top + h * j / rows } end
+    end
+    for _, s in ipairs(shapes) do
+        local inside, sx, sy = projectsInto(p, s.center, box)
+        if inside then points[#points + 1] = { sx, sy } end
+    end
+    local taken, list = {}, {}
+    for _, pt in ipairs(points) do
+        local origin, dir = WorldSelect.rayFrom(p, pt[1], pt[2])
+        if dir then
+            local best, bestT = nil, math.huge
+            for _, s in ipairs(shapes) do
+                if nearSphere(origin, dir, s.center, s.radius) then
+                    local t = s.hit(origin, dir)
+                    if t and t < bestT then best, bestT = s.obj, t end
+                end
+            end
+            if best and not taken[best] then
+                taken[best] = true
+                list[#list + 1] = best
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.id < b.id end)
+    return list
+end
+
+---Players with a joint inside a screen box. Must be called from draw3d
+---@return integer[] 0-based
+function WorldSelect.pickPlayersBox(x1, y1, x2, y2)
+    local p = WorldSelect.measureProjection()
+    if not p or not MGE.Players then return {} end
+    local box = boxOf(x1, y1, x2, y2)
+    local list = {}
+    for player = 0, MGE.Players.count() - 1 do
+        if MGE.Players.exists(player) then
+            for _, id in pairs(JOINTS) do
+                local jx, jy, jz = get_joint_pos(player, id)
+                if jx and projectsInto(p, { jx, jy, jz }, box) then
+                    list[#list + 1] = player
+                    break
+                end
+            end
+        end
+    end
+    return list
+end
+
+---Joints whose anchor is inside a screen box (all of them, the Joints list draws every anchor). Must be
+---called from draw3d
+---@return FileParserEnvObjJoint[]
+function WorldSelect.pickJointsBox(x1, y1, x2, y2)
+    local p = WorldSelect.measureProjection()
+    if not p then return {} end
+    local box = boxOf(x1, y1, x2, y2)
+    local list = {}
+    for _, joint in ipairs(ModData.parsed.env_obj_joint) do
+        local anchor = joint.id and MGE.Joints.anchorOf(joint)
+        if anchor and projectsInto(p, anchor, box) then list[#list + 1] = joint end
+    end
+    return list
+end
+
 local function isOverUI(x, y)
     return MGE.Widgets.isMouseOverUI(x, y) -- Widgets loads after this module, read on use
 end
@@ -335,6 +467,11 @@ add_hook("mouse_button_down", HOOK_SET, function(button, x, y)
     if button ~= 1 or not isActive() or isOverUI(x, y) then return end
     if Gizmo and Gizmo.press(x, y) then return 1 end
     if WorldSelect.clicksOff then return end -- only the gizmo (map placement), drags still turn the camera
+    -- Shift: a drag draws a select box instead of turning the camera. Not while a one-shot pick waits
+    if get_keyboard_shift() ~= 0 and not WorldSelect.picking then
+        pressed = { x = x, y = y, box = true, endX = x, endY = y }
+        return 1
+    end
     pressed = { x = x, y = y }
 end)
 
@@ -345,11 +482,17 @@ add_hook("mouse_button_up", HOOK_SET, function(button, x, y)
         return 1
     end
     local start = pressed
+    if button ~= 1 or not start then return end
     pressed = nil
-    if button ~= 1 or not start or not isActive() then return end
+    if not isActive() then return start.box and 1 or nil end
+    if start.box and start.moved then
+        pendingBox = { x1 = start.x, y1 = start.y, x2 = x, y2 = y }
+        return 1
+    end
     local limit = WorldSelect.clickMoveLimit
     if math.abs(x - start.x) > limit or math.abs(y - start.y) > limit then return end -- camera drag
-    pendingClick = { x = x, y = y, additive = get_keyboard_shift() ~= 0 } -- Shift read at the click
+    pendingClick = { x = x, y = y, additive = start.box or get_keyboard_shift() ~= 0 } -- Shift read at the click
+    if start.box then return 1 end
 end)
 
 ---@type { x: number, y: number }? mouse position to test for the hovered object on the next draw3d
@@ -388,6 +531,12 @@ end
 -- on the Link tab, and while picking, the object under the cursor is highlighted: it's what a click
 -- would pick. Tested only after the mouse moved, not every frame
 add_hook("mouse_move", HOOK_SET, function(x, y)
+    local box = pressed and pressed.box and pressed
+    if box then
+        box.endX, box.endY = x, y
+        local limit = WorldSelect.clickMoveLimit
+        if math.abs(x - box.x) > limit or math.abs(y - box.y) > limit then box.moved = true end
+    end
     if not linkSlot() and not WorldSelect.picking then return end
     if not isActive() or isOverUI(x, y) then
         pendingHover, WorldSelect.hover = nil, nil
@@ -463,7 +612,59 @@ local function clickJoint(joint, additive)
     Main.setListTab("joints") -- rebuilds the window, camera follow frames the joint's objects
 end
 
+---A Shift + drag box: what's in it is added to the current list's selection
+---@param b { x1: number, y1: number, x2: number, y2: number }
+local function boxSelect(b)
+    local Main = MGE.Main
+    if Main.listTab == "objects" then
+        local objects = WorldSelect.pickBox(b.x1, b.y1, b.x2, b.y2)
+        if not objects[1] then return end
+        for _, obj in ipairs(objects) do obj.selected = true end
+        Main.updateWindow() -- list checkboxes and editor values follow the selection
+        MGE.Camera.followSelection()
+    elseif Main.listTab == "players" then
+        local players = WorldSelect.pickPlayersBox(b.x1, b.y1, b.x2, b.y2)
+        if not players[1] then return end
+        for _, player in ipairs(players) do Main.selectedPlayers[player] = true end
+        Main.selectedPlayer = players[#players]
+        Main.updateWindow()
+        MGE.Camera.followPlayer(Main.selectedPlayerList())
+    elseif Main.listTab == "joints" and not linkSlot() then -- Link tab: clicks pick objects for a draft
+        local last
+        for _, joint in ipairs(WorldSelect.pickJointsBox(b.x1, b.y1, b.x2, b.y2)) do
+            if not Main.selectedJoints[joint.id] then
+                if last then Main.selectedJoints[last] = true end
+                last = joint.id
+            end
+        end
+        if not last then return end -- nothing new
+        Main.selectJoint(last, true) -- adds the last one as the current slot, drops another slot's draft
+        Main.updateWindow() -- the list's cells follow
+    end
+end
+
+-- the box while Shift + dragging
+add_hook("draw2d", HOOK_SET, function()
+    local b = pressed
+    if not b or not b.box or not b.moved then return end
+    local l, t = math.min(b.x, b.endX), math.min(b.y, b.endY)
+    local r, btm = math.max(b.x, b.endX), math.max(b.y, b.endY)
+    set_color(0.35, 0.65, 1, 0.15)
+    draw_quad(l, t, r - l, btm - t)
+    set_color(0.35, 0.65, 1, 0.9)
+    draw_line(l, t, r, t, 1)
+    draw_line(r, t, r, btm, 1)
+    draw_line(r, btm, l, btm, 1)
+    draw_line(l, btm, l, t, 1)
+end)
+
 add_hook("draw3d", HOOK_SET, function()
+    local box = pendingBox
+    if box then
+        pendingBox = nil
+        local ok, err = pcall(boxSelect, box)
+        if not ok then echo("[MGE] box select error: " .. tostring(err)) end
+    end
     local picking = WorldSelect.picking
     if not linkSlot() and not picking then
         pendingHover, WorldSelect.hover = nil, nil

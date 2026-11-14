@@ -22,7 +22,7 @@ local MapPlace = {
     active = false,
     -- the game draws only so many 3D shapes a frame, a whole map (dust2) is far more: what's drawn is
     -- capped, in this order (a draw each): region, kept, over budget, grey context, kept outlines
-    maxDraws = 500,
+    maxDraws = 786,
     contextLimit = 250, -- grey boxes at most, the biggest near the region
     contextMargin = 0.5, -- grey boxes come from around the region: this share of its size on each side
     minRegion = 16, -- map units, smallest region side
