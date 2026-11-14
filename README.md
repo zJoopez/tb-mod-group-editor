@@ -58,8 +58,8 @@ the game skips, and MGE draws them faint. They're listed after the objects as P1
 - **Unpark** brings selected parked objects back while there are free ids. To edit a parked object,
   unpark it, edit, and park it again. Objects joined by a joint can't be parked.
 - **Convert map** has two budgets: **Budget** is how many boxes become objects (up to the free ids),
-  **Parked** is how many more get parked (the smaller boxes), up to 512 parked in all. **Parked only**
-  parks every box and leaves the object ids free. The placement view draws parked boxes in purple.
+  **Parked** is how many more get parked (the smaller boxes), up to 512 parked in all. Budget 0 parks
+  every box and leaves the object ids free. The placement view draws parked boxes in purple.
 - **Export atmo** writes the parked objects to `data/atmospheres/MGE - <mod>.atmo`. The game draws
   atmosphere objects but they don't collide. Players load the atmosphere themselves (main menu → Shaders &
   Atmos → Atmos); it doesn't come with the mod.

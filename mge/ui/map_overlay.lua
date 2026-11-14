@@ -22,7 +22,6 @@ local RUN_HOOK = MGE.hookname .. "_mapconv" -- one-shot draw2d hook that runs th
 ---@field texts table<string, string> typed field texts by field key
 ---@field clips boolean
 ---@field terrain boolean
----@field parkedOnly boolean every box is parked, the Budget field isn't used
 ---@field placements table<string, MapPlacement> where each map was placed last, by path
 ---@field floorsFirst boolean? the placement view's budget order toggles, nil: the converter's default
 ---@field centerFirst boolean?
@@ -33,7 +32,6 @@ MapConv.overlayState = MapConv.overlayState or
     { texts = {}, clips = DEFAULTS.clips, terrain = DEFAULTS.terrain, placements = {} }
 local state = MapConv.overlayState --[[@as MapOverlayState]]
 state.placements = state.placements or {}
-state.parkedOnly = state.parkedOnly == true
 
 ---@class MapPlacement picked in the placement view, map units and degrees
 ---@field region { min: number[], max: number[] }
@@ -58,10 +56,10 @@ local FIELDS = {
         info = "Toribash units per map unit.\nSource: a player is 72 units, a tori about 2.5." },
     { label = "Budget", keys = { "budget" }, hints = { tostring(freeIds()) },
         info = "Most boxes added as objects, the biggest surfaces\nfirst. Empty: all " .. freeIds() ..
-            " object ids free in this mod.\nNot used with Parked only." },
+            " object ids free in this mod.\n0: only parked boxes, the object ids stay free." },
     { label = "Parked", keys = { "parked" }, hints = { "0" },
         info = "Boxes after the Budget's that are parked (drawn\nonly, no collisions, Advanced > Export atmo), " ..
-            "the\nsmaller ones. Up to " .. MGE.Parking.room() .. ". Empty: none, with Parked only\nas many as fit." },
+            "the\nsmaller ones. Up to " .. MGE.Parking.room() .. ". Empty: none." },
     { label = "Min size", keys = { "minSize" }, hints = { tostring(DEFAULTS.minSize) },
         info = "Brushes smaller than this on every side are\nleft out (trims, details). Map units." },
     { label = "Terrain tol.", keys = { "terrainTolerance" }, hints = { tostring(DEFAULTS.terrainTolerance) },
@@ -78,7 +76,7 @@ local ROW_GAP = 4
 local LABEL_W = 110
 local HELP_SIZE = 22
 local BUTTON_H = 32
-local ROWS = 1 + #FIELDS + 3 -- Map, fields, Parked only, Terrain and Clips
+local ROWS = 1 + #FIELDS + 2 -- Map, fields, Terrain and Clips
 local panelH = TITLE_H + ROWS * (ROW_H + ROW_GAP) + Widgets.INFO_HEIGHT * 2 + 8 + BUTTON_H + PAD * 2
 
 local overlay = TBMenu:spawnWindowOverlay(true) -- true: a click on the dark background closes it
@@ -182,7 +180,7 @@ end
 
 ---On / Off pair for a state flag, the current one lit
 ---@param label string
----@param key "clips"|"terrain"|"parkedOnly"
+---@param key "clips"|"terrain"
 ---@param help string
 local function addToggle(label, key, help)
     local content = addRow(y, label, help)
@@ -201,8 +199,6 @@ local function addToggle(label, key, help)
     refresh()
     y = y + ROW_H + ROW_GAP
 end
-addToggle("Parked only", "parkedOnly", "Every box is parked, none become objects:\nthe mod's object ids stay free. " ..
-    "For an atmo\n(Advanced > Export atmo) or scenery.")
 addToggle("Terrain", "terrain","Terrain of compiled maps (.bsp displacements),\n" ..
     "dust2's ground: slabs under it, neighbours joined.")
 addToggle("Clips", "clips", "Player clips: the map's invisible walls, ramps\nover stairs, smoothed corners. Colored like\n" ..
@@ -251,19 +247,11 @@ local function readOptions()
     if scale and scale <= 0 then return nil, "Scale must be above 0" end
     local free, room = freeIds(), MGE.Parking.room()
     -- objects first, then the parked ones (Assets.addObjects' parkExcess: the boxes after objectBudget)
-    if not state.parkedOnly then
-        budget = math.floor(budget or free) -- empty: every free object id
-        if budget < 0 or budget > free then return nil, "Budget must be 0-" .. free .. " (free object ids)" end
-    else
-        budget = 0
-    end
-    local parked = typed("parked")
-    parked = math.floor(parked or (state.parkedOnly and room or 0)) -- empty: none, Parked only: all that fit
+    budget = math.floor(budget or free) -- empty: every free object id, 0: only parked boxes
+    if budget < 0 or budget > free then return nil, "Budget must be 0-" .. free .. " (free object ids)" end
+    local parked = math.floor(typed("parked") or 0) -- empty: none
     if parked < 0 or parked > room then return nil, "Parked must be 0-" .. room .. " (" .. MGE.Parking.maxParked .. " at most)" end
-    if budget + parked < 1 then
-        return nil, state.parkedOnly and "Nothing more can be parked (" .. MGE.Parking.maxParked .. " at most)" or
-            "Budget and Parked are both 0"
-    end
+    if budget + parked < 1 then return nil, "Budget and Parked are both 0" end
     options.scale, options.budget, options.minSize = scale, budget + parked, minSize
     options.objectBudget = budget
     -- region, anchor and yaw are picked in the placement view
