@@ -4,8 +4,8 @@
 -- on what the bar at the top picks:
 --   Region: Move it, Scale it per axis (its size), in the map's own axes
 --   Map:    Move (where the map sits: the anchor), Rotate around z (yaw), Scale (white cube: map scale)
--- Orange: what Convert adds (the biggest pieces up to the budget), purple: added parked (the budget
--- is over the free object ids, utils/parking.lua), red: in the region but over the
+-- Orange: what Convert adds (the biggest pieces up to the budget), purple: added parked (the ones
+-- after the overlay's Budget, its Parked count, utils/parking.lua), red: in the region but over the
 -- budget, grey: the map around the region (MapPlace.contextMargin, its biggest boxes). The counts in
 -- the bar are the conversion's own (MapConv.select, run again after every region change). The preview
 -- draws at most MapPlace.maxDraws shapes a frame, the bar says when some are left out.
@@ -110,16 +110,18 @@ local function regionBox()
     return { pos = pos, frame = frame, sides = sides }
 end
 
----@return integer object ids free in the mod: kept boxes past these get parked (utils/parking.lua)
-local function freeIds()
-    return #MGE.ModData.freeIds.static + #MGE.ModData.freeIds.nonStatic
+---@return integer how many kept boxes become objects: those past it get parked (utils/parking.lua). The
+---overlay's Budget (objectBudget), at most the object ids free in the mod
+local function objectCount()
+    local free = #MGE.ModData.freeIds.static + #MGE.ModData.freeIds.nonStatic
+    return math.min(free, session.options.objectBudget or free)
 end
 
 ---@param message string? shown instead of the counts (a failed Convert)
 local function setInfo(message)
     if not info or info.destroyed then return end
     local budget = session.options.budget
-    local parked = math.max(0, #kept - freeIds())
+    local parked = math.max(0, #kept - objectCount())
     Widgets.infoText(info, message or (#kept .. " boxes of " .. budget .. (#cut > 0 and (", " .. #cut .. " over (red)") or "")
         .. (parked > 0 and (", " .. parked .. " parked (purple)") or "")
         .. (shown.trimmed and ", preview trimmed" or "")
@@ -242,8 +244,8 @@ local function draw()
     -- draw counts as planned (plan): fills, outlines only on the biggest kept boxes that fit
     for _, box in ipairs(boxes.context) do Highlight.drawBox(withLive(box, false), COLORS.context, 0.08, false) end
     for _, box in ipairs(boxes.cut) do Highlight.drawBox(withLive(box, false), COLORS.cut, 0.3, false) end
-    -- kept past the free ids: parked by Convert (the smallest, kept is in budget order)
-    local free = freeIds()
+    -- kept past the object budget: parked by Convert (the smallest, kept is in budget order)
+    local free = objectCount()
     for i, box in ipairs(boxes.kept) do
         Highlight.drawBox(withLive(box, false), i > free and MGE.Parking.color or COLORS.kept, Highlight.previewAlpha,
             i <= shown.outlines)

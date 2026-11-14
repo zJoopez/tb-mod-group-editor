@@ -224,8 +224,9 @@ end
 ---@param inView boolean? move them in front of the camera first (imports, New), otherwise they keep
 ---their positions (Generate places its own)
 ---@param jointIds integer[]? ids for the asset's joints in order (newPair: the Link tab's slot)
----@param parkExcess boolean? objects past the free ids are parked (utils/parking.lua) instead of the
----import failing: the last ones, so objects should come most important first (the map converter's do)
+---@param parkExcess (boolean|integer)? objects past the free ids are parked (utils/parking.lua) instead of
+---the import failing: the last ones, so objects should come most important first (the map converter's
+---do). A number: only that many become objects (at most the free ids), the rest are parked
 ---@return boolean added
 local function importObjects(parser, keepTab, inView, jointIds, parkExcess)
     -- only joints with both objects in the asset are imported, so only those objects need low ids
@@ -236,9 +237,10 @@ local function importObjects(parser, keepTab, inView, jointIds, parkExcess)
     local excess = {}
     if parkExcess and #linkedJoints == 0 then
         local free = #ModData.freeIds.static + #ModData.freeIds.nonStatic
+        if type(parkExcess) == "number" then free = math.max(0, math.min(free, parkExcess)) end
         local over = #parser.env_obj - free
         if over > MGE.Parking.room() then
-            print("Not enough room: " .. over .. " objects over the free ids, " .. MGE.Parking.room() .. " more can be parked")
+            print("Not enough room: " .. over .. " objects to park, " .. MGE.Parking.room() .. " more can be parked")
             return false
         end
         for _ = 1, over do table.insert(excess, 1, table.remove(parser.env_obj)) end
@@ -283,7 +285,7 @@ local function importObjects(parser, keepTab, inView, jointIds, parkExcess)
     MGE.focusAfterReload = true
     MGE.apply() -- the reload refreshes the window
     print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints" ..
-        (#parked > 0 and (", " .. #parked .. " parked (over the free ids)") or ""))
+        (#parked > 0 and (", " .. #parked .. " parked") or ""))
     return true
 end
 
@@ -421,7 +423,7 @@ end
 ---@param inView boolean? see importObjects
 ---@param joints FileParserEnvObjJoint[]? joints between the objects (their obj1 / obj2 are the objects'
 ---ids here), they get new ids with them (Generate's joined pieces)
----@param parkExcess boolean? see importObjects (map conversions)
+---@param parkExcess (boolean|integer)? see importObjects (map conversions)
 ---@return boolean added
 function assetsView.addObjects(objects, keepTab, inView, joints, parkExcess)
     return importObjects({ env_obj = objects, env_obj_joint = joints or {}, ignores = {} }, keepTab, inView, nil, parkExcess)

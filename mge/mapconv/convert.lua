@@ -15,6 +15,8 @@ local formatNumbers = FileHandler.formatNumbers
 ---@class MapConvOptions
 ---@field scale number Toribash units per map unit. Source: a player is 72 units, a tori about 2.5
 ---@field budget integer most boxes written, the biggest are kept
+---@field objectBudget integer? in game only (ui/map_overlay.lua): how many of the budget's boxes become
+---objects, the rest are parked (utils/parking.lua). nil: all of them. The converter itself ignores it
 ---@field minSize number map units, brushes whose box is smaller on every side are left out (detail)
 ---@field clips boolean keep player clip brushes (the map's invisible walls, ramps over stairs), colored like
 ---the map geometry they cover (borrowMaterials)
