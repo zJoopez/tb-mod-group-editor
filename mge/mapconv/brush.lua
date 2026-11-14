@@ -48,32 +48,44 @@ function Brush.planeFromPoints(points)
     return { n = n, d = dot(n, p1) }
 end
 
----Point on all three planes, nil when two of them are parallel
-local function intersect3(a, b, c)
-    local bc = cross(b.n, c.n)
-    local det = dot(a.n, bc)
-    if math.abs(det) < 1e-9 then return nil end
-    local ca, ab = cross(c.n, a.n), cross(a.n, b.n)
-    return {
-        (a.d * bc[1] + b.d * ca[1] + c.d * ab[1]) / det,
-        (a.d * bc[2] + b.d * ca[2] + c.d * ab[2]) / det,
-        (a.d * bc[3] + b.d * ca[3] + c.d * ab[3]) / det,
-    }
-end
-
+---Corners of the brush: every three planes' crossing point (a.d (b x c) + b.d (c x a) + c.d (a x b))
+---/ (a . (b x c)), none when two are parallel) that's inside all the others. Every triple of planes
+---is tried, so the math is written out on numbers instead of making three vector tables per triple
 ---@param planes MapPlane[]
 ---@return number[][] corners
 local function corners(planes)
     local verts = {}
     local count = #planes
+    local abs = math.abs
     for i = 1, count - 2 do
+        local a = planes[i]
+        local a1, a2, a3, ad = a.n[1], a.n[2], a.n[3], a.d
         for j = i + 1, count - 1 do
+            local b = planes[j]
+            local b1, b2, b3, bd = b.n[1], b.n[2], b.n[3], b.d
+            -- a x b, used by every k
+            local ab1, ab2, ab3 = a2 * b3 - a3 * b2, a3 * b1 - a1 * b3, a1 * b2 - a2 * b1
             for k = j + 1, count do
-                local p = intersect3(planes[i], planes[j], planes[k])
+                local c = planes[k]
+                local c1, c2, c3, cd = c.n[1], c.n[2], c.n[3], c.d
+                local bc1, bc2, bc3 = b2 * c3 - b3 * c2, b3 * c1 - b1 * c3, b1 * c2 - b2 * c1
+                local det = a1 * bc1 + a2 * bc2 + a3 * bc3
+                local p
+                if abs(det) >= 1e-9 then -- else two of them are parallel
+                    local ca1, ca2, ca3 = c2 * a3 - c3 * a2, c3 * a1 - c1 * a3, c1 * a2 - c2 * a1
+                    p = {
+                        (ad * bc1 + bd * ca1 + cd * ab1) / det,
+                        (ad * bc2 + bd * ca2 + cd * ab2) / det,
+                        (ad * bc3 + bd * ca3 + cd * ab3) / det,
+                    }
+                end
                 if p then
                     local keep = true
-                    for _, plane in ipairs(planes) do
-                        if dot(plane.n, p) > plane.d + INSIDE_EPS then keep = false break end
+                    local px, py, pz = p[1], p[2], p[3]
+                    for q = 1, count do
+                        local plane = planes[q]
+                        local n = plane.n
+                        if n[1] * px + n[2] * py + n[3] * pz > plane.d + INSIDE_EPS then keep = false break end
                     end
                     if keep then
                         for _, v in ipairs(verts) do

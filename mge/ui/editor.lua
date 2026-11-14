@@ -269,13 +269,7 @@ local function onDeleteClick()
     local count = #getSelected() + #ModData.getSelectedParked()
     if count == 0 or (MGE.confirmOverlay and not MGE.confirmOverlay.destroyed) then return end
     local message = "Delete " .. count .. " selected object" .. (count == 1 and "" or "s") .. "?\nUndo can bring them back."
-    -- stored so MGE.quit can close it, cleared by either button
-    MGE.confirmOverlay = TBMenu:showConfirmationWindow(message, function()
-        MGE.confirmOverlay = nil
-        delete()
-    end, function()
-        MGE.confirmOverlay = nil
-    end)
+    MGE.confirm(message, delete) -- Enter / Continue deletes, Esc / Cancel doesn't
 end
 
 ---@param parent UIElement

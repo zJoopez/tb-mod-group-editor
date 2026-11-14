@@ -14,37 +14,51 @@ MapConv.Merge = Merge
 ---@return number[]
 local function column(box, k) return { box.frame[1][k], box.frame[2][k], box.frame[3][k] } end
 
----@param box MapBox
----@return number[] center in the box's own axes
-local function localCenter(box)
-    local c = {}
-    for k = 1, 3 do c[k] = MapConv.Vec.dot(column(box, k), box.center) end
-    return c
-end
+---Grid cell key of x, y (cell indexes), a number: cheaper than building an "x,y" string per lookup.
+---Unique while |y| < 2^20 cells, far beyond any map (Source maps reach +-16384 units)
+---@param x integer
+---@param y integer
+---@return number
+local function cellKey(x, y) return x * 2097152 + y end
+Merge.cellKey = cellKey -- the converter's other grids (convert.lua)
 
+---What mergeAlong needs of a box, worked out once per box (not per pass and axis): its center in
+---its own axes and its role and axes as a key
+---@param cache table<MapBox, { c: number[], prefix: string }>
 ---@param box MapBox
----@return string the axes, rounded
-local function frameKey(box)
-    local parts = {}
+local function mergeInfo(cache, box)
+    local info = cache[box]
+    if info then return info end
+    local f, center = box.frame, box.center
+    local c, parts = {}, {}
+    for k = 1, 3 do c[k] = f[1][k] * center[1] + f[2][k] * center[2] + f[3][k] * center[3] end
     for r = 1, 3 do
-        for c = 1, 3 do parts[#parts + 1] = math.floor(box.frame[r][c] * 1000 + 0.5) end
+        for col = 1, 3 do parts[#parts + 1] = math.floor(f[r][col] * 1000 + 0.5) end
     end
-    return table.concat(parts, ",")
+    info = { c = c, prefix = box.role .. "|" .. table.concat(parts, ","), keys = {} }
+    cache[box] = info
+    return info
 end
 
 ---One pass along axis k: neighbours in a row of equal boxes become one
 ---@param boxes MapConvBox[]
 ---@param k integer
 ---@param step number
+---@param cache table see mergeInfo, kept over the passes
 ---@return MapConvBox[] boxes
 ---@return integer joined boxes that went into another
-local function mergeAlong(boxes, k, step)
+local function mergeAlong(boxes, k, step, cache)
     local a, b = k % 3 + 1, (k + 1) % 3 + 1
     local function round(v) return math.floor(v / step + 0.5) end
     local groups, order = {}, {}
     for _, box in ipairs(boxes) do
-        local c = localCenter(box)
-        local key = table.concat({ box.role, frameKey(box), round(c[a]), round(c[b]), round(box.sides[a]), round(box.sides[b]) }, "|")
+        local info = mergeInfo(cache, box)
+        local c = info.c
+        local key = info.keys[k] -- the same on every pass until the box joins (a joined one is new)
+        if not key then
+            key = info.prefix .. "|" .. round(c[a]) .. "|" .. round(c[b]) .. "|" .. round(box.sides[a]) .. "|" .. round(box.sides[b])
+            info.keys[k] = key
+        end
         if not groups[key] then
             groups[key] = {}
             order[#order + 1] = key -- first seen order, the result doesn't depend on pairs()
@@ -135,31 +149,29 @@ local function classify(box, options)
     return piece
 end
 
----Ranges of a box's 8 corners along three axes
+---Ranges of a box along three axes: its center's position on each, plus and minus how far its 8
+---corners reach (half of each side times how much that side points along the axis). The same as
+---going through the corners, without building them (this ran millions of times)
 ---@param box MapBox
 ---@param axes number[][]
 ---@return number[] min, number[] max
 local function ranges(box, axes)
-    local min, max = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
-    local c = box.center
-    for _, sa in ipairs({ -1, 1 }) do
-        for _, sb in ipairs({ -1, 1 }) do
-            for _, sc in ipairs({ -1, 1 }) do
-                local p = {}
-                for r = 1, 3 do
-                    p[r] = c[r] + (box.frame[r][1] * sa * box.sides[1] + box.frame[r][2] * sb * box.sides[2]
-                        + box.frame[r][3] * sc * box.sides[3]) / 2
-                end
-                for k = 1, 3 do
-                    local v = MapConv.Vec.dot(axes[k], p)
-                    if v < min[k] then min[k] = v end
-                    if v > max[k] then max[k] = v end
-                end
-            end
-        end
+    local min, max = {}, {}
+    local c, f, s = box.center, box.frame, box.sides
+    local h1, h2, h3 = s[1] / 2, s[2] / 2, s[3] / 2
+    local abs = math.abs
+    for k = 1, 3 do
+        local ax = axes[k]
+        local x, y, z = ax[1], ax[2], ax[3]
+        local mid = x * c[1] + y * c[2] + z * c[3]
+        local half = abs(x * f[1][1] + y * f[2][1] + z * f[3][1]) * h1
+            + abs(x * f[1][2] + y * f[2][2] + z * f[3][2]) * h2
+            + abs(x * f[1][3] + y * f[2][3] + z * f[3][3]) * h3
+        min[k], max[k] = mid - half, mid + half
     end
     return min, max
 end
+
 
 ---World xy bounds of a box, for the neighbour grid
 local function xyBounds(box)
@@ -190,8 +202,13 @@ end
 local function slabJoined(a, b, options)
     local s = a.slab
     if math.abs(MapConv.Vec.dot(s.n, b.slab.n)) < 0.95 then return nil end
-    local axes = { column(a.box, s.a), column(a.box, s.b), s.n }
-    local amin, amax = ranges(a.box, axes)
+    -- a's axes and ranges once per shape of a (kept on its slab table, replaced when it grows), not
+    -- once per neighbour it's tried with
+    if not s.axes then
+        s.axes = { column(a.box, s.a), column(a.box, s.b), s.n }
+        s.min, s.max = ranges(a.box, s.axes)
+    end
+    local axes, amin, amax = s.axes, s.min, s.max
     local bmin, bmax = ranges(b.box, axes)
     for k = 1, 2 do
         if bmin[k] > amax[k] + options.gap or amin[k] > bmax[k] + options.gap then return nil end
@@ -222,8 +239,11 @@ end
 local function beamJoined(a, b, options)
     local s = a.beam
     if math.abs(MapConv.Vec.dot(s.axis, b.beam.axis)) < 0.97 then return nil end
-    local axes = { s.axis, column(a.box, s.cross[1]), column(a.box, s.cross[2]) }
-    local amin, amax = ranges(a.box, axes)
+    if not s.axes then -- like slabJoined: once per shape of a
+        s.axes = { s.axis, column(a.box, s.cross[1]), column(a.box, s.cross[2]) }
+        s.min, s.max = ranges(a.box, s.axes)
+    end
+    local axes, amin, amax = s.axes, s.min, s.max
     local bmin, bmax = ranges(b.box, axes)
     if bmin[1] > amax[1] + options.gap or amin[1] > bmax[1] + options.gap then return nil end
     local min, max = {}, {}
@@ -270,7 +290,7 @@ function Merge.flat(boxes, options)
         piece.keys = {}
         for x = math.floor((min[1] - options.gap) / CELL), math.floor((max[1] + options.gap) / CELL) do
             for y = math.floor((min[2] - options.gap) / CELL), math.floor((max[2] + options.gap) / CELL) do
-                local key = x .. "," .. y
+                local key = cellKey(x, y)
                 piece.keys[#piece.keys + 1] = key
                 cells[key] = cells[key] or {}
                 cells[key][piece] = true
@@ -298,6 +318,16 @@ function Merge.flat(boxes, options)
         return nil
     end
 
+    ---other could join piece at all: join's first checks (same role, slabs facing the same way or beams
+    ---running the same way), so only these are sorted and tried
+    local abs, dot = math.abs, MapConv.Vec.dot
+    local function mayJoin(piece, other)
+        if piece.box.role ~= other.box.role then return false end
+        if piece.slab and other.slab and abs(dot(piece.slab.n, other.slab.n)) >= 0.95 then return true end
+        return piece.beam ~= nil and other.beam ~= nil and abs(dot(piece.beam.axis, other.beam.axis)) >= 0.97
+    end
+    local function byIndex(p, q) return p.index < q.index end
+
     local joinedCount = 0
     for _, piece in ipairs(pieces) do
         while not piece.dead do
@@ -307,11 +337,11 @@ function Merge.flat(boxes, options)
                 for other in pairs(cells[key] or {}) do
                     if other ~= piece and not other.dead and not seen[other] then
                         seen[other] = true
-                        candidates[#candidates + 1] = other
+                        if mayJoin(piece, other) then candidates[#candidates + 1] = other end
                     end
                 end
             end
-            table.sort(candidates, function(p, q) return p.index < q.index end)
+            table.sort(candidates, byIndex)
             local grew = false
             for _, other in ipairs(candidates) do
                 local box, measure, covered = join(piece, other)
@@ -350,11 +380,12 @@ end
 function Merge.boxes(boxes, step)
     step = step or 1
     local total = 0
+    local cache = setmetatable({}, { __mode = "k" }) -- joined boxes are new tables, the parts drop out
     repeat
         local pass = 0
         for k = 1, 3 do
             local joined
-            boxes, joined = mergeAlong(boxes, k, step)
+            boxes, joined = mergeAlong(boxes, k, step, cache)
             pass = pass + joined
         end
         total = total + pass
@@ -379,29 +410,34 @@ local function aabb(box)
     return min, max
 end
 
----The point is inside the box (its own axes), with pad to spare
+---The point x, y, z is inside the box (its own axes), with pad to spare. Plain numbers, no tables:
+---this runs for every sample point against every neighbour
 ---@param box MapBox
----@param p number[]
 ---@param pad number
 ---@return boolean
-local function holds(box, p, pad)
+local function holds(box, x, y, z, pad)
+    local center, f, sides = box.center, box.frame, box.sides
+    local dx, dy, dz = x - center[1], y - center[2], z - center[3]
     for c = 1, 3 do
-        local d = 0
-        for r = 1, 3 do d = d + (p[r] - box.center[r]) * box.frame[r][c] end
-        if math.abs(d) > box.sides[c] / 2 + pad then return false end
+        local d = dx * f[1][c] + dy * f[2][c] + dz * f[3][c]
+        if math.abs(d) > sides[c] / 2 + pad then return false end
     end
     return true
 end
 
 ---A point of the box at fractions (-0.5..0.5) of its sides
 ---@param box MapBox
----@return number[]
+---@return number x, number y, number z
 local function pointAt(box, fx, fy, fz)
-    local s = { fx * box.sides[1], fy * box.sides[2], fz * box.sides[3] }
-    local p = {}
-    for r = 1, 3 do p[r] = box.center[r] + box.frame[r][1] * s[1] + box.frame[r][2] * s[2] + box.frame[r][3] * s[3] end
-    return p
+    local sides, center, f = box.sides, box.center, box.frame
+    local s1, s2, s3 = fx * sides[1], fy * sides[2], fz * sides[3]
+    return center[1] + f[1][1] * s1 + f[1][2] * s2 + f[1][3] * s3,
+        center[2] + f[2][1] * s1 + f[2][2] * s2 + f[2][3] * s3,
+        center[3] + f[3][1] * s1 + f[3][2] * s2 + f[3][3] * s3
 end
+
+local CORNERS = { { -1, -1, -1 }, { -1, -1, 1 }, { -1, 1, -1 }, { -1, 1, 1 },
+    { 1, -1, -1 }, { 1, -1, 1 }, { 1, 1, -1 }, { 1, 1, 1 } }
 
 ---Leaves out boxes nobody can see or touch: one entirely inside another box (stairs under their ramp
 ---clip, a trim inside a wall), and with cover above 0 also one whose inside is at least that share
@@ -421,7 +457,7 @@ function Merge.hidden(boxes, cover)
         items[i] = item
         for x = math.floor(min[1] / HIDDEN_CELL), math.floor(max[1] / HIDDEN_CELL) do
             for y = math.floor(min[2] / HIDDEN_CELL), math.floor(max[2] / HIDDEN_CELL) do
-                local key = x .. "," .. y
+                local key = cellKey(x, y)
                 cells[key] = cells[key] or {}
                 table.insert(cells[key], item)
             end
@@ -432,7 +468,7 @@ function Merge.hidden(boxes, cover)
         local found, seen = {}, {}
         for x = math.floor(item.min[1] / HIDDEN_CELL), math.floor(item.max[1] / HIDDEN_CELL) do
             for y = math.floor(item.min[2] / HIDDEN_CELL), math.floor(item.max[2] / HIDDEN_CELL) do
-                for _, other in ipairs(cells[x .. "," .. y] or {}) do
+                for _, other in ipairs(cells[cellKey(x, y)] or {}) do
                     if other ~= item and not other.dropped and not seen[other] then
                         seen[other] = true
                         local overlaps = true
@@ -471,9 +507,9 @@ function Merge.hidden(boxes, cover)
             end
             if inBounds then
                 local all = true
-                for _, f in ipairs({ { -1, -1, -1 }, { -1, -1, 1 }, { -1, 1, -1 }, { -1, 1, 1 },
-                    { 1, -1, -1 }, { 1, -1, 1 }, { 1, 1, -1 }, { 1, 1, 1 } }) do
-                    if not holds(other.box, pointAt(item.box, f[1] / 2, f[2] / 2, f[3] / 2), HIDDEN_PAD) then
+                for _, f in ipairs(CORNERS) do
+                    local x, y, z = pointAt(item.box, f[1] / 2, f[2] / 2, f[3] / 2)
+                    if not holds(other.box, x, y, z, HIDDEN_PAD) then
                         all = false
                         break
                     end
@@ -493,10 +529,10 @@ function Merge.hidden(boxes, cover)
             for i = 1, n do
                 for j = 1, n do
                     for k = 1, n do
-                        local p = pointAt(item.box, (i - 0.5) / n - 0.5, (j - 0.5) / n - 0.5, (k - 0.5) / n - 0.5)
+                        local x, y, z = pointAt(item.box, (i - 0.5) / n - 0.5, (j - 0.5) / n - 0.5, (k - 0.5) / n - 0.5)
                         local held = false
                         for _, other in ipairs(others) do
-                            if holds(other.box, p, HIDDEN_PAD) then
+                            if holds(other.box, x, y, z, HIDDEN_PAD) then
                                 held = true
                                 break
                             end

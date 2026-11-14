@@ -53,7 +53,8 @@
 ---@field loadMapConv fun(): table loads the map converter the first time it's needed, returns MGE.MapConv
 ---@field isPlacing fun(): boolean the map placement view is open (it hides the window, gizmo and camera keep working)
 ---@field saveOverlay UIElement? open name prompt (ui/save_overlay.lua)
----@field confirmOverlay UIElement? open confirmation popup (TBMenu:showConfirmationWindow)
+---@field confirmOverlay UIElement? open confirmation popup (TBMenu:showConfirmationWindow, opened by MGE.confirm)
+---@field confirm fun(message: string, onConfirm: fun(), onCancel: fun()?): boolean asks first, Enter confirms, Esc cancels
 ---@field saveOverlayContext table? options for the next name prompt
 ---@field pickerOverlay UIElement? open file picker: asset import, Model row (ui/file_picker.lua)
 ---@field settingsOverlay UIElement? open settings: camera follow, world clicking (ui/settings_overlay.lua)
@@ -272,6 +273,33 @@ local function wouldReplace(path)
     return path ~= MGE.sourcePath and Files.Exists(MGE.modFolder .. path)
 end
 
+---@type { confirm: fun(), cancel: fun()?, frame: integer? }? the open confirmation's actions (MGE.confirm)
+local confirmActions = nil
+
+---Asks with Toribash's own popup (TBMenu:showConfirmationWindow): Continue / Enter runs onConfirm,
+---Cancel / Esc onCancel. Kept in MGE.confirmOverlay (quit closes it, shortcuts wait for it). Does
+---nothing while one is open already
+---@param message string
+---@param onConfirm fun()
+---@param onCancel fun()?
+---@return boolean shown
+function MGE.confirm(message, onConfirm, onCancel)
+    if MGE.confirmOverlay and not MGE.confirmOverlay.destroyed then return false end
+    local actions
+    local function finish(action)
+        return function()
+            if confirmActions == actions then confirmActions = nil end
+            MGE.confirmOverlay = nil
+            if action then action() end
+        end
+    end
+    -- the frame it opened in: the Enter that opened it (the name prompt's) doesn't also confirm it
+    actions = { confirm = finish(onConfirm), cancel = finish(onCancel), frame = UIElement and UIElement.frameIndex }
+    confirmActions = actions
+    MGE.confirmOverlay = TBMenu:showConfirmationWindow(message, actions.confirm, actions.cancel)
+    return true
+end
+
 ---Rename (Ctrl + Shift + S), and Save when it can't write directly: asks the name (prefilled with
 ---where Save writes), saves into the save folder. Replacing a file that isn't ours asks first. The
 ---old file stays
@@ -285,11 +313,7 @@ function MGE.saveAs()
         onSave = function(name)
             local path = folder .. name .. ".tbm"
             if wouldReplace(path) then
-                MGE.confirmOverlay = TBMenu:showConfirmationWindow(name .. ".tbm already exists. Overwrite it?",
-                    function()
-                        MGE.confirmOverlay = nil
-                        writeMod(path)
-                    end, function() MGE.confirmOverlay = nil end)
+                MGE.confirm(name .. ".tbm already exists. Overwrite it?", function() writeMod(path) end)
             else
                 writeMod(path)
             end
@@ -432,6 +456,7 @@ end
 MGE.overlayOpen = overlayOpen
 
 local KEY_ESCAPE = 27
+local KEY_RETURN, KEY_KEYPAD_ENTER = 13, 271 -- toriui's text fields use the same codes
 local escFrame = nil -- UIElement.frameIndex of the last Esc close
 
 ---Closes MGE's topmost overlay, for Esc: the delete confirmation (like its Cancel), else the name
@@ -445,8 +470,12 @@ function MGE.closeTopOverlay()
     local key, overlay = topOverlay()
     if overlay then
         overlay:kill() -- their killActions clean up (keyboard, MGE.*Overlay, camera movement)
-        -- the confirmation's Cancel callback clears it, killing it doesn't call that
-        if key == "confirmOverlay" then MGE.confirmOverlay = nil end
+        -- killing the confirmation doesn't call its Cancel: Esc is Cancel
+        if key == "confirmOverlay" then
+            local actions = confirmActions
+            MGE.confirmOverlay = nil
+            if actions then actions.cancel() end
+        end
         escFrame = frame
         return true
     end
@@ -467,12 +496,22 @@ end
 
 -- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game), Ctrl+S saves the mod (MGE.save),
 -- Ctrl+A selects / deselects all objects, Shift + Q / W / E toggles a gizmo tool,
--- Ctrl + N / D new / duplicate, Delete deletes the selection (asks first), Esc closes MGE's overlays.
+-- Ctrl + N / D new / duplicate, Delete deletes the selection (asks first), Esc closes MGE's overlays,
+-- Enter confirms MGE's confirmation popup (Esc cancels it).
 add_hook("key_down", MGE.hookname, function(key)
     -- before the text field check: the name prompt focuses its field
     if key == KEY_ESCAPE then
         if MGE.closeTopOverlay() then return 1 end -- consumed, the game doesn't open its menu too
         return
+    end
+    if (key == KEY_RETURN or key == KEY_KEYPAD_ENTER) and topOverlay() == "confirmOverlay" then
+        local actions = confirmActions
+        local frame = UIElement and UIElement.frameIndex
+        if actions and not (frame and frame == actions.frame) then
+            MGE.confirmOverlay:kill()
+            actions.confirm()
+        end
+        return 1
     end
     if TB_MENU_INPUT_ISACTIVE then return end -- typing in a text field
     if get_keyboard_alt() ~= 0 then return end

@@ -255,10 +255,10 @@ local function readTerrain(lumps, planes, texinfo)
                 for j = 0, size - 1 do
                     local s = j / (size - 1)
                     local v = 1 + (firstVert + i * size + j) * 20
-                    local offset, dist = vec3(dispVerts, v), f32(dispVerts, v + 12)
-                    local q = {}
-                    for k = 1, 3 do q[k] = a[k] + (b[k] - a[k]) * s + offset[k] * dist end
-                    points[#points + 1] = q
+                    -- offset vector and distance, read straight into the point (no table per vertex)
+                    local ox, oy, oz, dist = f32(dispVerts, v), f32(dispVerts, v + 4), f32(dispVerts, v + 8), f32(dispVerts, v + 12)
+                    points[#points + 1] = { a[1] + (b[1] - a[1]) * s + ox * dist, a[2] + (b[2] - a[2]) * s + oy * dist,
+                        a[3] + (b[3] - a[3]) * s + oz * dist }
                 end
             end
             local plane = planes[u16(faces, face)]

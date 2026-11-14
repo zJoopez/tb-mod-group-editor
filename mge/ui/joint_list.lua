@@ -73,12 +73,9 @@ function joint_list.deleteSelected()
     if count == 0 or (MGE.confirmOverlay and not MGE.confirmOverlay.destroyed) then return end
     local message = "Delete " .. (count == 1 and "joint " .. joints[1].id or count .. " selected joints") ..
         "?\nUndo can bring them back."
-    MGE.confirmOverlay = TBMenu:showConfirmationWindow(message, function()
-        MGE.confirmOverlay = nil
+    MGE.confirm(message, function()
         Joints.resetDraft()
         Joints.remove(Main.selectedJoints)
-    end, function()
-        MGE.confirmOverlay = nil
     end)
 end
 

@@ -36,6 +36,12 @@ end
 
 Highlight.toMatrixTB = toMatrixTB -- also used by the gizmo
 
+-- drawBox's rotations by frame table: the boxes drawn every frame (the map placement view's up to
+-- MapPlace.maxDraws, parked ghosts) keep their frames, so each is converted once instead of making two
+-- tables per box per frame. Frames are never changed in place (Mat3 makes new ones); weak keys let
+-- dropped boxes go
+local rotCache = setmetatable({}, { __mode = "k" })
+
 ---Box that isn't an object: translucent fill, and an outline (a negative-size pass) unless outline is
 ---false. fillAlpha 0 draws only the outline
 ---@param box HighlightBox
@@ -44,7 +50,11 @@ Highlight.toMatrixTB = toMatrixTB -- also used by the gizmo
 ---@param outline boolean?
 function Highlight.drawBox(box, color, fillAlpha, outline)
     local p, s, c = box.pos, box.sides, color
-    local rot = toMatrixTB(box.frame)
+    local rot = rotCache[box.frame]
+    if not rot then
+        rot = toMatrixTB(box.frame)
+        rotCache[box.frame] = rot
+    end
     if fillAlpha > 0 then
         set_color(c[1], c[2], c[3], fillAlpha)
         draw_box_m(p[1], p[2], p[3], s[1], s[2], s[3], rot)
@@ -83,7 +93,11 @@ local function drawParked()
             if g.shape == "box" then
                 Highlight.drawBox(g, c, alpha, obj.selected == true)
             else
-                local rot = toMatrixTB(g.frame)
+                local rot = rotCache[g.frame] -- like drawBox: the ghost keeps its frame
+                if not rot then
+                    rot = toMatrixTB(g.frame)
+                    rotCache[g.frame] = rot
+                end
                 set_color(c[1], c[2], c[3], alpha)
                 if g.shape == "sphere" then
                     draw_sphere_m(p[1], p[2], p[3], s[1], rot)

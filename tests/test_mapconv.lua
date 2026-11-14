@@ -189,6 +189,101 @@ T.test("sky clips", function()
     T.eq(r.report.dropped.skyClip, 1, "on a roof, 20 under the sky: a lid")
 end)
 
+T.test("terrain slabs follow the outline", function()
+    local BoxFit = MapConv.BoxFit
+    local opts = { slabThickness = 8, terrainTolerance = 8 }
+    ---A 5 x 5 terrain grid from a point function
+    local function grid(n, fn)
+        local points = {}
+        for i = 0, 4 do
+            for j = 0, 4 do points[#points + 1] = fn(i, j) end
+        end
+        return { id = "disp 1", material = "X", size = 5, n = n, points = points }
+    end
+    local function upright(box)
+        for k = 1, 3 do
+            if math.abs(box.frame[3][k]) > 0.999 then return true end
+        end
+        return false
+    end
+    local function area(slabs)
+        local sum = 0
+        for _, s in ipairs(slabs) do sum = sum + s.sides[1] * s.sides[2] * s.sides[3] / math.min(s.sides[1], s.sides[2], s.sides[3]) end
+        return sum
+    end
+
+    -- a plain wall: one upright slab
+    local slabs = BoxFit.terrain(grid({ 1, 0, 0 }, function(i, j) return { 0, j * 64, i * 64 } end), opts)
+    T.eq(#slabs, 1, "flat wall: one slab")
+    T.ok(upright(slabs[1]), "flat wall: upright")
+
+    -- dust2's wall under a staircase: a trapezoid, its left edge slanted 45 degrees. Was one slab
+    -- turned 45 degrees along that edge (a diamond sticking out over the stairs)
+    local wall = grid({ 1, 0, 0 }, function(i, j)
+        local left = i * 45
+        return { 0, left + (256 - left) * j / 4, i * 45 }
+    end)
+    slabs = BoxFit.terrain(wall, opts)
+    T.ok(#slabs > 1, "trapezoid wall: split")
+    local trapezoid = (256 + 76) / 2 * 180
+    -- cells along the slant are parallelograms, their boxes stick out up to half a cell: 1.42 now,
+    -- the old diamond was 1.89
+    T.ok(area(slabs) < 1.5 * trapezoid, "trapezoid wall: slabs cover little more than its own area")
+    for _, s in ipairs(slabs) do
+        if not upright(s) then T.ok(s.sides[1] * s.sides[2] * s.sides[3] / 8 < 64 * 100, "only small cells along the slant are turned") end
+    end
+
+    -- a floor grid turned 30 degrees: one slab along its edges, not a bigger world-aligned one
+    local c, s = math.cos(math.rad(30)), math.sin(math.rad(30))
+    slabs = BoxFit.terrain(grid({ 0, 0, 1 }, function(i, j)
+        local x, y = i * 64, j * 64
+        return { x * c - y * s, x * s + y * c, 0 }
+    end), opts)
+    T.eq(#slabs, 1, "turned floor: one slab")
+    T.ok(math.abs(slabs[1].sides[1] * slabs[1].sides[2] - 256 * 256) < 1, "turned floor: along its edges")
+end)
+
+T.test("sky clips: clip ceiling", function()
+    -- Italy: clips fill the air from the roofs up to one height (z 512), far under the sky, a roof
+    -- poking through. Each sits on its house (not floating), the sky is 1488 over them (not close)
+    local CLIP, SKY = "TOOLS/TOOLSPLAYERCLIP", "TOOLS/TOOLSSKYBOX"
+    local id = 100
+    local function add(list, min, max, material)
+        id = id + 1
+        list[#list + 1] = solid(id, min, max, material)
+    end
+    local function town(clipCount, extra)
+        local list = {}
+        add(list, { -2000, -2000, 2000 }, { 2000, 2000, 2064 }, SKY)
+        add(list, { -1000, -1000, -16 }, { 1000, 1000, 0 })
+        for i = 0, 5 do add(list, { -900 + i * 100, -900, 0 }, { -860 + i * 100, -860, 40 }) end -- rocks
+        for i = 0, 7 do
+            local x = -800 + i * 220
+            add(list, { x, 0, 0 }, { x + 200, 200, 400 }) -- house
+            if i < clipCount then add(list, { x, 0, 400 }, { x + 200, 200, 512 }, CLIP) end
+        end
+        add(list, { -800, 0, 380 }, { -600, 200, 560 }) -- a roof poking through the first clip
+        for _, e in ipairs(extra or {}) do add(list, e[1], e[2], e[3]) end
+        return vmf(list)
+    end
+    local opts = { clips = true, merge = false, simplify = false }
+    local r = convert(town(8), opts)
+    T.eq(r.report.dropped.skyClip, 8, "8 clips sharing z 512 over nearly everything: lids")
+    r = convert(town(7), opts)
+    T.eq(r.report.dropped.skyClip, 0, "7 share it: not a ceiling")
+    -- a thick invisible wall from the ground up to the ceiling: kept
+    r = convert(town(8, { { { -1000, -1000, 0 }, { -860, -700, 512 }, CLIP } }), opts)
+    T.eq(r.report.dropped.skyClip, 8, "a tall wall up to the ceiling stays")
+    -- a roof wholly over the clips (indoor, nuke): kept
+    r = convert(town(8, { { { -1000, -100, 600 }, { 1000, 300, 640 } } }), opts)
+    T.eq(r.report.dropped.skyClip, 0, "under a roof: kept")
+    -- most solids above the shared height (a floor level, water): not a ceiling
+    local high = {}
+    for i = 0, 9 do high[#high + 1] = { { -900 + i * 100, 600, 600 }, { -860 + i * 100, 640, 700 } } end
+    r = convert(town(8, high), opts)
+    T.eq(r.report.dropped.skyClip, 0, "solids above it: not a ceiling")
+end)
+
 T.test("clip colors", function()
     local CLIP = "TOOLS/TOOLSPLAYERCLIP"
     local sand = solid(1, { -500, -500, -64 }, { 500, 500, 0 }, "DE_DUST/SAND_01")

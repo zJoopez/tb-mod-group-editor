@@ -68,6 +68,8 @@ local editing = "region"
 local kept, cut, context = {}, {}, {}
 -- the whole map merged, the biggest first: context is picked from it around the region
 local allContext = {}
+---@type { pieces: MapConvPiece[], key: string, boxes: MapConvBox[] }? the last allContext and what it was made from
+local contextCache = nil
 -- how many of kept, cut and context fit in MapPlace.maxDraws (see plan)
 local shown = { kept = 0, cut = 0, context = 0, outlines = 0, trimmed = false }
 ---@type { key: string, kept: HighlightBox[], cut: HighlightBox[], context: HighlightBox[] }?
@@ -234,7 +236,8 @@ local function withLive(box, isRegion)
     local f = live.factors and live.factors[1] or 1
     local pos = Vec.add(pivot, Vec.scale(Mat3.apply(turn, Vec.sub(box.pos, pivot)), f))
     if live.offset then pos = Vec.add(pos, live.offset) end
-    return { pos = pos, frame = Mat3.mul(turn, box.frame), sides = Vec.scale(box.sides, f) }
+    -- not turned: the box's own frame (Highlight.drawBox keeps its rotation converted)
+    return { pos = pos, frame = live.rotation and Mat3.mul(turn, box.frame) or box.frame, sides = Vec.scale(box.sides, f) }
 end
 
 ---Highlight.placement while open
@@ -517,7 +520,15 @@ function MapPlace.start(s)
     -- grey background only: Simplify over the whole map (dust2: 11 000 pieces) isn't worth the wait
     all.region, all.budget, all.simplify = nil, math.huge, false
     all.dropHidden, all.dropCovered = false, false -- the grey context doesn't need them: 0.3 s on dust2
-    allContext = MapConv.select(s.pieces, all, s.report)
+    -- the same pieces (the overlay keeps them per map) and options give the same context: kept, so
+    -- Settings and Place again don't merge the whole map again (0.3 s on dust2)
+    local key = table.concat({ tostring(all.merge), all.minSize, tostring(all.floorsFirst) }, "|")
+    if contextCache and contextCache.pieces == s.pieces and contextCache.key == key then
+        allContext = contextCache.boxes
+    else
+        allContext = MapConv.select(s.pieces, all, s.report)
+        contextCache = { pieces = s.pieces, key = key, boxes = allContext }
+    end
     reselect()
     MGE.Gizmo.targetOverride = gizmoTarget
     modeBefore = MGE.Gizmo.mode

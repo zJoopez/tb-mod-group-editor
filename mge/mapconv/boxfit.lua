@@ -56,12 +56,19 @@ end
 ---@return MapBox
 local function boxInFrame(verts, frame)
     local min, max = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
-    for _, v in ipairs(verts) do
-        for k = 1, 3 do
-            local t = frame[1][k] * v[1] + frame[2][k] * v[2] + frame[3][k] * v[3]
-            if t < min[k] then min[k] = t end
-            if t > max[k] then max[k] = t end
+    -- the frame's numbers in locals once (this runs for every vertex of every fit): same sums as
+    -- frame[r][k] * v[r] added up in row order
+    local r1, r2, r3 = frame[1], frame[2], frame[3]
+    for k = 1, 3 do
+        local a, b, c = r1[k], r2[k], r3[k]
+        local lo, hi = math.huge, -math.huge
+        for i = 1, #verts do
+            local v = verts[i]
+            local t = a * v[1] + b * v[2] + c * v[3]
+            if t < lo then lo = t end
+            if t > hi then hi = t end
         end
+        min[k], max[k] = lo, hi
     end
     local center = { 0, 0, 0 }
     for k = 1, 3 do
@@ -141,10 +148,44 @@ function BoxFit.fit(geometry, options)
         end
     end
     local best, bestVolume
+    local tried = {}
+    ---column k of frame is column j of t, either way round (to 1e-12 per number: compiled brushes'
+    ---faces are often only nearly perpendicular, their frames aren't quite orthonormal, a dot product
+    ---test called those the same)
+    local abs = math.abs
+    local function sameColumn(frame, k, t, j)
+        local same, flipped = true, true
+        for r = 1, 3 do
+            local x, y = frame[r][k], t[r][j]
+            if abs(x - y) > 1e-12 then same = false end
+            if abs(x + y) > 1e-12 then flipped = false end
+        end
+        return same or flipped
+    end
     for _, frame in ipairs(frames) do
-        local box = boxInFrame(geometry.verts, frame)
-        local volume = box.sides[1] * box.sides[2] * box.sides[3]
-        if not best or volume < bestVolume * (1 - 1e-6) then best, bestVolume = box, volume end
+        -- the same three axes as a frame tried already (in another order or direction: a box brush
+        -- gives its axes in up to 7 frames) fit the same box, which never beats the first by 1e-6
+        local repeated = false
+        for _, t in ipairs(tried) do
+            local all = true
+            for k = 1, 3 do
+                local found = false
+                for j = 1, 3 do
+                    if sameColumn(frame, k, t, j) then
+                        found = true
+                        break
+                    end
+                end
+                if not found then all = false break end
+            end
+            if all then repeated = true break end
+        end
+        if not repeated then
+            tried[#tried + 1] = frame
+            local box = boxInFrame(geometry.verts, frame)
+            local volume = box.sides[1] * box.sides[2] * box.sides[3]
+            if not best or volume < bestVolume * (1 - 1e-6) then best, bestVolume = box, volume end
+        end
     end
     best.fitError = bestVolume > 0 and math.max(0, 1 - geometry.volume / bestVolume) or 0
 
@@ -169,10 +210,18 @@ end
 ---@field slabThickness number map units
 ---@field terrainTolerance number map units a patch may be bumpy and still be one slab
 
+-- a patch whose slab is filled less than this by the patch itself is split (down to single cells):
+-- a displacement isn't always a rectangle, the wall under a staircase (dust2) is a trapezoid with a
+-- slanted edge, one slab over it sticks out over the stairs
+BoxFit.terrainFill = 0.65
+
 ---Slabs for a terrain grid (bsp.lua's MapTerrain). A patch flat within terrainTolerance becomes one
 ---slab: its top on the patch's highest point, slabThickness deep behind it (more when a single cell is
----bumpier). Bumpier patches are split in four, down to single cells. Slabs of a flat floor all get the
----same thickness and height, so merge.lua can join neighbours
+---bumpier). Bumpier patches are split in four, down to single cells, and so are patches their slab
+---barely covers (BoxFit.terrainFill). A slab's sides follow the world (walls upright, floors along x
+---and y) unless one of the patch's edges gives a smaller one (a turned grid): a slanted edge would
+---turn it (dust2's stair walls came out as diamonds). Slabs of a flat floor all get the same thickness
+---and height, so merge.lua can join neighbours
 ---@param terrain MapTerrain
 ---@param options TerrainFitOptions
 ---@return MapBox[]
@@ -195,18 +244,53 @@ function BoxFit.terrain(terrain, options)
                 if h > high then high = h end
             end
         end
-        if high - low > options.terrainTolerance and i1 - i0 >= 2 then
+        local function split()
             local im, jm = (i0 + i1) / 2, (j0 + j1) / 2 -- grids are 2^k + 1 points: halves stay whole
             patch(i0, im, j0, jm)
             patch(i0, im, jm, j1)
             patch(im, i1, j0, jm)
             patch(im, i1, jm, j1)
-            return
         end
-        local edge = sub(at(i1, j0), at(i0, j0))
-        local u = Vec.normalize(sub(edge, scale(n, dot(edge, n)))) or perpendicularTo(n)
-        if not u then return end
-        local box = boxInFrame(list, frameFromAxes(u, cross(n, u))) -- columns u, n x u, n
+        if high - low > options.terrainTolerance and i1 - i0 >= 2 then return split() end
+        -- the slab's sides: the world's directions first, a patch edge only when its box is smaller.
+        -- A direction along or across one already tried gives the same box (its sides swapped): not
+        -- fitted again (on most grids the edges run along the world's axes)
+        local box, boxArea
+        local tried = {}
+        local function try(u)
+            if not u then return end -- a collapsed edge
+            for _, t in ipairs(tried) do
+                local d = math.abs(dot(u, t))
+                if d > 1 - 1e-12 or d < 1e-12 then return end
+            end
+            tried[#tried + 1] = u
+            local b = boxInFrame(list, frameFromAxes(u, cross(n, u))) -- columns u, n x u, n
+            local area = b.sides[1] * b.sides[2]
+            if not box or area < boxArea * 0.99 then box, boxArea = b, area end
+        end
+        local function edge(p, q)
+            local e = sub(q, p)
+            return Vec.normalize(sub(e, scale(n, dot(e, n))))
+        end
+        try(perpendicularTo(n))
+        try(edge(at(i0, j0), at(i1, j0)))
+        try(edge(at(i0, j0), at(i0, j1)))
+        try(edge(at(i0, j1), at(i1, j1)))
+        try(edge(at(i1, j0), at(i1, j1)))
+        if not box then return end
+        if i1 - i0 >= 2 and boxArea > 0 then
+            local covered = 0 -- the patch's own area, cell by cell (each split along its diagonals)
+            for i = i0, i1 - 1 do
+                for j = j0, j1 - 1 do
+                    local p00, p01, p10, p11 = at(i, j), at(i, j + 1), at(i + 1, j), at(i + 1, j + 1)
+                    local ax, ay, az = p11[1] - p00[1], p11[2] - p00[2], p11[3] - p00[3]
+                    local bx, by, bz = p01[1] - p10[1], p01[2] - p10[2], p01[3] - p10[3]
+                    local cx, cy, cz = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
+                    covered = covered + math.sqrt(cx * cx + cy * cy + cz * cz) / 2
+                end
+            end
+            if covered < BoxFit.terrainFill * boxArea then return split() end
+        end
         local thickness = math.max(options.slabThickness, high - low)
         -- top on the highest point: the center moves from the middle of the points along n
         box.center = Vec.add(box.center, scale(n, (high - thickness / 2) - (low + high) / 2))

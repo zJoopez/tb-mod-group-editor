@@ -62,8 +62,7 @@ function player_list.deleteSelected()
     end
     local message = "Delete " .. (count == 1 and "player " .. list[1] or count .. " selected players") ..
         "?\nLater players move down to fill the numbers.\nUndo can bring them back."
-    MGE.confirmOverlay = TBMenu:showConfirmationWindow(message, function()
-        MGE.confirmOverlay = nil
+    MGE.confirm(message, function()
         MGE.Players.remove(list, function(map)
             Main.selectedPlayers = {} -- like objects: nothing selected after a delete
             -- the panel stays on the same player when it's kept, else the one now at its number
@@ -75,8 +74,6 @@ function player_list.deleteSelected()
                 end
             end
         end)
-    end, function()
-        MGE.confirmOverlay = nil
     end)
 end
 
