@@ -1,6 +1,6 @@
 -- Generate tab: lines, ramps, loops, stairs and pyramids made of default objects (geometry in utils/shape_gen.lua),
--- placed in front of the camera, or where the Position row says. The Move gizmo drags the preview
--- (Camera follow on: the camera looks at the shape when the tab opens and after every change). Amount's
+-- placed in front of the camera, or where the Position row says. The Move gizmo drags the preview, the
+-- Scale gizmo sizes its pieces (Size and Increment, along the first piece's axes) (Camera follow on: the camera looks at the shape when the tab opens and after every change). Amount's
 -- second field joins each two
 -- neighbouring pieces: 1 joint between their centers, 2 at their edges like a door's hinges
 -- (ShapeGen.joints). Joined pieces are made dynamic, static ones wouldn't move at the joints
@@ -77,11 +77,12 @@ end
 ---pieces, counted from the dojo center (MGE.POS_ORIGIN)
 ---Values that can't make a shape (Amount 1 or less, too many pieces or joints, an increment that
 ---shrinks pieces to nothing) give one default object instead: flat, the typed Size, no joints
+---@param factors number[]? a Scale gizmo drag in progress: Size and Increment multiplied per axis
 ---@return GeneratePiece[] pieces
 ---@return string? note why it's one default object instead of the shape (nil for Amount 1 or less)
 ---@return number[] center where the shape is, Pos-row style
 ---@return GenerateJoint[] joints between neighbouring pieces, where they end up
-local function planFromFields()
+local function planFromFields(factors)
     local fields = inwuts.generate or {}
     local function typed(i) return fields[i] and not fields[i].destroyed and tonumber(fields[i].textfieldstr[1]) end
     local amount = math.floor((typed(FIELD.amount) or GENERATE_AMOUNT) + 0.5)
@@ -91,6 +92,10 @@ local function planFromFields()
         local value = typed(FIELD.size + i)
         if value and value > 0 then sides[i] = math.max(value, MGE.MIN_SIDE) end
         increment[i] = typed(FIELD.increment + i) or 0
+        if factors then
+            sides[i] = math.max(sides[i] * factors[i], MGE.MIN_SIDE)
+            increment[i] = increment[i] * factors[i]
+        end
     end
     local note
     if amount > MAX_GENERATE then
@@ -142,6 +147,8 @@ local positionHints = { "0.00", "0.00", "0.00" }
 
 ---@type number[]? the gizmo drag in progress: the preview is drawn moved by it, planned when released
 local liveOffset = nil
+---@type number[]? a Scale drag in progress: the preview is planned with these factors every frame
+local liveFactors = nil
 
 ---@param list UIElement[]?
 ---@param parts string[] texts are added to it
@@ -208,7 +215,7 @@ end
 MGE.Highlight.preview = function()
     if not tabOpen() then
         previewShown = false
-        liveOffset = nil
+        liveOffset, liveFactors = nil, nil
         return nil
     end
     if not previewShown then -- the tab just opened: the shape goes where the camera looks now
@@ -216,6 +223,12 @@ MGE.Highlight.preview = function()
         anchorToView() -- a new key: planned again below, and the camera looks at it
     end
     if fieldsKey() ~= previewKey then replan() end
+    if liveFactors and previewPieces then -- a Scale drag: the shape as it would be, planned each frame
+        local pieces, _, _, joints = planFromFields(liveFactors)
+        local anchors = {}
+        for i, joint in ipairs(joints or {}) do anchors[i] = joint.pos end
+        return pieces, anchors
+    end
     if not (liveOffset and previewPieces) then return previewPieces, previewAnchors end
     -- a gizmo drag in progress: drawn where it's dragged to
     local add = MGE.GizmoMath.add
@@ -248,23 +261,62 @@ local function moveBy(offset)
     replan()
 end
 
--- While the preview is shown it has the gizmo: Move works on it (not on the selection), Rotate and
--- Scale show no gizmo. After Generate there's no preview until a value changes, the gizmo is back
--- on the selection (the generated pieces)
+---Field text for a size: up to 4 decimals, no trailing zeros
+---@param value number
+---@return string
+local function sizeText(value)
+    local s = string.format("%.4f", value):gsub("0+$", ""):gsub("%.$", "")
+    if s == "-0" then s = "0" end
+    return s
+end
+
+---Gizmo Scale released on the preview: Size gets the factors in its text (empty fields: the default
+---object's size scaled), typed Increment axes too, so stairs and pyramids keep their shape
+---@param factors number[] along the first piece's axes, which are Size's x y z
+local function scaleBy(factors)
+    liveFactors = nil
+    if not tabOpen() then return end
+    local fields = inwuts.generate or {}
+    local sides = defaultSides()
+    for i = 1, 3 do
+        local size, inc = fields[FIELD.size + i], fields[FIELD.increment + i]
+        if size and not size.destroyed then
+            local value = tonumber(size.textfieldstr[1])
+            if not (value and value > 0) then value = sides[i] end
+            local text = sizeText(math.max(value * factors[i], MGE.MIN_SIDE))
+            size.textfieldstr[1], size.textfieldindex = text, #text
+        end
+        local incValue = inc and not inc.destroyed and tonumber(inc.textfieldstr[1])
+        if incValue and incValue ~= 0 then
+            local text = sizeText(incValue * factors[i])
+            inc.textfieldstr[1], inc.textfieldindex = text, #text
+        end
+    end
+    replan()
+end
+
+-- While the preview is shown it has the gizmo (not the selection): Move drags it, Scale sizes its
+-- pieces (the Size and Increment fields) along the first piece's axes, Rotate shows no gizmo. After
+-- Generate there's no preview until a value changes, the gizmo is back on the selection (the
+-- generated pieces)
 MGE.Gizmo.previewTarget = function(mode)
     if not (previewShown and previewPieces and tabOpen()) then return nil end
-    if mode ~= "move" then return false end
+    if mode ~= "move" and mode ~= "scale" then return false end
     local pieces = previewPieces -- the pivot stays where the drag started, even if the plan changes
-    local function clear() liveOffset = nil end
+    local function clear() liveOffset, liveFactors = nil, nil end
     return {
+        scalable = true,
         pivot = function() return piecesCenter(pieces) end,
-        frame = function() return MGE.Mat3.IDENTITY end,
+        -- Scale: the first piece's axes, its sides are the Size fields. Move: the world's
+        frame = function() return mode == "scale" and pieces[1].frame or MGE.Mat3.IDENTITY end,
         previewMove = function(offset) liveOffset = offset end,
         previewRotate = function() end,
+        previewScale = function(factors) liveFactors = factors end,
         liveSides = function() return nil end,
         restoreLive = clear,
         moveBy = moveBy,
         rotateByMatrix = clear,
+        scaleBy = scaleBy,
     }
 end
 
@@ -334,9 +386,9 @@ local function buildGenerate(holder)
     add(createInputRow("Angle", holder, apply, { tostring(GENERATE_ANGLE) },
         "Total bend: 0 line, 90 quarter pipe, 360 loop."))
     add(createInputRow("Size", holder, apply, formatHints(defaultSides()),
-        "First piece's size, empty: the default object's."))
+        "First piece's size, empty: the default object's.\nThe Scale gizmo on the preview sets it too."))
     add(createInputRow("Increment", holder, apply, { "0.00", "0.00", "0.00" },
-        "Added to each next piece's size, negative shrinks."))
+        "Added to each next piece's size, negative shrinks.\nThe Scale gizmo scales it along with Size."))
     inwuts.generate = inputs
 end
 
