@@ -250,7 +250,8 @@ end
 ---@field material string
 ---@field brushId string
 ---@field merged integer? how many pieces merge.lua joined into it
----@field lookMaterial string? clips: material of the solid geometry they cover (borrowMaterials)
+---@field lookMaterial string? clips and roof caps: material of the solid geometry they cover / sit on (borrowMaterials)
+---@field roof boolean? an invisible (nodraw) brush kept as a roof cap (ROOF)
 
 ---Highest point of a box above its center, along world Z
 ---@param box MapBox
@@ -303,6 +304,7 @@ end
 ---@field terrain integer terrain grids of a .bsp converted (or left out with the terrain option off)
 ---@field terrainSlabs integer slabs they made, before merging
 ---@field merged integer boxes that went into another (merge.lua)
+---@field roofs integer invisible (nodraw) brushes kept as roof caps (keepRoofs)
 ---@field simplified integer slabs that went into another by Simplify (Merge.flat)
 ---@field boxes integer written
 ---@field slabs integer of them, ramps (brushes)
@@ -337,7 +339,7 @@ local function newReport()
             invisible = 0, skyClip = 0, hidden = 0, covered = 0 },
         simplified = 0,
         displacements = 0, terrain = 0, terrainSlabs = 0, terrainBoxes = 0, merged = 0, boxes = 0, slabs = 0,
-        roughFits = 0, belowGround = 0, anchor = { 0, 0, 0 }, anchorFrom = "",
+        roughFits = 0, belowGround = 0, anchor = { 0, 0, 0 }, anchorFrom = "", roofs = 0,
     }
 end
 
@@ -528,6 +530,93 @@ local function dropSkyClips(pieces, skies)
     return kept, count
 end
 
+-- Roof caps: the tops of buildings nobody sees from the ground are nodraw brushes (dust2: 69 big flat
+-- ones high up), dropped with the other invisible brushes (the sealing slab under the map, the backs
+-- of terrain walls), but in Toribash the camera looks down on them: without them the roofs are gone.
+-- An invisible brush is kept as a roof cap when it's
+--   flat:      lower than both horizontal sides (the backs of terrain walls are upright)
+--   open:      on at least `open` of `samples` x `samples` points of its footprint sky over its top
+--              with nothing solid in between (stacked caps: the top one)
+--   supported: a solid piece under its footprint reaches up to its bottom (within `support`) from
+--              lower down: the walls a roof rests on. The sealing slab under the map has nothing
+--              under it, only the ground on top, which leaves gaps where it counted as open (dust2's
+--              2336 x 2624 x 288 one), and floating leftovers have nothing at all
+local ROOF = { open = 0.5, samples = 6, support = 8 }
+
+---Keeps the roof caps (ROOF) of the invisible brushes, adds them to pieces (role solid, roof true)
+---@param pieces MapConvPiece[] every other piece, terrain too
+---@param candidates MapConvPiece[] flat invisible brushes
+---@param skies { min: number[], max: number[] }[] skyBounds
+---@return integer kept
+local function keepRoofs(pieces, candidates, skies)
+    if #candidates == 0 or #skies == 0 then return 0 end
+    local grid = {}
+    for _, piece in ipairs(pieces) do
+        if piece.role ~= "clip" then
+            local min, max = boundsOf(piece)
+            local entry = { min = min, max = max }
+            for x = math.floor(min[1] / SKY_CELL), math.floor(max[1] / SKY_CELL) do
+                for y = math.floor(min[2] / SKY_CELL), math.floor(max[2] / SKY_CELL) do
+                    local key = cellKey(x, y)
+                    grid[key] = grid[key] or {}
+                    table.insert(grid[key], entry)
+                end
+            end
+        end
+    end
+    local n, kept = ROOF.samples, 0
+    for _, piece in ipairs(candidates) do
+        local min, max = boundsOf(piece)
+        local top, open = max[3], 0
+        for i = 0, n - 1 do
+            for j = 0, n - 1 do
+                local x = min[1] + (i + 0.5) * (max[1] - min[1]) / n
+                local y = min[2] + (j + 0.5) * (max[2] - min[2]) / n
+                local skyZ = math.huge -- lowest sky bottom over this point
+                for _, sky in ipairs(skies) do
+                    if x >= sky.min[1] and x <= sky.max[1] and y >= sky.min[2] and y <= sky.max[2]
+                        and sky.min[3] >= top - 1 and sky.min[3] < skyZ then skyZ = sky.min[3] end
+                end
+                local clear = skyZ < math.huge
+                if clear then
+                    for _, s in ipairs(grid[cellKey(math.floor(x / SKY_CELL), math.floor(y / SKY_CELL))] or {}) do
+                        if x >= s.min[1] and x <= s.max[1] and y >= s.min[2] and y <= s.max[2]
+                            and s.max[3] > top + 1 and s.min[3] < skyZ then
+                            clear = false
+                            break
+                        end
+                    end
+                end
+                if clear then open = open + 1 end
+            end
+        end
+        -- supported: a solid overlapping its footprint, from below its bottom up to it
+        local supported = false
+        if open >= ROOF.open * n * n then
+            local bottom = min[3]
+            for x = math.floor(min[1] / SKY_CELL), math.floor(max[1] / SKY_CELL) do
+                for y = math.floor(min[2] / SKY_CELL), math.floor(max[2] / SKY_CELL) do
+                    for _, s in ipairs(grid[cellKey(x, y)] or {}) do
+                        if s.min[1] < max[1] and s.max[1] > min[1] and s.min[2] < max[2] and s.max[2] > min[2]
+                            and s.min[3] < bottom - 1 and s.max[3] >= bottom - ROOF.support then
+                            supported = true
+                            break
+                        end
+                    end
+                    if supported then break end
+                end
+                if supported then break end
+            end
+        end
+        if supported then
+            piece.role, piece.roof = "solid", true
+            pieces[#pieces + 1] = piece
+            kept = kept + 1
+        end
+    end
+    return kept
+end
+
 -- clips borrow the material of solid geometry within this many map units (touching walls, the stairs
 -- under a ramp clip); the grid that finds it has cells this wide
 local BORROW_MARGIN, BORROW_CELL = 8, 512
@@ -546,7 +635,7 @@ local function borrowMaterials(pieces)
     local clips = {}
     for _, piece in ipairs(pieces) do
         local min, max = boundsOf(piece)
-        if piece.role == "clip" then
+        if piece.role == "clip" or piece.roof then -- roof caps: the walls they sit on
             clips[#clips + 1] = { piece = piece, min = min, max = max }
         elseif not piece.material:upper():find("^TOOLS/") then
             local entry = { piece = piece, min = min, max = max }
@@ -601,14 +690,29 @@ function MapConv.pieces(map, options)
         return { (bounds.min[1] + bounds.max[1]) / 2, (bounds.min[2] + bounds.max[2]) / 2, (bounds.min[3] + bounds.max[3]) / 2 }
     end
 
-    -- sky brushes, only needed to leave out sky clips
-    local skies = opts.clips and not opts.skyClips and skyBounds(map) or nil
+    -- sky brushes: sky clips are left out, roof caps kept under them
+    local allSkies = skyBounds(map)
+    local skies = opts.clips and not opts.skyClips and allSkies or nil
 
     ---@type MapConvPiece[]
     local pieces = {}
+    ---@type MapConvPiece[] flat invisible brushes, kept when they're roof caps (keepRoofs)
+    local roofCandidates = {}
     for _, brush in ipairs(map.brushes) do
         local role, reason = MapConv.brushRole(brush, opts)
-        if role == "drop" then
+        local capGeometry = role == "drop" and reason == "invisible" and MapConv.Brush.build(brush.sides) or nil
+        local flat = false
+        if capGeometry then
+            local across = math.min(capGeometry.max[1] - capGeometry.min[1], capGeometry.max[2] - capGeometry.min[2])
+            flat = capGeometry.max[3] - capGeometry.min[3] < across
+        end
+        if flat then
+            local box = MapConv.BoxFit.fit(capGeometry, opts) --[[@as MapConvPiece]]
+            box.material = mainMaterial(capGeometry)
+            box.brushId = brush.id
+            box.at = middle(capGeometry)
+            roofCandidates[#roofCandidates + 1] = box
+        elseif role == "drop" then
             drop(reason)
         elseif role == "clip" and not opts.clips then
             drop("clip")
@@ -655,12 +759,16 @@ function MapConv.pieces(map, options)
             end
         end
     end
+    -- roof caps before the sky clips: a clip lid over a roof isn't between it and the sky (clips aren't
+    -- in keepRoofs' solids), and the sky clip test sees the roofs as the solids they are
+    report.roofs = keepRoofs(pieces, roofCandidates, allSkies)
+    report.dropped.invisible = report.dropped.invisible + #roofCandidates - report.roofs
     if skies then
         local lids
         pieces, lids = dropSkyClips(pieces, skies)
         report.dropped.skyClip = report.dropped.skyClip + lids
     end
-    if opts.clips then borrowMaterials(pieces) end
+    if opts.clips or report.roofs > 0 then borrowMaterials(pieces) end
     return pieces, report
 end
 
@@ -848,13 +956,16 @@ function MapConv.objects(boxes, anchor, options, report)
             if box.kind == "box" and box.fitError > 0.5 then report.roughFits = report.roughFits + 1 end
         end
         -- clips: the material borrowed from what they cover, plain grey when they touch nothing
-        local color = MapConv.colorFor(box.role == "clip" and (box.lookMaterial or "") or box.material)
+        -- roof caps (nodraw) the material of the walls they sit on, their own when they touch none
+        local color = MapConv.colorFor(box.role == "clip" and (box.lookMaterial or "") or (box.lookMaterial or box.material))
         objects[i] = {
             kind = "env_obj",
             id = i,
             lines = { { raw = "# " .. (box.brushId:find("^disp") and "" or "brush ") .. box.brushId
                 .. (box.merged and (" + " .. (box.merged - 1) .. " merged") or "") .. " "
-                .. (box.role == "clip" and ("clip" .. (box.lookMaterial and (" by " .. box.lookMaterial) or "")) or box.material) } },
+                .. (box.role == "clip" and ("clip" .. (box.lookMaterial and (" by " .. box.lookMaterial) or ""))
+                    or box.roof and ("roof cap" .. (box.lookMaterial and (" by " .. box.lookMaterial) or ""))
+                    or box.material) } },
             props = {
                 shape = "box",
                 pos = formatNumbers(pos[1], pos[2], pos[3]),
@@ -956,6 +1067,9 @@ function MapConv.reportLines(report)
     if d.terrain > 0 then lines[#lines + 1] = d.terrain .. " terrain grids left out (terrain off)" end
     if d.skyClip > 0 then
         lines[#lines + 1] = d.skyClip .. " sky clips left out (big lids between the roofs and the sky)"
+    end
+    if (report.roofs or 0) > 0 then
+        lines[#lines + 1] = report.roofs .. " roof caps kept (invisible tops under the open sky)"
     end
     if d.hidden > 0 or d.covered > 0 then
         lines[#lines + 1] = d.hidden .. " boxes left out inside other boxes"

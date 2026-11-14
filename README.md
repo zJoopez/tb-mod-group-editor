@@ -77,7 +77,8 @@ the mod.
   MGE draws every atmo object: in color on the Atmo list, as faint ghosts on the Objects list. The atmo
   holds 256 by default, which leaves room for the mod's 256 objects and 256 more shapes (outlines, the
   Generate preview, which is always drawn first). **Settings → Most atmo objects** raises it. Above 256
-  you may need lower graphics settings to see them all.
+  you may need lower graphics settings to see them all. **Settings → Highlights → Off** hides the
+  selection highlights. The Generate preview, the atmo, joint anchors and the white pick hover still show.
 - **Convert map** has two budgets: **Budget** is how many boxes become objects (up to the free ids),
   **Atmo** is how many more go to the atmo (the smaller boxes). Budget 0 puts every box in the atmo and
   leaves the object ids free. The placement view draws those boxes in purple.

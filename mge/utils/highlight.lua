@@ -15,6 +15,10 @@ local Highlight = {
     fillAlpha = 0.25,
     previewColor = { 1.0, 0.6, 0.0 },
     previewAlpha = 0.2,
+    -- the Settings overlay's "Highlights" toggle: off skips the selection highlights (objects, atmo,
+    -- players, a joint's objects). The Generate preview, the atmo, joint anchors and the white hover of
+    -- a pick still draw: they show what isn't there yet or what a click would take
+    enabled = true,
     -- draws a frame MGE has for itself next to the game's 256 objects and the atmo's 256: the Generate
     -- preview first, then the selection highlights fit in what's left (highlightPlan)
     drawRoom = 256,
@@ -309,7 +313,9 @@ local function drawJointHighlights(joints)
         if joint.obj1 then objects[joint.obj1] = true end
         if joint.obj2 then objects[joint.obj2] = true end
     end
-    for id in pairs(objects) do drawObjectHighlight(id - 1) end
+    if Highlight.enabled then
+        for id in pairs(objects) do drawObjectHighlight(id - 1) end
+    end
     for _, joint in ipairs(ModData.parsed.env_obj_joint) do
         if not selected[joint] then drawJointAnchor(joint, true) end
     end
@@ -327,8 +333,10 @@ local function drawLinkHighlights(slot)
     local Joints = MGE.Joints
     local draft = Joints.draftFor(slot)
     local hover = MGE.WorldSelect and MGE.WorldSelect.hover
-    if draft.obj1 then drawObjectHighlight(draft.obj1 - 1) end
-    if draft.obj2 then drawObjectHighlight(draft.obj2 - 1) end
+    if Highlight.enabled then
+        if draft.obj1 then drawObjectHighlight(draft.obj1 - 1) end
+        if draft.obj2 then drawObjectHighlight(draft.obj2 - 1) end
+    end
     if hover then drawObjectHighlight(hover.id - 1, HOVER_COLOR) end
     -- the other selected joints bright (Update links them all to the picked pair), the rest faint
     local selected = MGE.Main.selectedJoints
@@ -360,6 +368,7 @@ add_hook("draw3d", MGE.hookname, function()
             -- During a scale drag the scaled players instead
             local Players = MGE.Players
             local scale = Players and Players.scalePreview
+            if not Highlight.enabled then return end
             for _, player in ipairs(scale and scale.players or Main.selectedPlayerList()) do
                 if Players and Players.exists(player) then drawPlayerHighlight(player, scale) end
             end
@@ -387,6 +396,7 @@ add_hook("draw3d", MGE.hookname, function()
             drawObjectHighlight(WorldSelect.hover.id - 1, HOVER_COLOR)
             room = room - 2
         end
+        if not Highlight.enabled then return end
         if atmo then -- the Atmo list shows the atmo selection, not the objects'
             local fillOnly, drawn = highlightPlan(#selectedGhosts, room)
             for i = 1, drawn do drawAtmoHighlight(selectedGhosts[i], fillOnly) end

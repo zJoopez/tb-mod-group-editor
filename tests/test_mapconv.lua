@@ -243,6 +243,49 @@ T.test("terrain slabs follow the outline", function()
     T.ok(math.abs(slabs[1].sides[1] * slabs[1].sides[2] - 256 * 256) < 1, "turned floor: along its edges")
 end)
 
+T.test("roof caps: invisible tops under the open sky", function()
+    local NODRAW, SKY = "TOOLS/TOOLSNODRAW", "TOOLS/TOOLSSKYBOX"
+    local opts = { merge = false, simplify = false }
+    local sky = solid(90, { -2000, -2000, 700 }, { 2000, 2000, 764 }, SKY)
+    local floor = solid(1, { -1000, -1000, -16 }, { 1000, 1000, 0 }, "DE_DUST/SANDFLOOR")
+    -- a house: plaster walls up to 256, a nodraw cap on them
+    local wallA = solid(2, { -200, -200, 0 }, { -184, 200, 256 }, "DE_DUST/PLASTER_WALL")
+    local wallB = solid(3, { 184, -200, 0 }, { 200, 200, 256 }, "DE_DUST/PLASTER_WALL")
+    local cap = solid(4, { -200, -200, 256 }, { 200, 200, 272 }, NODRAW)
+    local r = convert(vmf({ sky, floor, wallA, wallB, cap }), opts)
+    T.eq(r.report.roofs, 1, "the cap on the walls under the sky: kept")
+    T.eq(r.report.dropped.invisible, 0, "not counted as dropped")
+    local capObj
+    for _, obj in ipairs(r.objects) do
+        if obj.lines[1].raw:find("roof cap", 1, true) then capObj = obj end
+    end
+    T.ok(capObj ~= nil, "written, marked a roof cap")
+    T.ok(capObj and capObj.lines[1].raw:find("PLASTER_WALL", 1, true) ~= nil, "colored like the walls it sits on")
+
+    -- no sky over it (an indoor nodraw slab under a visible roof): dropped
+    local roof = solid(5, { -300, -300, 400 }, { 300, 300, 416 }, "DE_DUST/ROOF")
+    r = convert(vmf({ sky, floor, wallA, wallB, cap, roof }), opts)
+    T.eq(r.report.roofs, 0, "something solid between it and the sky: dropped")
+    T.eq(r.report.dropped.invisible, 1, "counted as invisible")
+
+    -- the sealing slab under the map: the floor lies on it, nothing under it
+    local slab = solid(6, { -1000, -1000, -64 }, { 1000, 1000, -16 }, NODRAW)
+    local holeyFloor = solid(7, { -1000, -1000, -16 }, { -500, 1000, 0 }, "DE_DUST/SANDFLOOR") -- open over most of it
+    r = convert(vmf({ sky, holeyFloor, slab }), opts)
+    T.eq(r.report.roofs, 0, "nothing under it: not a roof, dropped")
+
+    -- upright (the back of a terrain wall): never a cap
+    local back = solid(8, { 300, -200, 0 }, { 316, 200, 256 }, NODRAW)
+    r = convert(vmf({ sky, floor, back }), opts)
+    T.eq(r.report.roofs, 0, "upright: dropped")
+    T.eq(r.report.dropped.invisible, 1, "counted as invisible")
+
+    -- --invisible keeps every one as before, none counted as roof caps
+    r = convert(vmf({ sky, floor, wallA, wallB, cap, back }), { merge = false, simplify = false, invisible = true })
+    T.eq(r.report.roofs, 0, "--invisible: plain solids")
+    T.eq(r.report.dropped.invisible, 0, "--invisible: nothing dropped")
+end)
+
 T.test("sky clips: clip ceiling", function()
     -- Italy: clips fill the air from the roofs up to one height (z 512), far under the sky, a roof
     -- poking through. Each sits on its house (not floating), the sky is 1488 over them (not close)

@@ -221,6 +221,24 @@ Most map detail is props, not brushes. dust2 has 3,158 static props: 1,258 solid
 The preview showed big boxes in the air above B doors. Measured on dust2, they came from three sources:
 
 1. **465 brushes with only `TOOLS/TOOLSNODRAW`**, up to 2336×2624×288: the sealing slab under the map, roof caps, and the backs of terrain walls. They're now dropped as "invisible": every side has an undrawn tool texture, which excludes `TOOLSBLACK` / `TOOLSWHITE`. The `invisible` option (`--invisible`) keeps them.
+   - **Update (2026-11-14):** the user found many dust2 roofs missing. The sky-clip filter only drops 12 lids there; the roofs were these invisible roof caps, since building tops nobody sees from the ground are nodraw. They're now kept as **roof caps** (`ROOF`, `keepRoofs` in `mapconv/convert.lua`) when all three hold:
+     - **Flat:** lower than both horizontal sides.
+     - **Open:** on at least half of a 6×6 sample of the footprint, there's sky over the top with no solid in between.
+     - **Supported:** a solid under the footprint reaches up to the cap's bottom from lower down.
+
+     A kept cap takes the color of the walls it sits on, and the report says "N roof caps kept".
+   - **Measured** (whole map, roof caps kept / invisible still dropped):
+
+     | Map | Kept | Dropped |
+     |---|---|---|
+     | dust2 | 67 (z 64–960, plaster) | 408 |
+     | inferno | 52 | 722 |
+     | office | 28 | 289 |
+     | mirage | 28 | 654 |
+     | italy | 9 | 249 |
+     | nuke | 3 | 630 |
+
+     dust2's sealing slab under the map stays dropped (the supported rule), and so do the backs of terrain walls (the flat rule).
 2. **6 `TOOLS/TOOLSTRIGGER` brushes**, up to 1360×816×272 at height 560: the boxes above B doors. A `.bsp`'s contents flags marked them solid. `brushRole` now applies the trigger, sky, hint and areaportal texture rule to `.bsp` brushes too.
 3. **302 CS:GO "autocombine" props**, up to 866×1522: the compiler merges scattered decoration into one model whose box spans a street. `autocombine` was added to `Props.SKIP`.
 
