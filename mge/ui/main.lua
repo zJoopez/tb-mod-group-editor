@@ -7,7 +7,7 @@ require("toriui.uielement")
 ---@field toggleAll boolean
 ---@field activeTab "core"|"advanced"|"thrust"|"generate" the objects' editor tab, kept while another list is shown
 ---@field activeTabs table<string, string> each list's active editor tab (panel id), by list
----@field listTab "objects"|"joints"|"players" what the list area shows
+---@field listTab "objects"|"atmo"|"joints"|"players" what the list area shows
 ---@field selectedPlayer integer last picked player: the players panel shows it (also when none is selected)
 ---@field selectedPlayers table<integer, boolean> selected players (Shift adds), the gizmo moves them together
 ---@field selectPlayer fun(id: integer, additive: boolean?) picks a player (list row, world click)
@@ -15,7 +15,7 @@ require("toriui.uielement")
 ---@field jointSlot integer the current joint slot (last clicked), always selected: the Link tab edits it
 local Main = { page = 1, pageSize = 120, toggleAll = false, activeTab = "core", listTab = "objects", selectedPlayer = 0,
     selectedPlayers = { [0] = true }, selectedJoints = { [1] = true }, jointSlot = 1,
-    activeTabs = { objects = "core", players = "player", joints = "jointLink" } }
+    activeTabs = { objects = "core", atmo = "core", players = "player", joints = "jointLink" } }
 MGE.Main = Main -- registered before UI modules load so they can alias it
 
 local ModData = MGE.ModData
@@ -128,6 +128,7 @@ local listHeader = content:addChild({
 updateContentHeight(listHeader.size.h, 0) -- no gap, the list panel starts right under the tabs
 local listTabNames = {
     { id = "objects", label = "Objects" },
+    { id = "atmo", label = "Atmo" }, -- atmo objects: drawn only, the mod's .atmo file (utils/atmo.lua)
     { id = "joints", label = "Joints" },
     { id = "players", label = "Players" },
 }
@@ -174,6 +175,14 @@ local TAB_SETS = {
         { id = "thrust", label = "Thrust" },
         { id = "generate", label = "Generate" },
     },
+    -- the same Core panel as objects (its rows work on the atmo objects there, utils/transforms.lua),
+    -- the atmo objects' own lines and To objects (ui/editor_atmo.lua), and the same Generate panel (its
+    -- pieces go to the atmo, without joints: ui/editor_generate.lua)
+    atmo = {
+        { id = "core", label = "Core" },
+        { id = "atmo", label = "Atmo" },
+        { id = "generate", label = "Generate" },
+    },
     players = { { id = "player", label = "Core" } },
     joints = { { id = "jointLink", label = "Link" }, { id = "joint", label = "Properties" } },
 }
@@ -182,9 +191,10 @@ local TAB_SLOTS = #TAB_SETS.objects
 local tabW = (tabRow.size.w - TAB_GAP * (TAB_SLOTS - 1)) / TAB_SLOTS
 ---@type table<string, UIElement> tab rows by list
 local tabRows = {}
----@type table<string, UIElement> tab buttons by panel id
+---@type table<string, table<string, UIElement>> tab buttons by list, then panel id (a panel can be on
+---several lists: Core)
 local tabButtons = {}
----@type table<string, string> list each panel id belongs to
+---@type table<string, string> a list each panel id is on (the one setTab uses when the shown list hasn't it)
 local tabList = {}
 for list, tabs in pairs(TAB_SETS) do
     tabRows[list] = tabRow:addChild({
@@ -194,11 +204,22 @@ for list, tabs in pairs(TAB_SETS) do
     local items = {}
     for i, tab in ipairs(tabs) do
         items[i] = { label = tab.label, onClick = function() Main.setTab(tab.id) end }
-        tabList[tab.id] = list
+        if not tabList[tab.id] or list == "objects" then tabList[tab.id] = list end
     end
+    tabButtons[list] = {}
     for i, btn in ipairs(Widgets.buttonRow(tabRows[list], 0, tabRow.size.h, items, TAB_GAP)) do
-        tabButtons[tabs[i].id] = btn
+        tabButtons[list][tabs[i].id] = btn
     end
+end
+
+---@param list string
+---@param id string panel id
+---@return boolean the list has that tab
+local function listHasTab(list, id)
+    for _, tab in ipairs(TAB_SETS[list] or {}) do
+        if tab.id == id then return true end
+    end
+    return false
 end
 
 -- the editor area inside the tab panel: fits the panels (8 rows each, see PANELS in ui/editor.lua)
@@ -257,9 +278,11 @@ local WARNING_COLOR = { 0.3, 0.02, 0.02, 1 } -- dark red: reads against the wind
 local shown = {}
 Widgets.addDrawBefore(fileRow, function()
     local parsed, state, source, saved = ModData.parsed, History.states[History.index], MGE.sourcePath, MGE.savedText
+    -- the atmo file's saved text too: Export atmo writes it without saving the mod (utils/atmo.lua)
+    local atmo = MGE.Atmo.state.text
     if shown.parsed == parsed and shown.state == state and shown.source == source and shown.saved == saved
-        and shown.done then return end
-    shown = { parsed = parsed, state = state, source = source, saved = saved, done = true }
+        and shown.atmo == atmo and shown.done then return end
+    shown = { parsed = parsed, state = state, source = source, saved = saved, atmo = atmo, done = true }
     local target = MGE.saveTarget()
     local unsaved = MGE.hasUnsavedChanges()
     -- where Save writes (a mod from outside modmaker/ is copied there, its original stays as it is)
@@ -287,15 +310,16 @@ function Main.applyTab()
     tabPanel:show(true)
     local active = Main.activeTabs[Main.listTab]
     editor.applyPanel(active)
-    for id, btn in pairs(tabButtons) do
+    for id, btn in pairs(tabButtons[Main.listTab] or {}) do
         styleTab(btn, id == active)
     end
 end
 
----Makes a tab its list's active one (shown when that list is), e.g. "core" or "player"
+---Makes a tab its list's active one (shown when that list is), e.g. "core" or "player". A panel on several
+---lists (Core: objects and atmo) is the shown list's when it has it
 ---@param id string panel id, see TAB_SETS
 function Main.setTab(id)
-    local list = tabList[id]
+    local list = listHasTab(Main.listTab, id) and Main.listTab or tabList[id]
     if not list then return end
     Main.activeTabs[list] = id
     if list == "objects" then Main.activeTab = id --[[@as "core"|"advanced"|"thrust"|"generate"]] end
@@ -470,12 +494,13 @@ function Main.toggleSelectAllJoints()
     Main.updateWindow()
 end
 
----Switches the list area between objects, joints and players, the top level choice: the editor tabs
----are only there for objects
----@param id "objects"|"joints"|"players"
+---Switches the list area between objects, atmo objects, joints and players, the top level choice. On
+---the Atmo list the mod's objects are see-through (utils/atmo_layer.lua), the atmo objects are edited
+---@param id "objects"|"atmo"|"joints"|"players"
 function Main.setListTab(id)
     local changed = Main.listTab ~= id
     Main.listTab = id
+    MGE.AtmoLayer.setObjectsSeeThrough(id == "atmo")
     applyListTab()
     Main.applyTab()
     Main.updateWindow()
@@ -506,9 +531,9 @@ end
 local function setDynamicStrings()
     local warning = Main.dynamicWarning()
     limitsRow.uiColor = warning and WARNING_COLOR or UICOLORWHITE
-    local parked = #ModData.parsed.parked
+    local atmoCount = #ModData.parsed.atmo
     Widgets.infoText(limitsRow, "Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS ..
-        (parked > 0 and (" +" .. parked .. " parked") or "") ..
+        (atmoCount > 0 and (" +" .. atmoCount .. " atmo") or "") ..
         "    Dynamic " .. ModData.countDynamic() .. "/" .. MGE.MAX_NONSTATIC_OBJECTS ..
         (warning and " (" .. warning .. ")" or "") ..
         "    Joints " .. #ModData.parsed.env_obj_joint .. "/" .. MGE.MAX_ENV_JOINTS)
@@ -519,12 +544,10 @@ local function createObjSelector()
         player_list.create(obj_selector_container)
     elseif Main.listTab == "joints" then
         joint_list.create(obj_selector_container)
+    elseif Main.listTab == "atmo" then
+        obj_selector.create(obj_selector_container, ModData.parsed.atmo, "atmo")
     else
-        -- parked objects after the objects, as P1, P2... (utils/parking.lua)
-        local items = {}
-        for _, obj in ipairs(ModData.parsed.env_obj) do items[#items + 1] = obj end
-        for _, obj in ipairs(ModData.parsed.parked) do items[#items + 1] = obj end
-        obj_selector.create(obj_selector_container, items)
+        obj_selector.create(obj_selector_container, ModData.parsed.env_obj)
     end
 end
 
@@ -559,13 +582,21 @@ function Main.toggleSelectAll(value)
     for _, obj in ipairs(objects) do
         obj.selected = value or nil
     end
-    -- parked objects aren't part of Select All, deselecting clears them too
-    if not value then
-        for _, obj in ipairs(ModData.parsed.parked) do obj.selected = nil end
-    end
     Main.updateWindow()
     -- selecting everything frames it when the camera button is on, like selecting in the list
     if value then MGE.Camera.followSelection() end
+end
+
+---Selects every atmo object, or none when all are selected already (the Atmo list's select all, Ctrl + A)
+function Main.toggleSelectAllAtmo()
+    local list = ModData.parsed.atmo
+    local all = #list > 0
+    for _, obj in ipairs(list) do
+        if not obj.selected then all = false break end
+    end
+    for _, obj in ipairs(list) do obj.selected = not all or nil end
+    Main.updateWindow()
+    if not all then MGE.Camera.followSelection() end
 end
 
 function Main.resetWindow()

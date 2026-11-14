@@ -35,7 +35,8 @@
 ---@field Transforms table move / rotate / scale for the selection, utils/transforms.lua
 ---@field ShapeGen table Generate tab geometry, utils/shape_gen.lua
 ---@field Gizmo Gizmo drag handles in the world, utils/gizmo.lua
----@field Parking Parking objects over the game's limit, kept in the file as comments, utils/parking.lua
+---@field AtmoLayer AtmoLayer objects over the game's limit (the atmo layer), utils/atmo_layer.lua
+---@field Atmo Atmo the atmo layer's .atmo file per mod, utils/atmo.lua
 ---@field Players Players players' start positions and rotations (engageplayerpos), utils/players.lua
 ---@field GizmoMath GizmoMath utils/gizmo_math.lua
 ---@field Highlight table selection highlight and generate preview, utils/highlight.lua
@@ -113,7 +114,8 @@ loadModule("utils/mat3.lua")
 loadModule("utils/file_handler.lua")
 loadModule("utils/mod_export.lua")
 loadModule("utils/history.lua")
-loadModule("utils/parking.lua") -- objects over the game's limit, after history
+loadModule("utils/atmo_layer.lua") -- objects over the game's limit, after history
+loadModule("utils/atmo.lua") -- the atmo layer's .atmo file per mod
 loadModule("utils/joints.lua")
 loadModule("utils/highlight.lua")
 loadModule("utils/world_select.lua")
@@ -127,6 +129,7 @@ loadModule("utils/gizmo.lua") -- after world_select, highlight and transforms
 local FileHandler = MGE.FileHandler
 local ModData = MGE.ModData
 local History = MGE.History
+local Atmo = MGE.Atmo
 
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod
@@ -186,6 +189,11 @@ end
 ---isn't): the working copy loaded then doesn't say which mod it is
 MGE_SOURCE = MGE_SOURCE
 
+---@type { objects: fun(): FileParserEnvObj[], state: fun(): table }? the atmo layer and its file's state
+---(utils/atmo.lua), kept over a script restart like MGE_SOURCE: the working copy doesn't carry the layer.
+---Functions over the old instance's data, so they give its latest, however that instance ended
+MGE_ATMO = MGE_ATMO
+
 ---@param path string?
 ---@return boolean
 local function isSaveOutput(path)
@@ -203,7 +211,7 @@ function MGE.apply()
     for _, obj in ipairs(ModData.parsed.env_obj) do
         if obj.selected then MGE.keptSelection[obj.id] = true end
     end
-    for i, obj in ipairs(ModData.parsed.parked) do -- parked ones by their place in the list, negative
+    for i, obj in ipairs(ModData.parsed.atmo) do -- atmo objects by their place in the list, negative
         if obj.selected then MGE.keptSelection[-i] = true end
     end
     MGE.loadMod(outputName)
@@ -242,10 +250,11 @@ function MGE.setSource(path, text)
     MGE_SOURCE = path and { path = path, text = MGE.savedText } or nil -- global: kept over a script restart
 end
 
----True when the data differs from the source file (always, without one)
+---True when the data differs from the source file (always, without one), or the atmo layer from its
+---.atmo file
 ---@return boolean
 function MGE.hasUnsavedChanges()
-    return MGE.savedText == nil or MGE.savedText ~= FileHandler.modText(ModData.parsed)
+    return MGE.savedText == nil or MGE.savedText ~= FileHandler.modText(ModData.parsed) or Atmo.hasChanges()
 end
 
 ---Writes the mod to path (in the save folder), which becomes the source, then applies (reload)
@@ -259,6 +268,7 @@ local function writeMod(path)
     end
     MGE.setSource(path)
     echo("^04[MGE] saved " .. path)
+    Atmo.saveFor(path) -- the atmo layer's file, when it changed (asks before deleting an emptied one)
     -- the saved mod is what gets shared, say so if dynamic objects won't fully work in it
     local warning = MGE.Main and MGE.Main.dynamicWarning()
     if warning then echo("^04[MGE] saved with " .. warning) end
@@ -386,8 +396,11 @@ add_hook("match_begin", MGE.hookname, function()
     local switchedMod = path ~= MGE.modPath and not (isSaveOutput(path) and isSaveOutput(MGE.modPath))
     if switchedMod then
         set_camera_mode(0)
-        -- a mod file was loaded (not our working copy): the data belongs to it now
-        if not isSaveOutput(MGE.modPath) then MGE.setSource(MGE.modPath) end
+        -- a mod file was loaded (not our working copy): the data belongs to it now, with its atmo
+        if not isSaveOutput(MGE.modPath) then
+            MGE.setSource(MGE.modPath)
+            Atmo.load(MGE.modPath)
+        end
     end
     -- a mod file was loaded: its rules are the new baseline. Applying gamerules in the game's menu
     -- also starts a new match, that one keeps the old baseline so the change is saved later
@@ -398,7 +411,7 @@ add_hook("match_begin", MGE.hookname, function()
         for _, obj in ipairs(ModData.parsed.env_obj) do
             obj.selected = MGE.keptSelection and MGE.keptSelection[obj.id] or nil
         end
-        for i, obj in ipairs(ModData.parsed.parked) do
+        for i, obj in ipairs(ModData.parsed.atmo) do
             obj.selected = MGE.keptSelection and MGE.keptSelection[-i] or nil
         end
         MGE.Main.updateWindow()
@@ -412,6 +425,7 @@ add_hook("match_begin", MGE.hookname, function()
     MGE.reloadPending = false
     MGE.keptSelection = nil
     MGE.focusAfterReload = nil -- only for the reload it was set for
+    MGE.AtmoLayer.reapplySeeThrough() -- the reload gave the objects their file colors again (the Atmo list)
 end)
 
 -- Shift + Q / W / E: Move / Rotate / Scale gizmo on / off, same as the toolbar toggles (ui/main.lua).
@@ -435,6 +449,8 @@ local function listAction(action)
     elseif tab == "joints" then
         local L = MGE.JointList
         actions = { new = L.newJoint, duplicate = L.duplicate, delete = L.deleteSelected }
+    elseif tab == "atmo" then -- Duplicate and Delete work on the shown list (ui/editor.lua)
+        actions = { new = MGE.Assets.newAtmo, duplicate = MGE.Editor.duplicate, delete = MGE.Editor.deleteSelected }
     else
         actions = { new = MGE.Assets.newObject, duplicate = MGE.Editor.duplicate, delete = MGE.Editor.deleteSelected }
     end
@@ -556,6 +572,8 @@ add_hook("key_down", MGE.hookname, function(key)
             MGE.Main.toggleSelectAllPlayers()
         elseif tab == "joints" then
             MGE.Main.toggleSelectAllJoints()
+        elseif tab == "atmo" then
+            MGE.Main.toggleSelectAllAtmo()
         else
             MGE.Main.toggleSelectAll()
         end
@@ -583,8 +601,21 @@ History.reset()
 -- before the restart, compared with its text
 if MGE.modPath and not isSaveOutput(MGE.modPath) then
     MGE.setSource(MGE.modPath)
-elseif MGE_SOURCE then
-    MGE.setSource(MGE_SOURCE.path, MGE_SOURCE.text)
+    Atmo.load(MGE.modPath)
+else
+    if MGE_SOURCE then MGE.setSource(MGE_SOURCE.path, MGE_SOURCE.text) end
+    -- the working copy: the atmo layer as the last instance had it
+    if MGE_ATMO then
+        local ok, objects = pcall(MGE_ATMO.objects)
+        local okState, state = pcall(MGE_ATMO.state)
+        if ok and type(objects) == "table" then ModData.parsed.atmo = objects end
+        if okState and type(state) == "table" then Atmo.state = state end
+    end
 end
+MGE_ATMO = {
+    objects = function() return ModData.parsed.atmo end,
+    state = function() return Atmo.state end,
+}
+MGE.AtmoLayer.unloadGameAtmo() -- MGE draws the atmo itself, a loaded one would show it twice
 loadModule("ui/main.lua")
 MGE.running = true -- set last so a failed start isn't treated as running

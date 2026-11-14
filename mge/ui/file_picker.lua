@@ -13,7 +13,10 @@
 ---@field selected string? path relative to root (as passed to onConfirm), opens in its folder selected
 ---@field confirmLabel string?
 ---@field emptyText string? shown in a folder without subfolders or matching files
----@field onConfirm fun(path: string) path relative to root, "/" separated; the popup is closed first
+---@field roots { root: string, label: string }[]? several root folders to switch between (buttons in the
+---folder bar), in place of root / rootLabel. The first is shown first
+---@field onConfirm fun(path: string, root: string) path relative to the root it's in, "/" separated, and that
+---root; the popup is closed first
 
 local FilePicker = {}
 MGE.FilePicker = FilePicker
@@ -64,12 +67,15 @@ end
 ---@param options FilePickerOptions
 function FilePicker.open(options)
     if MGE.pickerOverlay or MGE.saveOverlay then return end
+    local roots = options.roots or { { root = options.root, label = options.rootLabel or options.root } }
+    local rootIndex = 1
+    local function root() return roots[rootIndex].root end
     local selectedPath = options.selected
     -- start in the selected file's folder when it still exists
     local startParts = split(selectedPath)
     table.remove(startParts)
     local folder = table.concat(startParts, "/")
-    if folder ~= "" and not is_folder(options.root .. "/" .. folder) then folder = "" end
+    if folder ~= "" and not is_folder(root() .. "/" .. folder) then folder = "" end
 
     local overlay = TBMenu:spawnWindowOverlay()
     MGE.pickerOverlay = overlay -- lets MGE.quit close it
@@ -139,7 +145,7 @@ function FilePicker.open(options)
             return
         end
         close()
-        options.onConfirm(selectedPath)
+        options.onConfirm(selectedPath, root())
     end
 
     local rebuild
@@ -153,7 +159,7 @@ function FilePicker.open(options)
     end
 
     rebuild = function()
-        -- folder bar: back button (not at the root) and the folder shown
+        -- folder bar: back button (not at the root), the folder shown, the root switches (several roots)
         folderBar:kill(true)
         local backW = folder ~= "" and barH * 2 or 0
         if folder ~= "" then
@@ -163,13 +169,25 @@ function FilePicker.open(options)
                 openFolder(table.concat(parts, "/"))
             end, nil, MGE.Widgets.PANEL_STYLE) -- lighter than the dark folder bar
         end
+        local switchW = #roots > 1 and math.min(110, innerW / 4) or 0
+        for i = #roots > 1 and 1 or 2, #roots do
+            local x = innerW - (#roots - i + 1) * switchW
+            local btn = MGE.Widgets.button(folderBar, { x = x + 2, y = 2, w = switchW - 4, h = barH - 4 }, roots[i].label,
+                function()
+                    if rootIndex == i then return end
+                    rootIndex, selectedPath = i, nil
+                    openFolder("")
+                end, nil, MGE.Widgets.PANEL_STYLE)
+            if i == rootIndex then btn.bgColor = TB_MENU_DEFAULT_LIGHTER_COLOR end
+        end
+        local switchesW = #roots > 1 and #roots * switchW or 0
         folderBar:addChild({
             pos = { backW + 5, 0 },
-            size = { innerW - backW - 10, barH },
-        }):addAdaptedText((options.rootLabel or options.root) .. (folder ~= "" and "/" .. folder or ""),
+            size = { innerW - backW - 10 - switchesW, barH },
+        }):addAdaptedText((#roots > 1 and "" or roots[rootIndex].label .. (folder ~= "" and "/" or "")) .. folder,
             nil, nil, nil, LEFTMID, 0.6, nil, nil)
 
-        local dir = folder == "" and options.root or options.root .. "/" .. folder
+        local dir = folder == "" and root() or root() .. "/" .. folder
         local prefix = folder == "" and "" or folder .. "/"
         local folders, files = listFolder(dir, options.extension)
         local items = {}

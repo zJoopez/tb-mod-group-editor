@@ -57,21 +57,29 @@ function ModData.clickSelect(obj, additive)
         return obj.selected == true
     end
     local onlySelected = obj.selected
-    for _, list in ipairs({ ModData.parsed.env_obj, ModData.parsed.parked or {} }) do -- parked: the list's P cells
-        for _, other in ipairs(list) do
-            if other ~= obj and other.selected then onlySelected = false end
-            other.selected = nil
-        end
+    -- only the object's own layer: the objects and the atmo objects (the Atmo list) are selected apart
+    local list = obj.kind == "atmo" and (ModData.parsed.atmo or {}) or ModData.parsed.env_obj
+    for _, other in ipairs(list) do
+        if other ~= obj and other.selected then onlySelected = false end
+        other.selected = nil
     end
     obj.selected = not onlySelected or nil
     return obj.selected == true
 end
 
----Selected parked objects (utils/parking.lua). getSelected has only the objects in the game
+---What the editor's rows, the gizmo and the transforms work on: the selected atmo objects while the
+---Atmo list shows, otherwise the selected objects
 ---@return FileParserEnvObj[]
-function ModData.getSelectedParked()
+function ModData.getEditSelection()
+    if MGE.Main and MGE.Main.listTab == "atmo" then return ModData.getSelectedAtmo() end
+    return ModData.getSelected()
+end
+
+---Selected atmo objects (utils/atmo_layer.lua). getSelected has only the objects in the game
+---@return FileParserEnvObj[]
+function ModData.getSelectedAtmo()
     local selected = {}
-    for _, obj in ipairs(ModData.parsed.parked or {}) do
+    for _, obj in ipairs(ModData.parsed.atmo or {}) do
         if obj.selected then table.insert(selected, obj) end
     end
     return selected
@@ -387,13 +395,16 @@ local function rebaseModels()
 end
 
 local function init()
-    ModData.parsed = { env_obj = {}, env_obj_joint = {}, parked = {}, ignores = {} }
+    ModData.parsed = { env_obj = {}, env_obj_joint = {}, atmo = {}, ignores = {} }
     ModData.freeIds = { nonStatic = {}, static = {} }
     ModData.jointIds = {}
 end
 
----Re-reads the loaded mod file and finds free object ids in the world
+---Re-reads the loaded mod file and finds free object ids in the world. The atmo layer (parsed.atmo)
+---isn't in the file (utils/atmo.lua): the one there is kept. Opening another mod replaces it (Atmo.load,
+---main.lua's start and match_begin)
 function ModData.reloadObjects()
+    local atmo = ModData.parsed and ModData.parsed.atmo or {}
     init()
 
     if MGE.modPath then
@@ -403,6 +414,7 @@ function ModData.reloadObjects()
     else
         print("Mod not found")
     end
+    ModData.parsed.atmo = atmo
 
     -- free ids come from the world, also without a mod file, otherwise imports have no ids to use
     for i = 0, MAX_ENV_OBJECTS - 1 do

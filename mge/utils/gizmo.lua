@@ -94,24 +94,54 @@ local drag = nil
 ---@field ringsOnly integer? only this ring of Rotate
 ---@field uniformScaleOnly boolean? Scale has only the white cube (players)
 
----Selected objects as a gizmo target, the Transforms the editor's rows use
----@param objects FileParserEnvObj[]
+---The selection as a gizmo target, the Transforms the editor's rows use: objects, or on the Atmo list
+---atmo objects (utils/atmo_layer.lua). Transforms works on both (an atmo object only through its lines),
+---commits are one undo step. Atmo objects aren't drawn by the game: a drag shows them through
+---AtmoLayer.live (their ghosts drawn where it puts them, utils/highlight.lua)
+---@param objects FileParserEnvObj[] in the world, or atmo objects with a pos line
 ---@return GizmoTarget
 local function objectTarget(objects)
-    local T = MGE.Transforms
+    local T, AtmoLayer = MGE.Transforms, MGE.AtmoLayer
+    local hasAtmo = false
+    for _, obj in ipairs(objects) do
+        if obj.kind == "atmo" then hasAtmo = true break end
+    end
+    local function pivot() return { T.getSelectionPivot(objects) } end
+    local function frame() return T.groupFrame(objects) end
     return {
         objects = objects,
         scalable = true,
-        pivot = function() return { T.getSelectionPivot(objects) } end,
-        frame = function() return T.groupFrame(objects) end,
-        previewMove = function(offset) T.previewMove(objects, offset) end,
-        previewRotate = function(rotation) T.previewRotate(objects, rotation) end,
-        previewScale = function(factors, baseSides) T.previewScale(objects, factors, baseSides) end,
+        pivot = pivot,
+        frame = frame,
+        previewMove = function(offset)
+            T.previewMove(objects, offset)
+            if hasAtmo then AtmoLayer.live = { move = offset } end
+        end,
+        previewRotate = function(rotation)
+            T.previewRotate(objects, rotation)
+            if hasAtmo then AtmoLayer.live = { rotation = rotation, pivot = pivot() } end
+        end,
+        previewScale = function(factors, baseSides)
+            T.previewScale(objects, factors, baseSides)
+            if hasAtmo then AtmoLayer.live = { scale = factors, pivot = pivot(), frame = frame() } end
+        end,
         liveSides = function() return T.liveSides(objects) end,
-        restoreLive = function(baseSides) T.restoreLive(objects, baseSides) end,
-        moveBy = function(offset) T.moveBy(objects, offset) end,
-        rotateByMatrix = function(rotation) T.rotateByMatrix(objects, rotation) end,
-        scaleBy = function(factors) T.scaleBy(objects, factors) end,
+        restoreLive = function(baseSides)
+            AtmoLayer.live = nil
+            T.restoreLive(objects, baseSides)
+        end,
+        moveBy = function(offset)
+            AtmoLayer.live = nil
+            T.moveBy(objects, offset)
+        end,
+        rotateByMatrix = function(rotation)
+            AtmoLayer.live = nil
+            T.rotateByMatrix(objects, rotation)
+        end,
+        scaleBy = function(factors)
+            AtmoLayer.live = nil
+            T.scaleBy(objects, factors)
+        end,
     }
 end
 
@@ -137,13 +167,16 @@ local function gizmoTarget()
         if t and Gizmo.mode == "scale" and not t.scalable then return nil end
         return t
     end
-    if Gizmo.previewTarget then
+    if (Main.listTab == "objects" or Main.listTab == "atmo") and Gizmo.previewTarget then
         local t = Gizmo.previewTarget(Gizmo.mode)
         if t ~= nil then return t or nil end
     end
+    -- the objects in the world, or on the Atmo list the atmo objects with a pos line (the ones drawn)
     local objects = {}
-    for _, obj in ipairs(ModData.getSelected()) do
-        if get_obj_pos(obj.id - 1) ~= nil then table.insert(objects, obj) end
+    for _, obj in ipairs(ModData.getEditSelection()) do
+        if obj.kind == "atmo" and obj.props.pos or obj.kind ~= "atmo" and get_obj_pos(obj.id - 1) ~= nil then
+            table.insert(objects, obj)
+        end
     end
     return #objects > 0 and objectTarget(objects) or nil
 end

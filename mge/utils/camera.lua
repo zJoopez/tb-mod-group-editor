@@ -76,7 +76,16 @@ function Camera.bounds(objects)
     local Transforms = MGE.Transforms
     local positions = {}
     for _, obj in ipairs(objects) do
-        if get_obj_pos(obj.id - 1) ~= nil then -- in the world, position as the file has it (like the pivot)
+        if obj.kind == "atmo" then
+            -- an atmo object: its lines (its id isn't an object's), ghost-sized like it's drawn
+            local g = MGE.AtmoLayer.ghost(obj)
+            if g then
+                local s = g.sides
+                local r = g.shape == "sphere" and s[1] or g.shape == "cylinder" and s[2] / 2 + s[1]
+                    or math.sqrt(s[1] * s[1] + s[2] * s[2] + s[3] * s[3]) / 2
+                table.insert(positions, { pos = g.pos, radius = math.min(r, Camera.maxObjectRadius) })
+            end
+        elseif get_obj_pos(obj.id - 1) ~= nil then -- in the world, position as the file has it (like the pivot)
             local radius = math.min(objectRadius(obj.id - 1), Camera.maxObjectRadius)
             table.insert(positions, { pos = Transforms.positionOf(obj), radius = radius })
         end
@@ -306,7 +315,7 @@ end
 ---got selected, deselecting leaves the camera where it is
 function Camera.followSelection()
     if not Camera.followMoves then return end
-    local selected = MGE.ModData.getSelected()
+    local selected = MGE.ModData.getEditSelection() -- the atmo objects on the Atmo list
     if #selected > 0 then Camera.focus(selected) end
 end
 

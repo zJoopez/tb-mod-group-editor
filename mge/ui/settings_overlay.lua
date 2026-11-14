@@ -3,6 +3,8 @@
 --   Gizmo snapping: the steps a gizmo drag snaps to while Ctrl is held (Gizmo.moveStep / rotateStep /
 --                   scaleStep). A typed step applies on Enter or when the overlay closes, an invalid
 --                   one goes back to the current step
+--   Atmo objects:   the atmo's size (AtmoLayer.maxAtmo), every one is drawn: the game's graphics
+--                   settings set how many shapes it draws a frame. Typed like the steps
 --   Shortcuts:      heading with a "?", hovering it lists the keyboard and mouse shortcuts
 -- Kept while the script runs, not saved. Clicking outside the panel, Close or Esc closes it, MGE.quit
 -- closes it too (MGE.settingsOverlay).
@@ -29,19 +31,39 @@ local SETTINGS = {
     },
 }
 
----@class MgeSnapStep
+---@class MgeNumberSetting a typed number: applied on Enter or when the overlay closes, an invalid one
+---goes back to the current value
 ---@field label string
----@field key "moveStep"|"rotateStep"|"scaleStep" field on Gizmo
----@field min number smallest step accepted, exclusive
----@field max number largest step accepted
+---@field get fun(): number
+---@field set fun(value: number)
+---@field min number smallest value accepted (exclusive unless minInclusive)
+---@field minInclusive boolean?
+---@field max number largest value accepted
+---@field whole boolean? rounded down to a whole number
 
----@type MgeSnapStep[]
+---@param key "moveStep"|"rotateStep"|"scaleStep" field on Gizmo
+local function gizmoField(label, key, max)
+    return { label = label, min = 0, max = max, get = function() return Gizmo[key] end, set = function(v) Gizmo[key] = v end }
+end
+
+---@type MgeNumberSetting[]
 local SNAP_STEPS = {
-    { label = "Move step", key = "moveStep", min = 0, max = 100 },
-    { label = "Rotate step", key = "rotateStep", min = 0, max = 180 },
-    { label = "Scale step", key = "scaleStep", min = 0, max = 10 },
+    gizmoField("Move step", "moveStep", 100),
+    gizmoField("Rotate step", "rotateStep", 180),
+    gizmoField("Scale step", "scaleStep", 10),
 }
 local SNAP_INFO = "Hold Ctrl while dragging. Move: units, rotate: degrees"
+
+-- atmo objects (utils/atmo_layer.lua): the atmo's size. MGE draws every one, the game draws only so
+-- many shapes a frame, how many depends on its graphics settings (lowest: 10 000)
+local AtmoLayer = MGE.AtmoLayer
+---@type MgeNumberSetting[]
+local ATMO_FIELDS = {
+    { label = "Most atmo objects", min = 0, minInclusive = true, max = 100000, whole = true,
+        get = function() return AtmoLayer.maxAtmo end, set = function(v) AtmoLayer.maxAtmo = v end },
+}
+local ATMO_INFO = "All are drawn: above 256, lower graphics\nsettings may be needed to see them all"
+local ATMO_INFO_LINES = 2
 
 -- shortcut list, shown by the "?" next to the Shortcuts heading (the toolbar used to have it)
 local SHORTCUTS = table.concat({
@@ -68,47 +90,44 @@ local ROW_GAP = 4
 local SETTING_H = ROW_H + Widgets.INFO_HEIGHT + 8 -- row, info line, gap
 local SECTION_H = 26 -- section heading
 local SNAP_H = SECTION_H + #SNAP_STEPS * (ROW_H + ROW_GAP) + Widgets.INFO_HEIGHT + 8
+local ATMO_H = SECTION_H + #ATMO_FIELDS * (ROW_H + ROW_GAP) + Widgets.INFO_HEIGHT * ATMO_INFO_LINES + 8
 local SHORTCUTS_H = SECTION_H + 4
 local CLOSE_H = 28
 local LABEL_W = 150
-local panelH = TITLE_H + #SETTINGS * SETTING_H + SNAP_H + SHORTCUTS_H + CLOSE_H + PAD * 2
+local panelH = TITLE_H + #SETTINGS * SETTING_H + SNAP_H + ATMO_H + SHORTCUTS_H + CLOSE_H + PAD * 2
 
 local overlay = TBMenu:spawnWindowOverlay(true) -- true: a click on the dark background closes it
 MGE.settingsOverlay = overlay
 
----@type { step: MgeSnapStep, input: UIElement }[]
-local snapInputs = {}
+---@type { step: MgeNumberSetting, input: UIElement }[] every number field
+local numberInputs = {}
 
----Step as the field shows it, 0.1 not 0.10000000000000001
+---Value as the field shows it, 0.1 not 0.10000000000000001
 ---@param value number
 ---@return string
 local function formatStep(value)
     return string.format("%g", value)
 end
 
----@param step MgeSnapStep
----@return number
-local function currentStep(step)
-    return Gizmo[step.key] --[[@as number]]
-end
-
----Applies a typed step, or puts the current step back in the field when the text isn't a valid one
----@param entry { step: MgeSnapStep, input: UIElement }
+---Applies a typed value, or puts the current one back in the field when the text isn't a valid one
+---@param entry { step: MgeNumberSetting, input: UIElement }
 local function applySnap(entry)
     local step, input = entry.step, entry.input
-    if input.destroyed then return end
+    -- not skipped once destroyed: UIElement:kill destroys the fields before the overlay's killAction
+    -- (which applies them) runs, their text is still there
+    if not input.textfieldstr then return end
     local value = tonumber(input.textfieldstr[1])
-    if value and value > step.min and value <= step.max then
-        Gizmo[step.key] = value
-    end
-    local text = formatStep(currentStep(step))
+    if value and step.whole then value = math.floor(value) end
+    local aboveMin = value and (step.minInclusive and value >= step.min or value > step.min)
+    if aboveMin and value <= step.max then step.set(value) end
+    local text = formatStep(step.get())
     input.textfieldstr[1] = text
     input.textfieldindex = #text
 end
 
 local defaultKillAction = overlay.killAction
 overlay.killAction = function()
-    for _, entry in ipairs(snapInputs) do applySnap(entry) end -- typed but not entered still counts
+    for _, entry in ipairs(numberInputs) do applySnap(entry) end -- typed but not entered still counts
     if defaultKillAction then defaultKillAction() end
     Widgets.releaseKeyboard(overlay) -- the step fields would otherwise stay in toriui's keyboard list
     if MGE then MGE.settingsOverlay = nil end
@@ -188,24 +207,37 @@ for _, setting in ipairs(SETTINGS) do
     y = y + SETTING_H
 end
 
--- gizmo snapping: one number field per step, filled with the current step
-local heading = panel:addChild({
-    pos = { PAD, y },
-    size = { PANEL_W - PAD * 2, SECTION_H },
-})
-heading:addAdaptedText("Gizmo snapping", nil, nil, nil, CENTERMID, Widgets.TEXT_SCALE)
-y = y + SECTION_H
-for _, step in ipairs(SNAP_STEPS) do
-    local content = addRow(y, step.label)
-    local entry = { step = step }
-    entry.input = Rows.createInput(content, function() applySnap(entry) end, formatStep(currentStep(step)))
-    Widgets.closeOnEscape(entry.input) -- Esc while typing a step closes too (applies it, like Close)
-    table.insert(snapInputs, entry)
-    applySnap(entry) -- fills the field with the current step
-    y = y + ROW_H + ROW_GAP
+---A heading and one number field per setting, filled with the current values, and an info line
+---@param name string the heading
+---@param fields MgeNumberSetting[]
+---@param infoText string
+---@param infoLines integer
+local function addNumberSection(name, fields, infoText, infoLines)
+    local heading = panel:addChild({
+        pos = { PAD, y },
+        size = { PANEL_W - PAD * 2, SECTION_H },
+    })
+    heading:addAdaptedText(name, nil, nil, nil, CENTERMID, Widgets.TEXT_SCALE)
+    y = y + SECTION_H
+    for _, step in ipairs(fields) do
+        local content = addRow(y, step.label)
+        local entry = { step = step }
+        entry.input = Rows.createInput(content, function() applySnap(entry) end, formatStep(step.get()))
+        Widgets.closeOnEscape(entry.input) -- Esc while typing closes too (applies it, like Close)
+        table.insert(numberInputs, entry)
+        applySnap(entry) -- fills the field with the current value
+        y = y + ROW_H + ROW_GAP
+    end
+    local info = panel:addChild({
+        pos = { PAD, y },
+        size = { PANEL_W - PAD * 2, Widgets.INFO_HEIGHT * infoLines },
+    })
+    Widgets.infoText(info, infoText)
+    y = y + Widgets.INFO_HEIGHT * infoLines + 8
 end
-addInfo(y, SNAP_INFO)
-y = y + Widgets.INFO_HEIGHT + 8
+
+addNumberSection("Gizmo snapping", SNAP_STEPS, SNAP_INFO, 1)
+addNumberSection("Atmo objects", ATMO_FIELDS, ATMO_INFO, ATMO_INFO_LINES)
 
 -- Shortcuts heading with the "?" right after the text, hovering it lists them. Heading and icon are
 -- centered together: the text is measured the way the game's help popups measure theirs

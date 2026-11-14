@@ -35,6 +35,7 @@ end
 ---@field lines FileParserLine[]? original line order, nil for objects created in the editor
 ---@field selected boolean?
 ---@field kind string
+---@field atmoName string? an atmo object's name in its .atmo file (utils/atmo.lua), kept for parent lines
 
 ---@class FileParserEnvObjJoint
 ---@field id integer
@@ -48,8 +49,8 @@ end
 ---@class FileParserResult
 ---@field env_obj FileParserEnvObj[]
 ---@field env_obj_joint FileParserEnvObjJoint[]
----@field parked FileParserEnvObj[]? objects over the game's limit (utils/parking.lua), commented out in
----the file (PARKED_TAG): the game skips them, MGE reads them back. Ids are their order, 1 up
+---@field atmo FileParserEnvObj[]? the atmo layer (utils/atmo_layer.lua, utils/atmo.lua). Kept in the mod's
+---.atmo file, never in a .tbm: ParseMod leaves it empty. Ids are their order, 1 up
 ---@field ignores string[] lines before the first object (header comments, gamerule, body, joint...)
 ---@field trailer string[]? non object lines after the first object (usually player sections)
 
@@ -77,25 +78,6 @@ for i, key in ipairs(KEY_ORDER) do KEY_RANK[key] = i end
 -- the rot line, so these are dropped when reading and left out of the next save
 local FRAME_TAG = "#mge_frame"
 
--- parked objects (utils/parking.lua) are written after the joints as comments the game skips:
---   #mge parked 1
---   #mge   pos 1 2 3
--- every line of the block starts with the tag, so a blank line or the next section ends it
-local PARKED_TAG = "#mge"
-FileHandler.PARKED_TAG = PARKED_TAG
-
----@param line string
----@return integer? id when the line starts a parked block
-local function parkedId(line)
-    return tonumber(line:match("^%s*" .. PARKED_TAG .. "%s+parked%s+(%d+)%s*$"))
-end
-
----@param line string
----@return string? the line without the tag, when it belongs to a parked block
-local function parkedContent(line)
-    return line:match("^%s*" .. PARKED_TAG .. "(%s.*)$")
-end
-
 ---@param line string
 ---@return string?
 local function firstWord(line)
@@ -114,7 +96,7 @@ end
 ---@param line string
 ---@return boolean
 local function isSectionHeader(line)
-    return SECTION_WORDS[firstWord(line) or ""] == true or parkedId(line) ~= nil
+    return SECTION_WORDS[firstWord(line) or ""] == true
 end
 
 ---Removes trailing blank lines, otherwise every save drops one (readAll ignores the last empty line)
@@ -134,7 +116,7 @@ function FileHandler.ParseMod(path)
     local parser = {
         env_obj = {},
         env_obj_joint = {},
-        parked = {},
+        atmo = {},
         ignores = {},
         trailer = {},
     }
@@ -149,22 +131,8 @@ function FileHandler.ParseMod(path)
     while i <= #lines do
         local line = lines[i]
         local kind = getBlockKind(line)
-        local parked = parkedId(line)
 
-        if parked then
-            -- the tagged lines after the header, untagged they're an object block like any other
-            seenObject = true
-            local block = { kind = "env_obj", header = "env_obj " .. parked, lines = {} }
-            i = i + 1
-            -- blank lines after it belong to it, like after any object block (WriteMod adds one back)
-            while i <= #lines and not parkedId(lines[i]) do
-                local content = parkedContent(lines[i])
-                if not content and not lines[i]:match("^%s*$") then break end
-                if content and not content:match("^%s*$") then table.insert(block.lines, content) end
-                i = i + 1
-            end
-            table.insert(parser.parked, FileHandler.parseBlock(block))
-        elseif kind then
+        if kind then
             seenObject = true
             local block = { kind = kind, header = line, lines = {} }
             i = i + 1
@@ -190,7 +158,7 @@ function FileHandler.ParseMod(path)
     end
 
     trimTrailingBlank(parser.trailer)
-    if #parser.env_obj == 0 and #parser.env_obj_joint == 0 and #parser.parked == 0 then
+    if #parser.env_obj == 0 and #parser.env_obj_joint == 0 then
         trimTrailingBlank(parser.ignores)
     end
     return parser
@@ -514,13 +482,7 @@ local function writeParser(file, parser)
     writeParsedEnvObj(file, parser.env_obj or {})
     writeParsedEnvObj(file, parser.env_obj_joint or {})
 
-    -- parked objects, every line commented out with PARKED_TAG: the game skips them. Numbered in order
-    for i, obj in ipairs(parser.parked or {}) do
-        file:writeLine(PARKED_TAG .. " parked " .. i)
-        ---@diagnostic disable-next-line: missing-fields
-        writeObjectLines({ writeLine = function(_, line) file:writeLine(PARKED_TAG .. line) end }, obj)
-        file:writeLine("")
-    end
+    -- atmo objects aren't written: they're the atmo layer, kept in the mod's .atmo (utils/atmo.lua)
 
     -- sections that came after objects in the original file
     for _, line in ipairs(parser.trailer or {}) do

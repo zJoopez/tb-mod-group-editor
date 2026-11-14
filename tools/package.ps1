@@ -22,7 +22,8 @@ $DevOnly = @("^\.gitignore$", "^docs/", "^tests/", "^tools/package\.ps1$")
 # examples shipped with the release (assets/ isn't tracked)
 $SampleAssets = @(
     "mge/assets/obj/force.tbm", "mge/assets/obj/katana.tbm", "mge/assets/obj/pins.tbm",
-    "mge/assets/obj/scooter.tbm", "mge/assets/player/car.tbm", "mge/assets/player/fat.tbm"
+    "mge/assets/obj/scooter.tbm", "mge/assets/player/car.tbm", "mge/assets/player/fat.tbm",
+    "mge/assets/atmo/pillars.atmo" # also makes the folder Export writes atmo pieces to
 )
 
 Push-Location $repo

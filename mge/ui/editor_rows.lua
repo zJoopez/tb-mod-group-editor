@@ -8,7 +8,8 @@ MGE.EditorRows = Rows
 
 local Widgets = MGE.Widgets
 local History = MGE.History
-local getSelected = MGE.ModData.getSelected
+local ModData = MGE.ModData
+local getSelected = ModData.getSelected
 
 ---@type table<string, UIElement[]> input fields by list name (pos, color, thrust...), filled by the builders
 Rows.inputs = {}
@@ -300,12 +301,14 @@ local function buildPropertyRows(holder, selected, entries)
     return inputs
 end
 
----Writes a prop on all selected objects and saves if any of them changed
+---Writes a prop on all selected objects (on the Atmo list the atmo objects) and saves if any of them
+---changed. Atmo objects aren't in the .tbm: no reload, the rows show the new value
 ---@param key string
 ---@param value string
 local function setSelectedProp(key, value)
     local changed = false
-    for _, v in ipairs(getSelected()) do
+    local atmo = MGE.Main and MGE.Main.listTab == "atmo"
+    for _, v in ipairs(ModData.getEditSelection()) do
         if v.props[key] ~= value then
             v.props[key] = value
             changed = true
@@ -313,7 +316,7 @@ local function setSelectedProp(key, value)
     end
     if not changed then return end
     History.commit()
-    MGE.apply()
+    if atmo then refreshProperties() else MGE.apply() end
 end
 
 

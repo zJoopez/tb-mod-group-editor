@@ -4,6 +4,8 @@
 -- second field joins each two
 -- neighbouring pieces: 1 joint between their centers, 2 at their edges like a door's hinges
 -- (ShapeGen.joints). Joined pieces are made dynamic, static ones wouldn't move at the joints
+-- On the Atmo list the same tab adds the pieces to the atmo (utils/atmo_layer.lua): no joints there,
+-- atmos have none
 local Rows = MGE.EditorRows
 local inwuts = Rows.inputs
 local formatHints = Rows.formatHints
@@ -18,12 +20,22 @@ local GENERATE_AMOUNT = 8
 local GENERATE_JOINTS = 0 -- joints between each two neighbouring pieces: 0, 1 or 2
 local GENERATE_ANGLE = 90
 
--- inwuts.generate indexes: Amount (pieces, joints), Gap, Angle, Size x y z, Increment x y z
-local FIELD = { amount = 1, joints = 2, gap = 3, angle = 4, size = 4, increment = 7 } -- size / increment: + axis
+-- inwuts.generate indexes: Gap, Angle, Size x y z, Increment x y z
+local FIELD = { gap = 1, angle = 2, size = 2, increment = 5 } -- size / increment: + axis
+-- inwuts.generateAmount (a rebuilt row): pieces, and joints on the Objects list only (atmos have none)
+local AMOUNT, JOINTS = 1, 2
+---@type boolean? the list the Amount row was built for (true: Atmo, no joints field), nil before it's built
+local amountForAtmo = nil
+local keptJoints = "" -- the joints field's text while the Atmo list's row (without it) is shown
 local MAX_GENERATE = 200 -- more than any mod has room for, stops a typo from planning thousands
 
 ---@type GenerateAlign kept while the script runs
 local align = "out"
+
+---@return boolean the Atmo list is shown: the pieces go to the atmo, without joints
+local function forAtmo()
+    return MGE.Main ~= nil and MGE.Main.listTab == "atmo"
+end
 
 ---@return number[] sides of the default object (ui/assets.lua), what empty Size fields use
 local function defaultSides()
@@ -83,10 +95,13 @@ end
 ---@return number[] center where the shape is, Pos-row style
 ---@return GenerateJoint[] joints between neighbouring pieces, where they end up
 local function planFromFields(factors)
-    local fields = inwuts.generate or {}
-    local function typed(i) return fields[i] and not fields[i].destroyed and tonumber(fields[i].textfieldstr[1]) end
-    local amount = math.floor((typed(FIELD.amount) or GENERATE_AMOUNT) + 0.5)
-    local perPair = math.floor((typed(FIELD.joints) or GENERATE_JOINTS) + 0.5)
+    local function reader(fields)
+        return function(i) return fields[i] and not fields[i].destroyed and tonumber(fields[i].textfieldstr[1]) end
+    end
+    local typed, typedAmount = reader(inwuts.generate or {}), reader(inwuts.generateAmount or {})
+    local amount = math.floor((typedAmount(AMOUNT) or GENERATE_AMOUNT) + 0.5)
+    local perPair = math.floor((typedAmount(JOINTS) or GENERATE_JOINTS) + 0.5)
+    if forAtmo() then perPair = 0 end -- atmos have no joints (the row has no joints field there)
     local sides, increment = defaultSides(), {}
     for i = 1, 3 do
         local value = typed(FIELD.size + i)
@@ -162,6 +177,7 @@ end
 local function fieldsKey()
     ---@type string[]
     local parts = { align .. "#" .. anchorVersion, table.concat(moved, ",") }
+    addTexts(inwuts.generateAmount, parts)
     addTexts(inwuts.generate, parts)
     addTexts(inwuts.generatePos, parts)
     return table.concat(parts, "|")
@@ -205,10 +221,11 @@ local function replan()
     followPreview()
 end
 
----@return boolean the Generate tab is open on the Objects list in MGE's shown window, its preview is drawn
+---@return boolean the Generate tab is open on the Objects or Atmo list in MGE's shown window, its preview is drawn
 local function tabOpen()
     local Main = MGE.Main
-    return Main.activeTab == "generate" and Main.listTab == "objects" and inwuts.generate ~= nil
+    return Main.activeTab == "generate" and (Main.listTab == "objects" or Main.listTab == "atmo")
+        and inwuts.generate ~= nil
         and Main.window ~= nil and Main.window.displayed == true
 end
 
@@ -221,6 +238,12 @@ MGE.Highlight.preview = function()
     if not previewShown then -- the tab just opened: the shape goes where the camera looks now
         previewShown = true
         anchorToView() -- a new key: planned again below, and the camera looks at it
+    end
+    -- the Amount row was built for the other list (the tab is shared): joints field there or not
+    if amountForAtmo ~= forAtmo() then
+        local joints = (inwuts.generateAmount or {})[JOINTS]
+        if joints and not joints.destroyed then keptJoints = joints.textfieldstr[1] or "" end
+        Rows.refreshBlocks({ "generateAmount" })
     end
     if fieldsKey() ~= previewKey then replan() end
     if liveFactors and previewPieces then -- a Scale drag: the shape as it would be, planned each frame
@@ -320,12 +343,35 @@ MGE.Gizmo.previewTarget = function(mode)
     }
 end
 
+---The pieces as atmo objects, the default object's look lines (as the Atmo list's New makes them)
+---@param pieces GeneratePiece[]
+---@return FileParserEnvObj[]
+local function atmoPieces(pieces)
+    local objects = {}
+    for i, piece in ipairs(pieces) do
+        local all = MGE.Assets.defaultProps()
+        local obj = { kind = "atmo", id = i, props = { shape = all.shape, color = all.color } }
+        Transforms.writeVector(obj, "pos", piece.pos)
+        Transforms.writeVector(obj, "rot", piece.rot)
+        Transforms.writeVector(obj, "sides", piece.sides)
+        objects[i] = obj
+    end
+    return objects
+end
+
 ---Generate button / Enter: adds the shape, made of the default object: static, or dynamic when joints
----join the pieces (static ones wouldn't move at the joints). The joints come in the same undo step
+---join the pieces (static ones wouldn't move at the joints). The joints come in the same undo step.
+---On the Atmo list the pieces go to the atmo instead (one undo step, no reload)
 local function generate()
     local pieces, note, _, joints = planFromFields()
     -- what the preview shows is what's added: say why it's one object instead of the shape
     if note then echo("^04[MGE] Generate: " .. note .. ", added one default object instead") end
+    if forAtmo() then
+        if MGE.Assets.addAtmo(atmoPieces(pieces), false) then
+            previewKey, previewPieces, previewAnchors = fieldsKey(), nil, nil
+        end
+        return
+    end
 
     local objects = {}
     for i, piece in ipairs(pieces) do
@@ -367,7 +413,30 @@ local function buildAlign(holder)
         "Center: middles, Increment Y, Z 0.3: pyramid.")
 end
 
----Generate panel: amount, gap, angle, piece size and increment. Nothing depends on the selection,
+---Amount row (rebuilt: the tab is on both lists): pieces, and on the Objects list the joints between
+---each two neighbours. The Atmo list has no joints field, atmos have no joints
+---@param holder UIElement
+local function buildAmount(holder)
+    Rows.begin()
+    amountForAtmo = forAtmo()
+    local pieces = "Pieces in the shape, max " .. MAX_GENERATE .. " (1, or values that\ncan't make a shape: one default object)"
+    if amountForAtmo then
+        inwuts.generateAmount = createInputRow("Amount", holder, function() generate() end, { GENERATE_AMOUNT .. " obj" },
+            pieces .. ".\nEnter in any field generates.")
+    else
+        inwuts.generateAmount = createInputRow("Amount", holder, function() generate() end,
+            { GENERATE_AMOUNT .. " obj", GENERATE_JOINTS .. " joint" },
+            pieces .. ",\nand joints between each two\n" ..
+            "neighbours: 1 between their centers, 2 at their\n" ..
+            "edges (a hinge). Joined pieces are made dynamic.\n" ..
+            "Enter in any field generates.")
+        local joints = inwuts.generateAmount[JOINTS]
+        if keptJoints ~= "" then joints.textfieldstr[1], joints.textfieldindex = keptJoints, #keptJoints end
+        keptJoints = "" -- back in the field: later rebuilds (selection changes) keep the field's own text
+    end
+end
+
+---Generate panel: gap, angle, piece size and increment. Nothing depends on the selection,
 ---placeholders show the values empty fields use
 ---@param holder UIElement
 local function buildGenerate(holder)
@@ -377,11 +446,6 @@ local function buildGenerate(holder)
     local function add(row)
         for _, input in ipairs(row) do table.insert(inputs, input) end
     end
-    add(createInputRow("Amount", holder, apply, { GENERATE_AMOUNT .. " obj", GENERATE_JOINTS .. " joint" },
-        "Pieces in the shape, max " .. MAX_GENERATE .. " (1, or values that\ncan't make a shape: one default object),\nand joints between each two\n" ..
-        "neighbours: 1 between their centers, 2 at their\n" ..
-        "edges (a hinge). Joined pieces are made dynamic.\n" ..
-        "Enter in any field generates."))
     add(createInputRow("Gap", holder, apply, { "0.00" }, "Space between pieces, negative overlaps."))
     add(createInputRow("Angle", holder, apply, { tostring(GENERATE_ANGLE) },
         "Total bend: 0 line, 90 quarter pipe, 360 loop."))
@@ -411,19 +475,21 @@ local function buildButtons(holder)
         { label = "Generate", active = false, onClick = generate },
         { label = "To view", active = false, onClick = toView },
     }, "Generate: adds the orange preview (static pieces, or\ndynamic ones joined) and selects them.\n" ..
-        "To view: moves the preview in front of the camera\n(also done when this tab opens), clears Position.")
+        "To view: moves the preview in front of the camera\n(also done when this tab opens), clears Position.\n" ..
+        "On the Atmo list the pieces go to the atmo.")
 end
 
 
 ---@type EditorPanelModule
 return {
     fixed = {
-        { build = buildGenerate, panel = "generate", row = 1, rows = 5 },
+        { build = buildGenerate, panel = "generate", row = 2, rows = 4 },
         { build = buildButtons, panel = "generate", row = 7, rows = 1 },
     },
     blocks = {
         { name = "generateAlign", build = buildAlign, panel = "generate", row = 0, rows = 1 },
+        { name = "generateAmount", build = buildAmount, panel = "generate", row = 1, rows = 1 },
         { name = "generatePos", build = buildPosition, panel = "generate", row = 6, rows = 1 },
     },
-    inputs = { fixed = { "generate" }, rebuilt = { "generatePos" } },
+    inputs = { fixed = { "generate" }, rebuilt = { "generateAmount", "generatePos" } },
 }

@@ -5,6 +5,10 @@
 -- click adds / removes it (ModData.clickSelect, Main.selectPlayer, Main.selectJoint, like the lists).
 -- Objects don't switch away from the Joints list: its Link tab picks them for the current slot's draft
 -- (Joints.offerDraft), on Properties one starts a new joint in the lowest empty slot.
+-- Atmo objects (utils/atmo_layer.lua) are picked on the Objects list (ghosts) and the Atmo list (in color),
+-- the other lists don't show them. Like other kinds, one clicked from the Objects list switches to the
+-- Atmo list with only it selected, an object clicked on the Atmo list back to Objects. A box selects the
+-- shown list's own kind.
 --
 -- Shift + drag draws a box and adds what's in it to the current list's selection (no list switch):
 -- objects any of its rays hits (a grid of rays over the box plus one through every object center in
@@ -231,6 +235,57 @@ local function objectShape(id)
     return { center = center, radius = length(half), hit = function(o, d) return hitBox(o, d, center, axes, half) end }
 end
 
+---An atmo object's ghost (utils/atmo_layer.lua, AtmoLayer.ghost) as a shape for ray tests: the shape as
+---it's drawn (its frame's columns are its axes, like a drawn object's rotation)
+---@param obj FileParserEnvObj an atmo object
+---@return WorldSelectShape?
+local function ghostShape(obj)
+    local g = MGE.AtmoLayer.ghost(obj)
+    if not g then return nil end
+    local f, s = g.frame, g.sides
+    local center = { g.pos[1], g.pos[2], g.pos[3] }
+    local axes = { { f[1][1], f[2][1], f[3][1] }, { f[1][2], f[2][2], f[3][2] }, { f[1][3], f[2][3], f[3][3] } }
+    local shape
+    if g.shape == "sphere" then -- x radius
+        shape = { center = center, radius = s[1], hit = function(o, d) return hitSphere(o, d, center, s[1]) end }
+    elseif g.shape == "cylinder" then -- a pill: x radius, y length of the straight part along local z
+        local halfAxis = scale(axes[3], s[2] / 2)
+        local a, b = sub(center, halfAxis), add(center, halfAxis)
+        shape = { center = center, radius = s[2] / 2 + s[1], hit = function(o, d) return hitCapsule(o, d, a, b, s[1]) end }
+    else
+        local half = { s[1] / 2, s[2] / 2, s[3] / 2 }
+        shape = { center = center, radius = length(half), hit = function(o, d) return hitBox(o, d, center, axes, half) end }
+    end
+    shape.obj = obj
+    return shape
+end
+
+---Atmo objects can be picked: the Objects list draws them as ghosts, the Atmo list in color
+---(utils/highlight.lua)
+---@return boolean
+local function atmoListed()
+    local tab = MGE.Main and MGE.Main.listTab
+    return tab == "objects" or tab == "atmo"
+end
+
+---Atmo object whose ghost is under the screen position, nearest along the camera ray. Must be
+---called from draw3d. Every ghost counts
+---@param x number
+---@param y number
+---@return FileParserEnvObj?
+---@return number? distance along the ray
+function WorldSelect.pickAtmo(x, y)
+    local origin, dir = WorldSelect.cameraRay(x, y)
+    if not origin or not dir then return nil end
+    local best, bestT = nil, math.huge
+    for _, obj in ipairs(ModData.parsed.atmo or {}) do
+        local shape = ghostShape(obj)
+        local t = shape and shape.hit(origin, dir)
+        if t and t < bestT then best, bestT = obj, t end
+    end
+    return best, best and bestT
+end
+
 ---Whether the ray can reach the sphere at all (cheap test before the exact shape)
 local function nearSphere(origin, dir, center, radius)
     local ox, oy, oz = origin[1] - center[1], origin[2] - center[2], origin[3] - center[3]
@@ -339,11 +394,16 @@ end
 ---@param x number
 ---@param y number
 ---@return "joint"|"player"|"object"|nil kind
----@return any hit FileParserEnvObjJoint / player id (0-based) / FileParserEnvObj
+---@return any hit FileParserEnvObjJoint / player id (0-based) / FileParserEnvObj (an object, or on the
+---Objects list an atmo one: its ghost, AtmoLayer.isAtmo tells)
 function WorldSelect.pickAny(x, y)
     local joint = WorldSelect.pickJoint(x, y, MGE.Main.listTab ~= "joints")
     if joint then return "joint", joint end
     local obj, objT = WorldSelect.pick(x, y)
+    if atmoListed() then -- the nearer of an object and a ghost
+        local ghost, ghostT = WorldSelect.pickAtmo(x, y)
+        if ghost and (not obj or ghostT < objT) then obj, objT = ghost, ghostT end
+    end
     local player, playerT = WorldSelect.pickPlayer(x, y)
     if player and (not obj or playerT < objT) then return "player", player end
     if obj then return "object", obj end
@@ -366,6 +426,7 @@ end
 ---Objects the rays through a screen box hit: a grid of rays over it plus one through every object
 ---center inside it (small objects between the grid's rays), each ray takes only the nearest object, so
 ---objects hidden behind others aren't taken. Must be called from draw3d
+---On the Objects list atmo objects' ghosts count too (ids aren't unique then: the order is loose)
 ---@return FileParserEnvObj[] in id order
 function WorldSelect.pickBox(x1, y1, x2, y2)
     local p = WorldSelect.measureProjection()
@@ -377,6 +438,11 @@ function WorldSelect.pickBox(x1, y1, x2, y2)
         if s then
             s.obj = obj
             shapes[#shapes + 1] = s
+        end
+    end
+    if atmoListed() then -- the ghosts too, they hide what's behind them like objects do
+        for _, obj in ipairs(ModData.parsed.atmo or {}) do
+            shapes[#shapes + 1] = ghostShape(obj)
         end
     end
     local points = {}
@@ -569,6 +635,20 @@ end
 ---@param additive boolean
 local function clickObject(obj, additive)
     local Main = MGE.Main
+    if obj.kind == "atmo" then
+        -- an atmo object: the usual click select on the Atmo list, from the Objects list it switches there
+        -- with only that one selected
+        if Main.listTab == "atmo" then
+            local selected = ModData.clickSelect(obj, additive)
+            Main.updateWindow()
+            if selected then MGE.Camera.followSelection() end
+        else
+            for _, other in ipairs(ModData.parsed.atmo) do other.selected = nil end
+            obj.selected = true
+            Main.setListTab("atmo")
+        end
+        return
+    end
     if Main.listTab == "joints" then
         local slot = linkSlot()
         if slot then MGE.Joints.offerDraft(slot, obj.id) else startNewJoint(obj) end
@@ -616,10 +696,15 @@ end
 ---@param b { x1: number, y1: number, x2: number, y2: number }
 local function boxSelect(b)
     local Main = MGE.Main
-    if Main.listTab == "objects" then
-        local objects = WorldSelect.pickBox(b.x1, b.y1, b.x2, b.y2)
-        if not objects[1] then return end
-        for _, obj in ipairs(objects) do obj.selected = true end
+    if Main.listTab == "objects" or Main.listTab == "atmo" then
+        -- the shown list's layer: objects, or the atmo objects (ghosts in front still hide what's behind)
+        local atmo, any = Main.listTab == "atmo", false
+        for _, obj in ipairs(WorldSelect.pickBox(b.x1, b.y1, b.x2, b.y2)) do
+            if (obj.kind == "atmo") == atmo then
+                obj.selected, any = true, true
+            end
+        end
+        if not any then return end
         Main.updateWindow() -- list checkboxes and editor values follow the selection
         MGE.Camera.followSelection()
     elseif Main.listTab == "players" then

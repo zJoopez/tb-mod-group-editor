@@ -56,10 +56,10 @@ local FIELDS = {
         info = "Toribash units per map unit.\nSource: a player is 72 units, a tori about 2.5." },
     { label = "Budget", keys = { "budget" }, hints = { tostring(freeIds()) },
         info = "Most boxes added as objects, the biggest surfaces\nfirst. Empty: all " .. freeIds() ..
-            " object ids free in this mod.\n0: only parked boxes, the object ids stay free." },
-    { label = "Parked", keys = { "parked" }, hints = { "0" },
-        info = "Boxes after the Budget's that are parked (drawn\nonly, no collisions, Advanced > Export atmo), " ..
-            "the\nsmaller ones. Up to " .. MGE.Parking.room() .. ". Empty: none." },
+            " object ids free in this mod.\n0: every box to the atmo, the object ids stay free." },
+    { label = "Atmo", keys = { "atmo" }, hints = { "0" },
+        info = "Boxes after the Budget's added to the atmo (drawn\nonly, no collisions, the Atmo list), " ..
+            "the\nsmaller ones. Up to " .. MGE.AtmoLayer.room() .. ". Empty: none." },
     { label = "Min size", keys = { "minSize" }, hints = { tostring(DEFAULTS.minSize) },
         info = "Brushes smaller than this on every side are\nleft out (trims, details). Map units." },
     { label = "Terrain tol.", keys = { "terrainTolerance" }, hints = { tostring(DEFAULTS.terrainTolerance) },
@@ -87,8 +87,10 @@ local inputs = {}
 
 local defaultKillAction = overlay.killAction
 overlay.killAction = function()
+    -- kept for the next opening (the placement view's Settings, the Map row). Not skipped for destroyed
+    -- inputs: UIElement:kill destroys the children before this runs, their text is still there
     for key, input in pairs(inputs) do
-        if not input.destroyed then state.texts[key] = input.textfieldstr[1] end
+        if input.textfieldstr then state.texts[key] = input.textfieldstr[1] or "" end
     end
     remove_hooks(RUN_HOOK) -- a conversion waiting to run is dropped with the overlay
     if defaultKillAction then defaultKillAction() end
@@ -245,14 +247,14 @@ local function readOptions()
     if simplifyTolerance and simplifyTolerance < 0 then return nil, "Simplify tol. can't be below 0" end
     options.simplifyTolerance = simplifyTolerance
     if scale and scale <= 0 then return nil, "Scale must be above 0" end
-    local free, room = freeIds(), MGE.Parking.room()
-    -- objects first, then the parked ones (Assets.addObjects' parkExcess: the boxes after objectBudget)
-    budget = math.floor(budget or free) -- empty: every free object id, 0: only parked boxes
+    local free, room = freeIds(), MGE.AtmoLayer.room()
+    -- objects first, then the atmo ones (Assets.addObjects' atmoExcess: the boxes after objectBudget)
+    budget = math.floor(budget or free) -- empty: every free object id, 0: every box to the atmo
     if budget < 0 or budget > free then return nil, "Budget must be 0-" .. free .. " (free object ids)" end
-    local parked = math.floor(typed("parked") or 0) -- empty: none
-    if parked < 0 or parked > room then return nil, "Parked must be 0-" .. room .. " (" .. MGE.Parking.maxParked .. " at most)" end
-    if budget + parked < 1 then return nil, "Budget and Parked are both 0" end
-    options.scale, options.budget, options.minSize = scale, budget + parked, minSize
+    local atmoCount = math.floor(typed("atmo") or 0) -- empty: none
+    if atmoCount < 0 or atmoCount > room then return nil, "Atmo must be 0-" .. room .. " (" .. MGE.AtmoLayer.maxAtmo .. " at most)" end
+    if budget + atmoCount < 1 then return nil, "Budget and Atmo are both 0" end
+    options.scale, options.budget, options.minSize = scale, budget + atmoCount, minSize
     options.objectBudget = budget
     -- region, anchor and yaw are picked in the placement view
     return options
@@ -349,7 +351,7 @@ local function place(options)
             -- run by the view once it's closed and MGE's window is shown again
             return function()
                 -- new ids, selected, one undo step, kept in place. The boxes after objectBudget (the
-                -- smallest, the converter's order) are parked
+                -- smallest, the converter's order) go to the atmo
                 MGE.Assets.addObjects(result.objects, false, false, nil, opts.objectBudget or true)
                 for _, line in ipairs(MapConv.reportLines(result.report)) do echo("^04[MGE] " .. line) end
             end

@@ -310,9 +310,9 @@ Measured: office's 8 sheets float on 75–100% and are open on 97–100%. Nuke's
 
 Sky clips left out, whole maps: office 0 → 8, nuke 22, dust2 5 → 11, inferno 15 → 16, mirage 3 → 9, overpass 5 → 9, train 16, cache 13 → 28, ancient 11, vertigo 2. Times unchanged.
 
-### Parking the excess (2026-11-13)
+### AtmoLayer the excess (2026-11-13)
 
-The overlay's Budget may go above the mod's free object ids, up to the free ids plus the room left for parked objects (`Parking.maxParked`, 512). Convert adds the boxes in the converter's order (most important first): the first ones get the free ids, the rest become parked objects (`utils/parking.lua`: kept in the mod file as comments, drawn by MGE, exportable as an atmo without collisions). The placement view draws the boxes that will be parked in purple and counts them in the bar. Imports that don't ask for it (`Assets.addObjects`' `parkExcess`) stay all or nothing.
+The overlay's Budget may go above the mod's free object ids, up to the free ids plus the room left for parked objects (`AtmoLayer.maxAtmo`, 512). Convert adds the boxes in the converter's order (most important first): the first ones get the free ids, the rest become parked objects (`utils/atmo_layer.lua`: kept in the mod file as comments, drawn by MGE, exportable as an atmo without collisions). The placement view draws the boxes that will be parked in purple and counts them in the bar. Imports that don't ask for it (`Assets.addObjects`' `atmoExcess`) stay all or nothing.
 
 ### Clip colors (the user: clips hold a big share of the core geometry, 2026-11-13)
 

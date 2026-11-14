@@ -14,7 +14,8 @@ end
 
 local FILES = {
     "test_file_handler.lua",
-    "test_parking.lua",
+    "test_atmo_layer.lua",
+    "test_atmo.lua",
     "test_mat3.lua",
     "test_scroll_list.lua",
     "test_mapconv.lua",
@@ -71,7 +72,7 @@ Files = {
 }
 
 for _, module in ipairs({ "utils/mat3.lua", "utils/file_handler.lua", "utils/mod_export.lua",
-    "utils/history.lua", "utils/parking.lua", "mapconv/vmf.lua", "mapconv/bsp.lua", "mapconv/brush.lua", "mapconv/boxfit.lua",
+    "utils/history.lua", "utils/atmo_layer.lua", "utils/atmo.lua", "mapconv/vmf.lua", "mapconv/bsp.lua", "mapconv/brush.lua", "mapconv/boxfit.lua",
     "mapconv/merge.lua", "mapconv/convert.lua", "ui/scroll_list.lua" }) do
     dofile(MGE.scriptPath .. module)
 end

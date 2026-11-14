@@ -224,23 +224,23 @@ end
 ---@param inView boolean? move them in front of the camera first (imports, New), otherwise they keep
 ---their positions (Generate places its own)
 ---@param jointIds integer[]? ids for the asset's joints in order (newPair: the Link tab's slot)
----@param parkExcess (boolean|integer)? objects past the free ids are parked (utils/parking.lua) instead of
+---@param atmoExcess (boolean|integer)? objects past the free ids go to the atmo (utils/atmo_layer.lua) instead of
 ---the import failing: the last ones, so objects should come most important first (the map converter's
----do). A number: only that many become objects (at most the free ids), the rest are parked
+---do). A number: only that many become objects (at most the free ids), the rest go to the atmo
 ---@return boolean added
-local function importObjects(parser, keepTab, inView, jointIds, parkExcess)
+local function importObjects(parser, keepTab, inView, jointIds, atmoExcess)
     -- only joints with both objects in the asset are imported, so only those objects need low ids
     local linkedJoints = Joints.getLinked(Joints.idSet(parser.env_obj), parser.env_obj_joint)
     if not Joints.haveRoom(#linkedJoints) then return false end
     local linkedIds = Joints.getObjectIds(linkedJoints)
-    ---@type FileParserEnvObj[] the ones that get parked, in order
+    ---@type FileParserEnvObj[] the ones that go to the atmo, in order
     local excess = {}
-    if parkExcess and #linkedJoints == 0 then
+    if atmoExcess and #linkedJoints == 0 then
         local free = #ModData.freeIds.static + #ModData.freeIds.nonStatic
-        if type(parkExcess) == "number" then free = math.max(0, math.min(free, parkExcess)) end
+        if type(atmoExcess) == "number" then free = math.max(0, math.min(free, atmoExcess)) end
         local over = #parser.env_obj - free
-        if over > MGE.Parking.room() then
-            print("Not enough room: " .. over .. " objects to park, " .. MGE.Parking.room() .. " more can be parked")
+        if over > MGE.AtmoLayer.room() then
+            print("Not enough room: " .. over .. " objects for the atmo, " .. MGE.AtmoLayer.room() .. " more fit there")
             return false
         end
         for _ = 1, over do table.insert(excess, 1, table.remove(parser.env_obj)) end
@@ -259,7 +259,7 @@ local function importObjects(parser, keepTab, inView, jointIds, parkExcess)
     for _, obj in ipairs(ModData.parsed.env_obj) do
         obj.selected = nil
     end
-    for _, obj in ipairs(ModData.parsed.parked) do
+    for _, obj in ipairs(ModData.parsed.atmo) do
         obj.selected = nil
     end
 
@@ -271,11 +271,11 @@ local function importObjects(parser, keepTab, inView, jointIds, parkExcess)
         idMap[assetObj.id] = newId
     end
     local importedJoints = Joints.copyLinked(parser.env_obj_joint, idMap, jointIds)
-    local parked = {}
+    local atmoObjs = {}
     for i, assetObj in ipairs(excess) do
-        parked[i] = { kind = "env_obj", id = 0, props = ModData.copy(assetObj.props) }
+        atmoObjs[i] = { kind = "env_obj", id = 0, props = ModData.copy(assetObj.props) }
     end
-    MGE.Parking.add(parked)
+    MGE.AtmoLayer.add(atmoObjs)
 
     ModData.sortObjects()
     History.commit()
@@ -285,7 +285,7 @@ local function importObjects(parser, keepTab, inView, jointIds, parkExcess)
     MGE.focusAfterReload = true
     MGE.apply() -- the reload refreshes the window
     print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints" ..
-        (#parked > 0 and (", " .. #parked .. " parked") or ""))
+        (#atmoObjs > 0 and (", " .. #atmoObjs .. " atmo objects") or ""))
     return true
 end
 
@@ -423,10 +423,129 @@ end
 ---@param inView boolean? see importObjects
 ---@param joints FileParserEnvObjJoint[]? joints between the objects (their obj1 / obj2 are the objects'
 ---ids here), they get new ids with them (Generate's joined pieces)
----@param parkExcess (boolean|integer)? see importObjects (map conversions)
+---@param atmoExcess (boolean|integer)? see importObjects (map conversions)
 ---@return boolean added
-function assetsView.addObjects(objects, keepTab, inView, joints, parkExcess)
-    return importObjects({ env_obj = objects, env_obj_joint = joints or {}, ignores = {} }, keepTab, inView, nil, parkExcess)
+function assetsView.addObjects(objects, keepTab, inView, joints, atmoExcess)
+    return importObjects({ env_obj = objects, env_obj_joint = joints or {}, ignores = {} }, keepTab, inView, nil, atmoExcess)
+end
+
+-- Atmo pieces (the Atmo list's Import / Export, utils/atmo.lua): .atmo files. Export writes the selected atmo
+-- objects to assets/atmo, Import reads one from there or from data/atmospheres (the game's atmos and the
+-- players' own). They're added to the atmo layer as they are: their lines, names (parent lines) and
+-- positions, an atmo's own colors (0-2 or 0-256) untouched. No reload: atmo objects aren't in the .tbm
+local ATMO_DIR = ASSET_DIR .. "/atmo"
+local ATMO_ROOTS = {
+    { root = "data/script/" .. ATMO_DIR, label = "assets/atmo" },
+    { root = "data/atmospheres", label = "data/atmospheres" },
+}
+---@type string? last imported .atmo, relative to its root
+local lastAtmo = nil
+
+---Adds atmo objects to the atmo layer, selected (the others not), one undo step
+---@param objects FileParserEnvObj[] atmo objects (their lines as they'll be written)
+---@param inView boolean? moved in front of the camera first, keeping their layout
+---@return boolean added
+local function addAtmo(objects, inView)
+    if #objects == 0 then return false end
+    local room = MGE.AtmoLayer.room()
+    if #objects > room then
+        echo("^04[MGE] " .. #objects .. " atmo objects, room for " .. room .. " (Settings > Most atmo objects)")
+        return false
+    end
+    if inView then placeInView({ env_obj = objects, env_obj_joint = {}, ignores = {} }) end
+    local layer = ModData.parsed.atmo
+    for _, obj in ipairs(layer) do obj.selected = nil end
+    for _, obj in ipairs(objects) do
+        obj.kind, obj.selected = "atmo", true
+        layer[#layer + 1] = obj
+        obj.id = #layer
+    end
+    History.commit()
+    Main.updateWindow()
+    MGE.Camera.followSelection()
+    return true
+end
+assetsView.addAtmo = addAtmo -- Generate on the Atmo list (ui/editor_generate.lua)
+
+---New on the Atmo list: a default box in front of the camera, in the atmo (its look lines only)
+function assetsView.newAtmo()
+    local all = assetsView.defaultProps()
+    local props = { shape = all.shape, pos = all.pos, rot = all.rot, sides = all.sides, color = all.color }
+    addAtmo({ { kind = "atmo", id = 1, props = props } }, true)
+end
+
+---Import on the Atmo list: picks an .atmo from assets/atmo or data/atmospheres, its objects join the atmo
+---where the file has them. The file's own lines (shader, opt...) become the atmo's when it has none yet
+function assetsView.openAtmoImport()
+    MGE.FilePicker.open({
+        title = "Import Atmo",
+        roots = ATMO_ROOTS,
+        extension = "atmo",
+        keepExtension = true,
+        selected = lastAtmo,
+        confirmLabel = "Import",
+        emptyText = "No .atmo files here. Export (Atmo list) saves to assets/atmo",
+        onConfirm = function(path, root)
+            if path:find("%.%.") then return end
+            lastAtmo = path
+            -- Files paths start at data/script, ../ at the Toribash folder
+            local filePath = root == ATMO_ROOTS[1].root and (ATMO_DIR .. "/" .. path) or ("../data/atmospheres/" .. path)
+            local file = Files.Open(filePath, FILES_MODE_READONLY)
+            if not file or not file.data then
+                echo("^04[MGE] couldn't read " .. path)
+                return
+            end
+            local lines = file:readAll()
+            file:close()
+            local atmo = MGE.Atmo.parse(lines)
+            if #atmo.objects == 0 then
+                echo("^04[MGE] no objects in " .. path)
+                return
+            end
+            local state = MGE.Atmo.state
+            local headerTaken = #atmo.header > 0 and #state.header == 0
+            if addAtmo(atmo.objects, false) then
+                if headerTaken then state.header = atmo.header end
+                echo("^04[MGE] imported " .. #atmo.objects .. " atmo objects from " .. path ..
+                    (headerTaken and " (with its shader / options lines)" or ""))
+            end
+        end,
+    })
+end
+
+---Export on the Atmo list: the selected atmo objects as an .atmo in assets/atmo, as they are
+function assetsView.exportAtmo()
+    local selected = ModData.getSelectedAtmo()
+    if #selected == 0 then
+        echo("^04[MGE] select the atmo objects to export first")
+        return
+    end
+    MGE.saveOverlayContext = {
+        title = "Atmo Piece Name",
+        placeholder = "Enter a name",
+        defaultName = "",
+        sanitize = function(name) return (sanitizeAssetName(name):gsub("%.tbm$", ".atmo")) end,
+        validate = function(name)
+            if name == "" then return false, "Enter a name" end
+            return true
+        end,
+        onSave = function(name)
+            local fileName = sanitizeAssetName(name):gsub("%.tbm$", ""):gsub("%.atmo$", "") .. ".atmo"
+            local path = ATMO_DIR .. "/" .. fileName
+            local file = Files.Open(path, FILES_MODE_WRITE)
+            if not file or not file.data then
+                echo("^04[MGE] couldn't write assets/atmo/" .. fileName)
+                return false
+            end
+            local text = MGE.Atmo.text({ objects = selected })
+            for line in (text .. "\n"):gmatch("(.-)\n") do file:writeLine(line) end
+            file:close()
+            lastAtmo = fileName
+            echo("^04[MGE] saved assets/atmo/" .. fileName .. " (" .. #selected .. " atmo objects)")
+            return true
+        end,
+    }
+    dofile(MGE.scriptPath .. "ui/save_overlay.lua")
 end
 
 ---New button of the object list: adds DEFAULT_OBJECT in front of the camera, like an import

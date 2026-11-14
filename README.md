@@ -21,7 +21,7 @@ The window has three lists, each with its own tabs.
 
 | List | Tabs |
 |---|---|
-| **Objects** | **Core**: position, rotation, scale, color, mass, shape, visibility. **Advanced**: friction, bounce, flags, model, reindexing ids, map import, parked objects. **Thrust**: frames, direction, axes. **Generate**: rows, rings and grids of new objects. |
+| **Objects** | **Core**: position, rotation, scale, color, mass, shape, visibility. **Advanced**: friction, bounce, flags, model, reindexing ids, map import, To atmo. **Thrust**: frames, direction, axes. **Generate**: rows, rings and grids of new objects. |
 | **Joints** | **Link**: the two objects a joint connects. **Properties**: position, axis, range, strength, velocity, type. |
 | **Players** | Start position, rotation, scale and body parts of each player. |
 
@@ -49,20 +49,38 @@ lua5.1 mge/tools/mapconv.lua <map.vmf|map.bsp> [options]
 
 `--help` lists the options. The result goes to `assets/obj`, and Import keeps its position.
 
-### Parked objects and atmospheres (experimental)
+### Atmo: scenery beyond 256 objects (experimental)
 
-A mod holds 256 objects. To build scenery beyond that, park objects: Advanced tab → **Park** takes the
-selected objects out of the game and frees their ids. Parked objects stay in the mod file as comments
-the game skips, and MGE draws them faint. They're listed after the objects as P1, P2…
+A mod holds 256 objects. Scenery beyond that goes in the mod's **atmo**: objects the game draws without
+collisions. Players load an atmo themselves (main menu → Shaders & Atmos → Atmos); it doesn't come with
+the mod.
 
-- **Unpark** brings selected parked objects back while there are free ids. To edit a parked object,
-  unpark it, edit, and park it again. Objects joined by a joint can't be parked.
+- **The Atmo list** (next to Objects) shows the atmo objects as A1, A2… with the same grid and bottom bar:
+  - **New** adds a box in front of the camera, **Duplicate** and **Delete** work on the selected ones.
+  - **Import** reads an `.atmo` from `assets/atmo` or `data/atmospheres` (the game's atmos and your own)
+    and adds its objects where the file has them. **Export** writes the selected ones to `assets/atmo`.
+  - On this list the atmo objects are drawn in their own color and the mod's objects turn see-through.
+- **Editing:** the **Core** tab is the objects' Core tab (Pos, Rot, Scale, Color, Shape), on the selected
+  atmo objects. The gizmo, clicks and Shift + drag work the same. The **Atmo** tab has what only atmos have:
+  **Depth** (drawn on top), **Graphics** (the graphics levels it shows at), the lines MGE keeps without
+  editing them, **To objects** and **Save atmo**. The **Generate** tab works as on Objects, and its pieces
+  go to the atmo (no joints field there: atmos have none).
+- **To atmo** (Objects → Advanced) moves the selected objects into the atmo and frees their ids. **To
+  objects** moves atmo objects back while there are free ids. Objects joined by a joint stay.
+- **Saving:** Save keeps the atmo in `data/atmospheres/MGE - <mod>.atmo`, next to the mod, and opening the
+  mod reads it back. Save writes that file only when the atmo changed. If you remove every atmo object,
+  Save asks before emptying the file. Scripts can't delete files, so delete it by hand if you don't want it.
+  **Save atmo** writes it without saving the mod.
+- **The game's own atmo** is unloaded when MGE starts, so the saved copy loaded in game doesn't show on
+  top of the one you're editing. Your default atmo setting isn't changed.
+- **Drawing:** the game draws only so many shapes per frame, and how many depends on its graphics settings.
+  MGE draws every atmo object: in color on the Atmo list, as faint ghosts on the Objects list. The atmo
+  holds 256 by default, which leaves room for the mod's 256 objects and 256 more shapes (outlines, the
+  Generate preview, which is always drawn first). **Settings → Most atmo objects** raises it. Above 256
+  you may need lower graphics settings to see them all.
 - **Convert map** has two budgets: **Budget** is how many boxes become objects (up to the free ids),
-  **Parked** is how many more get parked (the smaller boxes), up to 512 parked in all. Budget 0 parks
-  every box and leaves the object ids free. The placement view draws parked boxes in purple.
-- **Export atmo** writes the parked objects to `data/atmospheres/MGE - <mod>.atmo`. The game draws
-  atmosphere objects but they don't collide. Players load the atmosphere themselves (main menu → Shaders &
-  Atmos → Atmos); it doesn't come with the mod.
+  **Atmo** is how many more go to the atmo (the smaller boxes). Budget 0 puts every box in the atmo and
+  leaves the object ids free. The placement view draws those boxes in purple.
 
 ## Keyboard shortcuts
 
@@ -73,8 +91,8 @@ the game skips, and MGE draws them faint. They're listed after the objects as P1
 | Shift + Z / Shift + Y | Undo / redo |
 | Ctrl + S | Save |
 | Ctrl + Shift + S | Save under another name |
-| Ctrl + A | Select / deselect all (objects, players or joints, whichever list is shown) |
-| Ctrl + N / Ctrl + D | New / duplicate (an object, player or joint, on the shown list) |
+| Ctrl + A | Select / deselect all (objects, atmo objects, players or joints, whichever list is shown) |
+| Ctrl + N / Ctrl + D | New / duplicate (an object, atmo object, player or joint, on the shown list) |
 | Delete | Delete the selection on the shown list (asks first) |
 | Esc | Close the open popup, prompt or overlay |
 

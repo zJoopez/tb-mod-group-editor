@@ -16,7 +16,6 @@ local Joints = MGE.Joints
 local Mat3 = MGE.Mat3
 local FileHandler = MGE.FileHandler
 local SHAPE = MGE.SHAPE
-local getSelected = ModData.getSelected
 local POS_ORIGIN = MGE.POS_ORIGIN
 
 -- defined further down, used by functions above them
@@ -34,21 +33,73 @@ Transforms.fileAngles = true
 ---@return number 1 or -1, multiplies the typed / shown angles into the math's right-handed ones
 local function angleSign() return Transforms.fileAngles and -1 or 1 end
 
+-- Atmo objects (kind "atmo", utils/atmo_layer.lua, utils/atmo.lua) go through the same functions: they're
+-- never in the world, everything about them comes from and goes to their lines. Their id is their place
+-- in the atmo list, never handed to get_obj_* / set_obj_* (it's another object's id there)
+
 ---@param obj FileParserEnvObj
----@return boolean the object exists in the world
+---@return boolean the object exists in the world (never an atmo object)
 local function inWorld(obj)
+    if obj.kind == "atmo" then return false end
     return get_obj_pos(obj.id - 1) ~= nil
 end
 
----Position from the pos line, the live position for objects without one
+---@param obj FileParserEnvObj
+---@return boolean the object has a place to work on: in the world, or an atmo object (its lines)
+local function present(obj)
+    return obj.kind == "atmo" or inWorld(obj)
+end
+
+---Position from the pos line, the live position for objects without one (atmo objects: 0 0 0)
 ---@param obj FileParserEnvObj
 ---@return number[]
 local function positionOf(obj)
     local x, y, z = (obj.props.pos or ""):match("(%S+)%s+(%S+)%s+(%S+)")
     x, y, z = tonumber(x), tonumber(y), tonumber(z)
     if x and y and z then return { x, y, z } end
+    if obj.kind == "atmo" then return { 0, 0, 0 } end
     return { get_obj_pos(obj.id - 1) }
 end
+
+---Sides: the game's live ones, an atmo object's sides line
+---@param obj FileParserEnvObj
+---@return number, number, number
+local function sidesOf(obj)
+    if obj.kind == "atmo" then
+        local s = {}
+        for n in tostring(obj.props.sides or ""):gmatch("%S+") do s[#s + 1] = tonumber(n) end
+        return s[1] or 1, s[2] or 1, s[3] or 1
+    end
+    return get_obj_sides(obj.id - 1)
+end
+
+---Shape (MGE.SHAPE): the game's, an atmo object's shape line
+---@param obj FileParserEnvObj
+---@return integer
+local function shapeIdOf(obj)
+    if obj.kind == "atmo" then
+        local name = tostring(obj.props.shape or "box"):match("^%s*(%a+)") or "box"
+        if name == "sphere" then return SHAPE.SPHERE end
+        if name == "cylinder" or name == "capsule" then return SHAPE.CAPSULE end
+        return SHAPE.BOX
+    end
+    return get_obj_shape(obj.id - 1)
+end
+
+---The objects that are in the world (atmo objects aren't): what joints and the game's live calls see
+---@param objects FileParserEnvObj[]
+---@return FileParserEnvObj[]
+local function worldOnly(objects)
+    local out = {}
+    for _, obj in ipairs(objects) do
+        if obj.kind ~= "atmo" then out[#out + 1] = obj end
+    end
+    return out
+end
+
+---What the rows work on (ModData.getEditSelection): the selected atmo objects on the Atmo list
+---@return FileParserEnvObj[]
+local function getSelected() return ModData.getEditSelection() end
 
 ---@param obj FileParserEnvObj
 ---@return number[] the rot line in radians, 0 0 0 without one
@@ -60,6 +111,7 @@ end
 ---Puts the object's live rotation back to its rot line (after the game tumbled it)
 ---@param obj FileParserEnvObj
 local function applyFileRotation(obj)
+    if not inWorld(obj) then return end
     local r = rotLine(obj)
     set_obj_rot(obj.id - 1, r[1], r[2], r[3])
 end
@@ -89,7 +141,7 @@ end
 ---@param posFn (fun(x: number, y: number, z: number): number, number, number)?
 ---@param axisFn (fun(x: number, y: number, z: number): number, number, number)?
 local function finishTransform(selected, posFn, axisFn)
-    local linked = Joints.getLinked(Joints.idSet(selected))
+    local linked = Joints.getLinked(Joints.idSet(worldOnly(selected))) -- atmo ids aren't object ids
     for _, joint in ipairs(linked) do
         if posFn then Joints.transformPos(joint, posFn) end
         if axisFn then Joints.transformAxis(joint, axisFn) end
@@ -106,7 +158,7 @@ local function getSelectionPivot(selectedObjects)
 
     local sumX, sumY, sumZ, count = 0, 0, 0, 0
     for _, obj in ipairs(selectedObjects) do
-        if inWorld(obj) then -- objects not in the world (yet) don't count
+        if present(obj) then -- objects not in the world (yet) don't count, atmo objects do
             local p = positionOf(obj)
             sumX, sumY, sumZ, count = sumX + p[1], sumY + p[2], sumZ + p[3], count + 1
         end
@@ -124,7 +176,7 @@ local function moveBy(selectedObjects, offsets)
     for _, v in ipairs(selectedObjects) do
         local p = positionOf(v)
         local pos = { move(p[1], p[2], p[3]) }
-        set_obj_pos(v.id - 1, pos[1], pos[2], pos[3])
+        if inWorld(v) then set_obj_pos(v.id - 1, pos[1], pos[2], pos[3]) end
         applyFileRotation(v) -- the whole object goes back to the file's state, not only its position
         writeVectorProperty(v, "pos", pos)
     end
@@ -221,8 +273,10 @@ local function rotBy(selectedObjects, offsets)
             rot[1], rot[2], rot[3],
             offsets[1], offsets[2], offsets[3]
         )
-        set_obj_rot(v.id - 1, math.rad(outRot[1]), math.rad(outRot[2]), math.rad(outRot[3]))
-        set_obj_pos(v.id - 1, outPos[1], outPos[2], outPos[3])
+        if inWorld(v) then
+            set_obj_rot(v.id - 1, math.rad(outRot[1]), math.rad(outRot[2]), math.rad(outRot[3]))
+            set_obj_pos(v.id - 1, outPos[1], outPos[2], outPos[3])
+        end
 
         writeVectorProperty(v, "rot", outRot)
         writeVectorProperty(v, "pos", outPos)
@@ -273,9 +327,10 @@ end
 ---@param sides number[]
 ---@param frame number[][] group frame, columns are the group axes
 ---@param scale number[] factors along the group axes
+---@param shapeName string? "box", "sphere" or "cylinder" (a pill): the shape line's, for objects not in
+---the world (atmo objects); nil asks the game
 ---@return number[]
-local function scaleSides(obj, sides, frame, scale)
-    local id = obj.id - 1
+local function scaleSides(obj, sides, frame, scale, shapeName)
     local axes = getLocalAxes(obj)
     local logScale = {}
     for j = 1, 3 do logScale[j] = math.log(math.max(math.abs(scale[j]), 1e-9)) end -- mirroring keeps sizes
@@ -290,11 +345,17 @@ local function scaleSides(obj, sides, frame, scale)
     end
 
     local out
-    local shape = get_obj_shape(id)
-    if shape == SHAPE.SPHERE then -- x radius, stays round: geometric mean of all axes
+    local sphere, capsule
+    if shapeName then
+        sphere, capsule = shapeName == "sphere", shapeName == "cylinder"
+    else
+        local shape = shapeIdOf(obj)
+        sphere, capsule = shape == SHAPE.SPHERE, shape == SHAPE.CAPSULE
+    end
+    if sphere then -- x radius, stays round: geometric mean of all axes
         local r = sides[1] * (f[1] * f[2] * f[3]) ^ (1 / 3)
         out = { r, r, r }
-    elseif shape == SHAPE.CAPSULE then -- x radius (round across local x and y), y length along local z
+    elseif capsule then -- x radius (round across local x and y), y length along local z
         out = { sides[1] * math.sqrt(f[1] * f[2]), sides[2] * f[3], sides[3] }
     else
         out = { sides[1] * f[1], sides[2] * f[2], sides[3] * f[3] }
@@ -373,12 +434,12 @@ local function planScale(selectedObjects, scale)
 
     local planned = {}
     for _, v in ipairs(selectedObjects) do
-        if inWorld(v) then
+        if present(v) then
             local p = positionOf(v)
             table.insert(planned, {
                 obj = v,
                 pos = { scalePos(p[1], p[2], p[3]) },
-                sides = scaleSides(v, { get_obj_sides(v.id - 1) }, frame, scale),
+                sides = scaleSides(v, { sidesOf(v) }, frame, scale),
             })
         end
     end
@@ -392,8 +453,10 @@ local function scaleBy(selectedObjects, scale)
     local planned, scalePos = planScale(selectedObjects, scale)
     for _, p in ipairs(planned) do
         local id = p.obj.id - 1
-        set_obj_pos(id, p.pos[1], p.pos[2], p.pos[3])
-        set_obj_sides(id, p.sides[1], p.sides[2], p.sides[3])
+        if inWorld(p.obj) then
+            set_obj_pos(id, p.pos[1], p.pos[2], p.pos[3])
+            set_obj_sides(id, p.sides[1], p.sides[2], p.sides[3])
+        end
         applyFileRotation(p.obj)
         writeVectorProperty(p.obj, "pos", p.pos)
         writeVectorProperty(p.obj, "sides", p.sides)
@@ -434,26 +497,26 @@ end
 ---@param scale number[]? after scaling by these factors (planScale), nil for now
 ---@return number[] min, number[] max along each axis (math.huge / -math.huge when nothing is in the world)
 local function groupBounds(selectedObjects, axes, scale)
-    local placed = {} -- obj id -> planned pos and sides
+    local placed = {} -- object -> planned pos and sides (by table: an atmo object's id is another object's)
     if scale then
-        for _, p in ipairs((planScale(selectedObjects, scale))) do placed[p.obj.id] = p end
+        for _, p in ipairs((planScale(selectedObjects, scale))) do placed[p.obj] = p end
     end
     local min, max = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
     for _, v in ipairs(selectedObjects) do
-        local id = v.id - 1
         local x, y, z
-        if inWorld(v) then
+        local sx, sy, sz
+        if present(v) then
             local pos = positionOf(v)
             x, y, z = pos[1], pos[2], pos[3]
+            sx, sy, sz = sidesOf(v)
         end
-        local sx, sy, sz = get_obj_sides(id)
-        local p = placed[v.id]
+        local p = placed[v]
         if p then
             x, y, z = p.pos[1], p.pos[2], p.pos[3]
             sx, sy, sz = p.sides[1], p.sides[2], p.sides[3]
         end
         if x then
-            local shape = get_obj_shape(id)
+            local shape = shapeIdOf(v)
             local localAxes = getLocalAxes(v)
             for i, a in ipairs(axes) do
                 local function along(k) return math.abs(localAxes[k][1] * a[1] + localAxes[k][2] * a[2] + localAxes[k][3] * a[3]) end
@@ -608,13 +671,16 @@ function Transforms.previewScale(selectedObjects, scale, baseSides)
         if s and inWorld(v) then set_obj_sides(v.id - 1, s[1], s[2], s[3]) end
     end
     for _, p in ipairs((planScale(selectedObjects, scale))) do
-        local id = p.obj.id - 1
-        set_obj_pos(id, p.pos[1], p.pos[2], p.pos[3])
-        set_obj_sides(id, p.sides[1], p.sides[2], p.sides[3])
-        applyFileRotation(p.obj)
+        if inWorld(p.obj) then
+            local id = p.obj.id - 1
+            set_obj_pos(id, p.pos[1], p.pos[2], p.pos[3])
+            set_obj_sides(id, p.sides[1], p.sides[2], p.sides[3])
+            applyFileRotation(p.obj)
+        end
     end
 end
 Transforms.orientationOf = orientationOf
+Transforms.scaleSidesFor = scaleSides -- atmo objects' scale (utils/atmo_layer.lua) passes their shape
 Transforms.groupExtents = groupExtents
 Transforms.rotBy = rotBy
 Transforms.scaleBy = scaleBy

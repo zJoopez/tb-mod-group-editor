@@ -1,9 +1,15 @@
--- Core tab: Pos/Move, Rot/Rotate, Scale/Resize (math in utils/transforms.lua), Color, Mass, Shape, Visible
+-- Core tab: Pos/Move, Rot/Rotate, Scale/Resize (math in utils/transforms.lua), Color, Mass, Shape, Visible.
+-- Also the Atmo list's Core tab: the same rows on the selected atmo objects (ModData.getEditSelection),
+-- through their lines only (an atmo object's id isn't an object's). Mass and Visible aren't there: the
+-- game's atmos have neither
 local Rows = MGE.EditorRows
 local ModData = MGE.ModData
 local History = MGE.History
 local SHAPE = MGE.SHAPE
-local getSelected = ModData.getSelected
+local getSelected = ModData.getEditSelection
+
+---@return boolean the Atmo list shows: its Core tab
+local function atmoShown() return MGE.Main ~= nil and MGE.Main.listTab == "atmo" end
 local inwuts = Rows.inputs
 local readInputs = Rows.readInputs
 local sharedChoice = Rows.sharedChoice
@@ -138,7 +144,7 @@ local COLOR_DEFAULTS = { 0, 0, 0, 255 }
 local function colorUnits(obj)
     local c = {}
     for n in (obj.props.color or ""):gmatch("%S+") do c[#c + 1] = tonumber(n) end
-    if #c < 4 then
+    if #c < 4 and obj.kind ~= "atmo" then -- an atmo object has only its line
         -- a Color (number[] in toriui), or four numbers (pcall: not worth an error in the panel)
         local ok, r, g, b, a = pcall(get_obj_color, obj.id - 1)
         if ok and type(r) == "table" then r, g, b, a = r[1], r[2], r[3], r[4] end
@@ -164,7 +170,7 @@ end
 local function setColors(objects, colorFor)
     for _, v in ipairs(objects) do
         local color = colorFor(v)
-        set_obj_color(v.id - 1, color[1], color[2], color[3], color[4])
+        if v.kind ~= "atmo" then set_obj_color(v.id - 1, color[1], color[2], color[3], color[4]) end
         Transforms.writeVector(v, "color", color)
     end
     History.commit()
@@ -237,7 +243,8 @@ local function buildCoreProps(holder, selected)
         "\"mixed\": the selected objects differ.\nName click: pick a color from an object in the world.",
         pickColor)
     Rows.setHighlighted(colorLabel, MGE.WorldSelect.picking ~= nil) -- rebuilt while picking
-    inwuts.coreProps = Rows.buildPropertyRows(holder, selected, { { "Mass", "mass" } })
+    -- atmo objects have no mass
+    inwuts.coreProps = atmoShown() and {} or Rows.buildPropertyRows(holder, selected, { { "Mass", "mass" } })
 end
 
 -- Shape, flags and visibility. Shape and the static flag are read when the mod loads, so they're
@@ -251,13 +258,15 @@ local SHAPE_FILE_NAMES = { [SHAPE.SPHERE] = "sphere", [SHAPE.BOX] = "box", [SHAP
 ---@return string
 local function getShape(obj)
     local shape = obj.props.shape and obj.props.shape:lower()
-    return shape or SHAPE_FILE_NAMES[get_obj_shape(obj.id - 1)] or "box"
+    if shape == "capsule" then shape = "cylinder" end -- the same pill (atmos write either)
+    return shape or obj.kind ~= "atmo" and SHAPE_FILE_NAMES[get_obj_shape(obj.id - 1)] or "box"
 end
 
 ---@param obj FileParserEnvObj
 ---@return boolean
 local function isVisible(obj)
     local vis = tonumber(obj.props.visible)
+    if vis == nil and obj.kind == "atmo" then return true end
     if vis == nil then
         local live = get_obj_vis(obj.id - 1)
         if type(live) == "boolean" then return live end
@@ -294,6 +303,7 @@ local function buildLooks(holder, selected)
         { label = "Pill", value = "cylinder" }, -- "cylinder" in mod files, round ends in game
     }, sharedChoice(selected, getShape), function(shape) Rows.setSelectedProp("shape", shape) end,
         "Sides are kept, so the size may look different.")
+    if atmoShown() then return end -- atmos have no visibility line (the Atmo tab has Graphics levels)
     createChoiceRow("Visible", holder, {
         { label = "Shown", value = true },
         { label = "Hidden", value = false },

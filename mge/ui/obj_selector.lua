@@ -94,12 +94,13 @@ function obj_selector.grid(view, rect, items, opts, toReload)
     return restyleAll
 end
 
+---The object list, or with mode "atmo" the Atmo list (the atmo objects, A1, A2..., utils/atmo_layer.lua):
+---the same grid and bar, the bar's buttons work on what the list shows
 ---@param view UIElement
----@param fullList FileParserEnvObj[] the objects, then the parked ones (ui/main.lua)
-local function create(view, fullList)
-    ---@type table<FileParserEnvObj, boolean>
-    local parked = {}
-    for _, obj in ipairs(ModData.parsed.parked or {}) do parked[obj] = true end
+---@param fullList FileParserEnvObj[] the objects, or the atmo objects (ui/main.lua)
+---@param mode "atmo"?
+local function create(view, fullList, mode)
+    local atmo = mode == "atmo"
 
     local list, page, pageCount = ScrollList.paginate(fullList, Main.page, Main.pageSize)
     Main.page = page -- clamped, e.g. after deleting objects on last page
@@ -137,12 +138,8 @@ local function create(view, fullList)
         w = view.size.w,
         h = view.size.h - topBar.size.h - botBar.size.h
     }, list, {
-        label = function(obj) return (parked[obj] and "P" or "") .. tostring(obj.id) end,
+        label = function(obj) return (atmo and "A" or "") .. tostring(obj.id) end,
         isSelected = function(obj) return obj.selected end,
-        isDimmed = function(obj) return parked[obj] end,
-        popup = function(obj)
-            return parked[obj] and "Parked: not in the game, drawn by MGE only.\nAdvanced > Unpark brings it back." or nil
-        end,
         onClick = function(obj, additive)
             local selected = ModData.clickSelect(obj, additive)
             -- the selection is framed when the Camera button is on
@@ -157,11 +154,10 @@ local function create(view, fullList)
             Main.updateWindow()
         end)
 
-    -- Select All takes the objects in the game, not the parked ones (Main.toggleSelectAll)
+    -- lit while everything the list shows is selected
     local function allSelected()
-        local objects = ModData.parsed.env_obj
-        if #objects == 0 then return false end
-        for _, obj in ipairs(objects) do
+        if #fullList == 0 then return false end
+        for _, obj in ipairs(fullList) do
             if not obj.selected then return false end
         end
         return true
@@ -170,19 +166,20 @@ local function create(view, fullList)
     -- New adds the default object, Duplicate/Delete/Export act on selected objects, Import opens the
     -- asset list (ui/assets.lua), Select All is Ctrl + A. In the list's bar so they're there on every tab
     -- (Reindex is in the editor's Advanced panel). Icons share the width, their names show on hover.
-    -- MGE.Editor loads after this module, so it's looked up on click
+    -- On the Atmo list they're the atmo objects': New adds a default box to the atmo, Import / Export read
+    -- and write .atmo files. MGE.Editor loads after this module, so it's looked up on click
     local barIcons = Widgets.barButtons(botBar, {
         -- selects all, or deselects all when everything is selected
         { label = "Select / deselect all (Ctrl + A)", icon = MGE.scriptPath .. "textures/selectall.tga", wide = true,
-            onClick = function() Main.toggleSelectAll() end },
-        { label = "New (Ctrl + N)", icon = "../textures/menu/general/buttons/addsign.tga", wide = true,
-            onClick = function() MGE.Assets.newObject() end },
+            onClick = function() if atmo then Main.toggleSelectAllAtmo() else Main.toggleSelectAll() end end },
+        { label = atmo and "New atmo box (Ctrl + N)" or "New (Ctrl + N)", icon = "../textures/menu/general/buttons/addsign.tga",
+            wide = true, onClick = function() if atmo then MGE.Assets.newAtmo() else MGE.Assets.newObject() end end },
         { label = "Duplicate (Ctrl + D)", icon = MGE.scriptPath .. "textures/duplicate.tga", wide = true,
             onClick = function() MGE.Editor.duplicate() end },
-        { label = "Import", icon = MGE.scriptPath .. "textures/import.tga", wide = true,
-            onClick = function() MGE.Assets.openImport() end },
-        { label = "Export", icon = MGE.scriptPath .. "textures/export.tga", wide = true,
-            onClick = function() MGE.Assets.export() end },
+        { label = atmo and "Import an .atmo" or "Import", icon = MGE.scriptPath .. "textures/import.tga", wide = true,
+            onClick = function() if atmo then MGE.Assets.openAtmoImport() else MGE.Assets.openImport() end end },
+        { label = atmo and "Export the selected as an .atmo" or "Export", icon = MGE.scriptPath .. "textures/export.tga",
+            wide = true, onClick = function() if atmo then MGE.Assets.exportAtmo() else MGE.Assets.export() end end },
         -- last, away from the others
         { label = "Delete (Del)", icon = "../textures/menu/general/buttons/trash.tga", wide = true,
             onClick = function() MGE.Editor.deleteSelected() end }, -- asks first

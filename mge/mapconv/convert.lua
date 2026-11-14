@@ -16,7 +16,7 @@ local formatNumbers = FileHandler.formatNumbers
 ---@field scale number Toribash units per map unit. Source: a player is 72 units, a tori about 2.5
 ---@field budget integer most boxes written, the biggest are kept
 ---@field objectBudget integer? in game only (ui/map_overlay.lua): how many of the budget's boxes become
----objects, the rest are parked (utils/parking.lua). nil: all of them. The converter itself ignores it
+---objects, the rest go to the atmo (utils/atmo_layer.lua). nil: all of them. The converter itself ignores it
 ---@field minSize number map units, brushes whose box is smaller on every side are left out (detail)
 ---@field clips boolean keep player clip brushes (the map's invisible walls, ramps over stairs), colored like
 ---the map geometry they cover (borrowMaterials)
@@ -791,6 +791,25 @@ function MapConv.toWorld(box, anchor, options)
     local sides = {}
     for k = 1, 3 do sides[k] = math.max(box.sides[k] * options.scale, MGE.MIN_SIDE) end
     return { p[1] + origin[1], p[2] + origin[2], p[3] }, Mat3.mul(turn, box.frame), sides
+end
+
+---The anchor that keeps a world point where it is (x y) when the map turns by turn (around z) or
+---scales by factor around it (the placement view's Map gizmo). A map point m is at O + R (m - a) s
+---(MapConv.toWorld); with R' = turn R and s' = s factor, the point P stays and the rest turns / scales
+---around it when a' = a - R'^T (d - turn d factor) / s', d = P - O across. The anchor's height stays
+---@param anchor number[]
+---@param options { scale: number, yaw: number } before the change
+---@param point number[] world
+---@param turn number[][] around z
+---@param factor number
+---@return number[] anchor
+function MapConv.anchorAround(anchor, options, point, turn, factor)
+    local origin = MGE.POS_ORIGIN
+    local d = { point[1] - origin[1], point[2] - origin[2], 0 }
+    local moved = Vec.scale(Mat3.apply(turn, d), factor)
+    local newFrame = Mat3.mul(turn, Mat3.rotZ(math.rad(options.yaw)))
+    local back = Vec.scale(Mat3.apply(Mat3.transpose(newFrame), Vec.sub(d, moved)), 1 / (options.scale * factor))
+    return { anchor[1] - back[1], anchor[2] - back[2], anchor[3] }
 end
 
 ---A world point back in map units, the inverse of MapConv.toWorld's placement

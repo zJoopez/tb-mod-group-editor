@@ -4,8 +4,8 @@
 -- on what the bar at the top picks:
 --   Region: Move it, Scale it per axis (its size), in the map's own axes
 --   Map:    Move (where the map sits: the anchor), Rotate around z (yaw), Scale (white cube: map scale)
--- Orange: what Convert adds (the biggest pieces up to the budget), purple: added parked (the ones
--- after the overlay's Budget, its Parked count, utils/parking.lua), red: in the region but over the
+-- Orange: what Convert adds (the biggest pieces up to the budget), purple: added to the atmo (the ones
+-- after the overlay's Budget, its Atmo count, utils/atmo_layer.lua), red: in the region but over the
 -- budget, grey: the map around the region (MapPlace.contextMargin, its biggest boxes). The counts in
 -- the bar are the conversion's own (MapConv.select, run again after every region change). The preview
 -- draws at most MapPlace.maxDraws shapes a frame, the bar says when some are left out.
@@ -21,8 +21,11 @@ local Highlight = MGE.Highlight
 local MapPlace = {
     active = false,
     -- the game draws only so many 3D shapes a frame, a whole map (dust2) is far more: what's drawn is
-    -- capped, in this order (a draw each): region, kept, over budget, grey context, kept outlines
-    maxDraws = 786,
+    -- capped (a draw each): region, kept, over budget, grey context, kept outlines. 512: what MGE has
+    -- next to the game's 256 objects (786 cut off the red boxes once 256 atmo boxes were kept)
+    maxDraws = 512,
+    -- share of maxDraws kept for the red boxes over the budget, so they show however many are kept
+    cutShare = 0.25,
     contextLimit = 250, -- grey boxes at most, the biggest near the region
     contextMargin = 0.5, -- grey boxes come from around the region: this share of its size on each side
     minRegion = 16, -- map units, smallest region side
@@ -112,7 +115,7 @@ local function regionBox()
     return { pos = pos, frame = frame, sides = sides }
 end
 
----@return integer how many kept boxes become objects: those past it get parked (utils/parking.lua). The
+---@return integer how many kept boxes become objects: those past it go to the atmo (utils/atmo_layer.lua). The
 ---overlay's Budget (objectBudget), at most the object ids free in the mod
 local function objectCount()
     local free = #MGE.ModData.freeIds.static + #MGE.ModData.freeIds.nonStatic
@@ -123,9 +126,9 @@ end
 local function setInfo(message)
     if not info or info.destroyed then return end
     local budget = session.options.budget
-    local parked = math.max(0, #kept - objectCount())
+    local atmoCount = math.max(0, #kept - objectCount())
     Widgets.infoText(info, message or (#kept .. " boxes of " .. budget .. (#cut > 0 and (", " .. #cut .. " over (red)") or "")
-        .. (parked > 0 and (", " .. parked .. " parked (purple)") or "")
+        .. (atmoCount > 0 and (", " .. atmoCount .. " to the atmo (purple)") or "")
         .. (shown.trimmed and ", preview trimmed" or "")
         .. "   Move / Scale: Shift + Q / E" .. (editing == "map" and ", Rotate: Shift + W" or "")))
 end
@@ -151,11 +154,12 @@ local function pickContext()
 end
 
 ---How many boxes of each kind fit in MapPlace.maxDraws, one draw per fill: the region box (fill and
----outline), kept, over budget, context, then outlines for the kept boxes with what's left. Outlines
----go first, the boxes themselves last
+---outline), kept (a MapPlace.cutShare of the draws held back for the boxes over the budget while
+---there are some), over budget, context, then outlines for the kept boxes with what's left
 local function plan()
     local left = MapPlace.maxDraws - 2
-    shown.kept = math.max(0, math.min(#kept, left))
+    local cutReserve = math.min(#cut, math.floor(left * MapPlace.cutShare))
+    shown.kept = math.max(0, math.min(#kept, left - cutReserve))
     left = left - shown.kept
     shown.cut = math.max(0, math.min(#cut, left))
     left = left - shown.cut
@@ -230,8 +234,8 @@ local function withLive(box, isRegion)
         if live.factors then sides = { sides[1] * live.factors[1], sides[2] * live.factors[2], sides[3] * live.factors[3] } end
         return { pos = pos, frame = box.frame, sides = sides }
     end
-    local origin = MGE.POS_ORIGIN
-    local pivot = { origin[1], origin[2], 0 }
+    local center = regionBox().pos -- the map turns and scales around the region (mapTarget)
+    local pivot = { center[1], center[2], 0 }
     local turn = live.rotation or Mat3.IDENTITY
     local f = live.factors and live.factors[1] or 1
     local pos = Vec.add(pivot, Vec.scale(Mat3.apply(turn, Vec.sub(box.pos, pivot)), f))
@@ -247,10 +251,10 @@ local function draw()
     -- draw counts as planned (plan): fills, outlines only on the biggest kept boxes that fit
     for _, box in ipairs(boxes.context) do Highlight.drawBox(withLive(box, false), COLORS.context, 0.08, false) end
     for _, box in ipairs(boxes.cut) do Highlight.drawBox(withLive(box, false), COLORS.cut, 0.3, false) end
-    -- kept past the object budget: parked by Convert (the smallest, kept is in budget order)
+    -- kept past the object budget: the atmo's, by Convert (the smallest, kept is in budget order)
     local free = objectCount()
     for i, box in ipairs(boxes.kept) do
-        Highlight.drawBox(withLive(box, false), i > free and MGE.Parking.color or COLORS.kept, Highlight.previewAlpha,
+        Highlight.drawBox(withLive(box, false), i > free and MGE.AtmoLayer.color or COLORS.kept, Highlight.previewAlpha,
             i <= shown.outlines)
     end
     Highlight.drawBox(withLive(regionBox(), true), COLORS.region, editing == "region" and 0.06 or 0.02, true)
@@ -291,17 +295,25 @@ local function regionTarget()
     }
 end
 
----The map as a gizmo target, around the dojo center: Move (anchor across, lift up and down: never
----below the ground), Rotate around z (yaw), the white Scale cube (map scale). The region goes along,
----it's in map units
+---The anchor that keeps the region's center where it is when the map turns by turn or scales by
+---factor (MapConv.anchorAround), heights aside: ground works them out again
+---@param turn number[][] around z
+---@param factor number
+---@return number[] anchor
+local function anchorAroundRegion(turn, factor)
+    return MapConv.anchorAround(session.anchor, placement(), regionBox().pos, turn, factor)
+end
+
+---The map as a gizmo target, around the region's center (where the view looks, the dojo center
+---can be far off): Move (anchor across, lift up and down: never below the ground), Rotate around z
+---(yaw), the white Scale cube (map scale). The region goes along, it's in map units
 ---@return GizmoTarget
 local function mapTarget()
-    local origin = MGE.POS_ORIGIN
     return {
         scalable = true,
         uniformScaleOnly = true,
         ringsOnly = 3,
-        pivot = function() return { origin[1], origin[2], 0 } end,
+        pivot = function() return regionBox().pos end,
         frame = mapFrame,
         -- the preview doesn't go below the ground either
         previewMove = function(offset) live = { offset = { offset[1], offset[2], math.max(offset[3], -session.lift) } } end,
@@ -322,13 +334,16 @@ local function mapTarget()
         rotateByMatrix = function(rotation)
             live = {}
             local turn = math.deg((math.atan2 or math.atan)(rotation[2][1], rotation[1][1]))
+            session.anchor = anchorAroundRegion(Mat3.rotZ(math.rad(turn)), 1) -- before the yaw changes
             session.options.yaw = (session.options.yaw + turn) % 360
             world = nil
             follow()
         end,
         scaleBy = function(factors)
             live = {}
-            session.options.scale = math.max(session.options.scale * factors[1], 0.0005)
+            local scale = math.max(session.options.scale * factors[1], 0.0005)
+            session.anchor = anchorAroundRegion(Mat3.IDENTITY, scale / session.options.scale) -- before it changes
+            session.options.scale = scale
             ground() -- the anchor's height depends on the scale
             world = nil
             setInfo()

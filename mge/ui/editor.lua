@@ -7,6 +7,8 @@
 --   player:   ui/editor_player.lua    Pos, Rot, Scale, parts of the selected players (the Players list's Core tab)
 --   jointLink: ui/editor_link.lua     the 2 linked objects (grid), Create / Update, Reset (the Joints list's Link tab)
 --   joint:    ui/editor_joint.lua     Pos, Axis, Range, Strength, Velocity, Type (the Joints list's Properties tab)
+--   atmo:     ui/editor_atmo.lua      Depth, Graphics levels, kept lines, To objects, Save atmo (the Atmo list's
+--                                     Atmo tab; its Core tab is core, on the selected atmo objects)
 -- Shared row widgets are in ui/editor_rows.lua, the transform math in utils/transforms.lua.
 -- Every block of rows has its own holder. Fixed blocks are built once (typed values stay), the
 -- others are rebuilt when the selection or the objects change, so their placeholders / highlights
@@ -18,6 +20,8 @@ local History = MGE.History
 local Joints = MGE.Joints
 local Widgets = MGE.Widgets
 local getSelected = ModData.getSelected
+-- what the panels show and edit: the selected atmo objects on the Atmo list (its Core tab is this Core)
+local getEditSelection = ModData.getEditSelection
 
 local Rows = dofile(MGE.scriptPath .. "ui/editor_rows.lua")
 local inwuts = Rows.inputs
@@ -48,6 +52,7 @@ local MODULES = {
     dofile(MGE.scriptPath .. "ui/editor_player.lua"), -- the Players list's Core tab
     dofile(MGE.scriptPath .. "ui/editor_link.lua"), -- the Joints list's Link tab
     dofile(MGE.scriptPath .. "ui/editor_joint.lua"), -- the Joints list's Properties tab
+    dofile(MGE.scriptPath .. "ui/editor_atmo.lua"), -- the Atmo list's Atmo tab
 }
 
 local ROW_H = 30
@@ -64,6 +69,7 @@ local PANELS = {
     player = { height = PANEL_H }, -- the Players list's Core tab (TAB_SETS in ui/main.lua)
     jointLink = { height = PANEL_H, ownButtons = true }, -- the Joints list's Link tab, has its own Reset
     joint = { height = PANEL_H }, -- the Joints list's Properties tab
+    atmo = { height = PANEL_H }, -- the Atmo list's Atmo tab
 }
 
 -- collected from the modules: fixed and rebuilt blocks, rebuilt block names in build order, input lists
@@ -186,7 +192,7 @@ end
 ---@param names string[]
 local function rebuildBlocks(names)
     if not blocks.measured or blocks.measured.destroyed then return end
-    local selected = getSelected() -- read once, every row shows values of the same objects
+    local selected = getEditSelection() -- read once, every row shows values of the same objects
     local typed = saveTypedProperties()
     local focusKey, focusIndex = findFocusedInput()
     for _, name in ipairs(names) do
@@ -216,7 +222,27 @@ function editor.onSelectionChanged()
     Rows.refreshProperties()
 end
 
+---Duplicate on the Atmo list: copies of the selected atmo objects with all their lines, new names, selected
+local function duplicateAtmo()
+    local selected = ModData.getSelectedAtmo()
+    if #selected == 0 then return end
+    if #selected > MGE.AtmoLayer.room() then
+        echo("^04[MGE] no room for " .. #selected .. " more atmo objects (Settings > Most atmo objects)")
+        return
+    end
+    local atmoObjs = ModData.parsed.atmo
+    for _, obj in ipairs(selected) do
+        local copy = { kind = "atmo", props = ModData.copy(obj.props), lines = obj.lines, selected = true }
+        obj.selected = nil -- selection moves to the copies
+        atmoObjs[#atmoObjs + 1] = copy
+        copy.id = #atmoObjs
+    end
+    History.commit()
+    MGE.Main.updateWindow()
+end
+
 local function duplicate()
+    if MGE.Main.listTab == "atmo" then return duplicateAtmo() end
     local selected = getSelected()
     if #selected == 0 then return end
     -- only joints between selected objects are copied, so only those copies need low ids
@@ -249,6 +275,12 @@ local function duplicate()
 end
 
 local function delete()
+    if MGE.Main.listTab == "atmo" then -- the atmo objects: not in the .tbm, no reload
+        MGE.AtmoLayer.removeSelected()
+        History.commit()
+        MGE.Main.updateWindow()
+        return
+    end
     local deleted = {}
     for i = #ModData.parsed.env_obj, 1, -1 do -- iterating backwards to prevent index issues when removing
         local obj = ModData.parsed.env_obj[i]
@@ -259,16 +291,18 @@ local function delete()
         end
     end
     Joints.removeLinkedToAny(deleted) -- a joint can't point to a missing object
-    MGE.Parking.removeSelected() -- selected parked objects (P in the list) go too
     History.commit()
     MGE.apply()
 end
 
----Asks for confirmation with Toribash's own popup (TBMenu:showConfirmationWindow) before deleting
+---Asks for confirmation with Toribash's own popup (TBMenu:showConfirmationWindow) before deleting what the
+---shown list has selected: objects, or atmo objects
 local function onDeleteClick()
-    local count = #getSelected() + #ModData.getSelectedParked()
+    local atmo = MGE.Main.listTab == "atmo"
+    local count = #getEditSelection()
     if count == 0 or (MGE.confirmOverlay and not MGE.confirmOverlay.destroyed) then return end
-    local message = "Delete " .. count .. " selected object" .. (count == 1 and "" or "s") .. "?\nUndo can bring them back."
+    local message = "Delete " .. count .. " selected " .. (atmo and "atmo " or "") .. "object" .. (count == 1 and "" or "s") ..
+        "?\nUndo can bring them back."
     MGE.confirm(message, delete) -- Enter / Continue deletes, Esc / Cancel doesn't
 end
 
@@ -292,7 +326,7 @@ function editor.create(parent)
             size = { parent.size.w, panel.height },
         })
     end
-    local selected = getSelected()
+    local selected = getEditSelection()
     -- fixed blocks first: the core panel's offset rows register before the measured rows that share
     -- their slot (Core.applyTransformModes shows one of them)
     for _, block in ipairs(FIXED) do

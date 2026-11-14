@@ -432,6 +432,32 @@ T.test("toWorld / toMap", function()
     T.nearList(MapConv.toMap(pos, anchor, options), box.center, 1e-9, "toMap undoes toWorld")
 end)
 
+T.test("anchorAround: the map turns and scales around a world point", function()
+    local Mat3 = MGE.Mat3
+    local anchor, options = { 120, -40, 7 }, { scale = 0.05, yaw = 30 }
+    local boxes = {
+        { center = { 300, 200, 10 }, frame = Mat3.IDENTITY, sides = { 1, 1, 1 } },
+        { center = { -50, 80, 0 }, frame = Mat3.IDENTITY, sides = { 1, 1, 1 } },
+    }
+    local point = MapConv.toWorld(boxes[1], anchor, options) -- the region's center, as map_place passes it
+    for _, case in ipairs({ { turn = 45, factor = 1 }, { turn = 0, factor = 2.5 }, { turn = -120, factor = 0.4 } }) do
+        local turn = Mat3.rotZ(math.rad(case.turn))
+        local after = { scale = options.scale * case.factor, yaw = options.yaw + case.turn }
+        local newAnchor = MapConv.anchorAround(anchor, options, point, turn, case.factor)
+        local name = "turn " .. case.turn .. " factor " .. case.factor
+        T.eq(newAnchor[3], anchor[3], name .. ": the height stays (ground sets it)")
+        local stays = MapConv.toWorld(boxes[1], newAnchor, after)
+        T.near(stays[1], point[1], 1e-9, name .. ": the point stays x")
+        T.near(stays[2], point[2], 1e-9, name .. ": the point stays y")
+        -- another box: turned and scaled around the point, as the gizmo's preview draws it
+        local before = MapConv.toWorld(boxes[2], anchor, options)
+        local d = Mat3.apply(turn, { before[1] - point[1], before[2] - point[2], 0 })
+        local moved = MapConv.toWorld(boxes[2], newAnchor, after)
+        T.near(moved[1], point[1] + d[1] * case.factor, 1e-9, name .. ": others turn / scale around it x")
+        T.near(moved[2], point[2] + d[2] * case.factor, 1e-9, name .. ": others turn / scale around it y")
+    end
+end)
+
 T.test("wedge becomes a ramp slab", function()
     -- a 128 long ramp rising 64: the top face slopes up from x0 at the bottom to x1 at the top
     local text = table.concat({
