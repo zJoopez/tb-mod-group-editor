@@ -14,6 +14,8 @@
 ---@field secondaryOutputName string
 ---@field activeOutputName string
 ---@field hookname string
+---@field say fun(text: any) a message: chat and the footer (MGE.onMessage)
+---@field onMessage fun(text: string)? set by ui/main.lua: flashes it in the footer
 ---@field running boolean? true once startup finished, blocks starting a second instance
 ---@field quitting boolean? set while quitting, makes quit run once
 ---@field cameraChanged boolean? camera was switched to look-at mode, reset on quit
@@ -80,6 +82,15 @@
 MGE = MGE or { scriptPath = "mge/" }
 MGE.hookname = "mge"
 MGE.onQuit = {}
+
+---A message for the player: in chat (seen with the game's HUD on, and in chat logs) and flashed in the
+---footer's middle (ui/main.lua: MGE.onMessage), the HUD is off while MGE's window shows
+---@param text any
+function MGE.say(text)
+    text = tostring(text)
+    echo("^04[MGE] " .. text)
+    if MGE.onMessage then pcall(MGE.onMessage, text) end
+end
 MGE.outputName = "mge-modmaker.tbm"
 MGE.secondaryOutputName = "mge-modmaker1.tbm"
 MGE.modName = get_game_rules().mod
@@ -177,7 +188,7 @@ function MGE.syncGamerules()
     if #names == 0 then return end
     FileHandler.setGamerules(ModData.parsed, changed, current)
     table.sort(names)
-    print("gamerules saved: " .. table.concat(names, ", "))
+    MGE.say("gamerules saved: " .. table.concat(names, ", "))
 end
 
 -- Saving. Edits are applied to a working copy that the game loads (MGE.apply: mge-modmaker.tbm and
@@ -270,15 +281,15 @@ local function writeMod(path)
     MGE.syncGamerules() -- rules changed in the game's menu
     -- models written for the file's folder, the data keeps them for data/mod (ModData.parsedFor)
     if not FileHandler.WriteMod(ModData.parsedFor(path), MGE.modFolder .. path) then
-        echo("^04[MGE] couldn't save " .. path)
+        MGE.say("couldn't save " .. path)
         return
     end
     MGE.setSource(path)
-    echo("^04[MGE] saved " .. path)
+    MGE.say("saved " .. path)
     Atmo.saveFor(path) -- the atmo layer's file, when it changed (asks before deleting an emptied one)
     -- the saved mod is what gets shared, say so if dynamic objects won't fully work in it
     local warning = MGE.Main and MGE.Main.dynamicWarning()
-    if warning then echo("^04[MGE] saved with " .. warning) end
+    if warning then MGE.say("saved with " .. warning) end
     MGE.apply()
 end
 
@@ -393,7 +404,7 @@ function MGE.quit(fromWindow)
     if MGE.cameraChanged then set_camera_mode(0) end -- look-at camera set by editor/object list
 
     MGE = nil
-    echo("^04[MGE] closed")
+    MGE.say("closed")
 end
 
 add_hook("match_begin", MGE.hookname, function()
@@ -506,7 +517,7 @@ function MGE.closeTopOverlay()
     end
     -- a pick in progress (the Core tab's color picker)
     if MGE.WorldSelect and MGE.WorldSelect.cancelPick() then
-        echo("^04[MGE] pick cancelled")
+        MGE.say("pick cancelled")
         escFrame = frame
         return true
     end

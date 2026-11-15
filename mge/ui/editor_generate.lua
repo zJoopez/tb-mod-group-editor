@@ -10,6 +10,9 @@ local Rows = MGE.EditorRows
 local inwuts = Rows.inputs
 local formatHints = Rows.formatHints
 local createInputRow = Rows.createInputRow
+-- fields the Generate action reads (Enter generates): the wheel only changes their text (ui/editor_rows.lua)
+local FORM = { mode = "form" }
+local FORM_WHOLE = { mode = "form", whole = true } -- Amount: pieces and joints, the wheel steps by 1
 local createChoiceRow = Rows.createChoiceRow
 local createToggleButtonRow = Rows.createToggleButtonRow
 
@@ -411,11 +414,11 @@ local function generate()
     local pieces, note, _, joints = planFromFields()
     -- no room at all: nothing to add (not even the one default object the preview shows)
     if maxGenerate(forAtmo(), 0) == 0 then
-        echo("^04[MGE] Generate: " .. tostring(note))
+        MGE.say("Generate: " .. tostring(note))
         return
     end
     -- what the preview shows is what's added: say why it's one object instead of the shape
-    if note then echo("^04[MGE] Generate: " .. note .. ", added one default object instead") end
+    if note then MGE.say("Generate: " .. note .. ", added one default object instead") end
     if forAtmo() then
         if MGE.Assets.addAtmo(atmoPieces(pieces), false) then
             previewKey, previewPieces, previewAnchors = fieldsKey(), nil, nil
@@ -474,14 +477,14 @@ local function buildAmount(holder)
         ". 1, or values that\ncan't make a shape: one default object"
     if amountForAtmo then
         inwuts.generateAmount = createInputRow("Amount", holder, function() generate() end, { GENERATE_AMOUNT .. " obj" },
-            pieces .. ".\nEnter in any field generates.")
+            pieces .. ".\nEnter in any field generates.", nil, FORM_WHOLE)
     else
         inwuts.generateAmount = createInputRow("Amount", holder, function() generate() end,
             { GENERATE_AMOUNT .. " obj", GENERATE_JOINTS .. " joint" },
             pieces .. ",\nand joints between each two\n" ..
             "neighbours: 1 between their centers, 2 at their\n" ..
             "edges (a hinge). Joined pieces are made dynamic.\n" ..
-            "Enter in any field generates.")
+            "Enter in any field generates.", nil, FORM_WHOLE)
         local joints = inwuts.generateAmount[JOINTS]
         if keptJoints ~= "" then joints.textfieldstr[1], joints.textfieldindex = keptJoints, #keptJoints end
         keptJoints = "" -- back in the field: later rebuilds (selection changes) keep the field's own text
@@ -498,13 +501,13 @@ local function buildGenerate(holder)
     local function add(row)
         for _, input in ipairs(row) do table.insert(inputs, input) end
     end
-    add(createInputRow("Gap", holder, apply, { "0.00" }, "Space between pieces, negative overlaps."))
+    add(createInputRow("Gap", holder, apply, { "0.00" }, "Space between pieces, negative overlaps.", nil, FORM))
     add(createInputRow("Angle", holder, apply, { tostring(GENERATE_ANGLE) },
-        "Total bend: 0 line, 90 quarter pipe, 360 loop."))
+        "Total bend: 0 line, 90 quarter pipe, 360 loop.", nil, FORM))
     add(createInputRow("Size", holder, apply, formatHints(defaultSides()),
-        "First piece's size, empty: the default object's.\nThe Scale gizmo on the preview sets it too."))
+        "First piece's size, empty: the default object's.\nThe Scale gizmo on the preview sets it too.", nil, FORM))
     add(createInputRow("Increment", holder, apply, { "0.00", "0.00", "0.00" },
-        "Added to each next piece's size, negative shrinks.\nThe Scale gizmo scales it along with Size."))
+        "Added to each next piece's size, negative shrinks.\nThe Scale gizmo scales it along with Size.", nil, FORM))
     inwuts.generate = inputs
 end
 
@@ -516,18 +519,31 @@ local function buildPosition(holder)
         "Shape's center like Pos shows it (from the dojo center).\n" ..
         "Empty: in front of the camera, typed axes stay put.\n" ..
         "The Move gizmo drags the preview too.\n" ..
-        "To view clears it and the gizmo's moves.")
+        "To view clears it and the gizmo's moves.", nil, FORM)
 end
 
----Generate and To view buttons
+---Empties the tab's fields: the preview goes back to the defaults (placeholders). Its fields keep their text
+---(form fields, ui/editor_rows.lua), this is how they're cleared
+local function resetFields()
+    for _, key in ipairs({ "generate", "generateAmount", "generatePos" }) do
+        for _, input in ipairs(inwuts[key] or {}) do
+            if not input.destroyed then input:clearTextfield() end
+        end
+    end
+    keptJoints = ""
+end
+
+---Generate, To view and Reset buttons
 ---@param holder UIElement
 local function buildButtons(holder)
     Rows.begin()
     createToggleButtonRow("", holder, {
         { label = "Generate", active = false, onClick = generate },
         { label = "To view", active = false, onClick = toView },
+        { label = "Reset", active = false, onClick = resetFields },
     }, "Generate: adds the orange preview (static pieces, or\ndynamic ones joined) and selects them.\n" ..
         "To view: moves the preview in front of the camera\n(also done when this tab opens), clears Position.\n" ..
+        "Reset: empties the fields, back to the defaults.\n" ..
         "On the Atmo list the pieces go to the atmo.")
 end
 

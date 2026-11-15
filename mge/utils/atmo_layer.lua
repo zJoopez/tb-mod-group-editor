@@ -134,7 +134,7 @@ end
 function AtmoLayer.moveIn()
     local selected = ModData.getSelected()
     if #selected == 0 then
-        echo("^04[MGE] select the objects to move to the atmo first")
+        MGE.say("select the objects to move to the atmo first")
         return
     end
     ModData.refreshJointIds() -- links made since the mod loaded count too
@@ -155,14 +155,14 @@ function AtmoLayer.moveIn()
         end
     end
     if joined > 0 then
-        echo("^04[MGE] " .. joined .. " objects joined by joints stay in the game, remove their joints to move them")
+        MGE.say("" .. joined .. " objects joined by joints stay in the game, remove their joints to move them")
     end
     if #moved == 0 then return end
     for _, obj in ipairs(moved) do
         table.insert(ModData.parsed.atmo, obj)
         obj.id = #ModData.parsed.atmo -- atmo ids are their place in the list
     end
-    echo("^04[MGE] moved " .. #moved .. " objects to the atmo (" .. #ModData.parsed.atmo .. " atmo objects in all)")
+    MGE.say("moved " .. #moved .. " objects to the atmo (" .. #ModData.parsed.atmo .. " atmo objects in all)")
     History.commit()
     MGE.apply()
 end
@@ -172,13 +172,13 @@ end
 function AtmoLayer.moveOut()
     local list = ModData.getSelectedAtmo()
     if #list == 0 then
-        echo("^04[MGE] select atmo objects (the Atmo list) to move back first")
+        MGE.say("select atmo objects (the Atmo list) to move back first")
         return
     end
     local free = ModData.freeCount()
     local count = math.min(#list, free)
     if count == 0 then
-        echo("^04[MGE] no free object ids (" .. MGE.MAX_ENV_OBJECTS .. " in the game): move or delete objects first")
+        MGE.say("no free object ids (" .. MGE.MAX_ENV_OBJECTS .. " in the game): move or delete objects first")
         return
     end
     local plans = {}
@@ -200,7 +200,7 @@ function AtmoLayer.moveOut()
     end
     ModData.parsed.atmo = stay
     ModData.sortObjects()
-    echo("^04[MGE] moved " .. count .. " atmo objects back to objects" ..
+    MGE.say("moved " .. count .. " atmo objects back to objects" ..
         (count < #list and (", " .. (#list - count) .. " stay in the atmo: no more free ids") or ""))
     History.commit()
     MGE.apply()
@@ -249,7 +249,7 @@ function AtmoLayer.unloadGameAtmo()
     local manager = rawget(_G, "Atmospheres")
     if type(manager) ~= "table" or type(manager.Unload) ~= "function" then return false end
     local ok = pcall(manager.Unload)
-    if ok then echo("^04[MGE] unloaded the game's atmo: MGE draws the atmo it edits itself") end
+    if ok then MGE.say("unloaded the game's atmo: MGE draws the atmo it edits itself") end
     return ok
 end
 
@@ -331,7 +331,7 @@ function AtmoLayer.rotateBy(list, rotation, pivot, props)
     end
 end
 
----Scales atmo objects by factors along frame's axes around pivot, like the objects' Resize
+---Scales atmo objects by factors along frame's axes around pivot, like the objects' gizmo Scale
 ---(Transforms.planScale: positions through the group scale, sides by Transforms.scaleSidesFor with the
 ---shape their shape line gives). Lines only, the caller commits
 ---@param list FileParserEnvObj[]
@@ -475,15 +475,15 @@ table.insert(MGE.onQuit, function() AtmoLayer.setObjectsSeeThrough(false) end)
 ---does (utils/atmo.lua). Loading it is up to the player (main menu > Shaders & Atmos > Atmos)
 function AtmoLayer.exportAtmo()
     if not MGE.sourcePath then
-        echo("^04[MGE] save the mod first: its atmo is named after it")
+        MGE.say("save the mod first: its atmo is named after it")
         return
     end
     if #ModData.parsed.atmo == 0 then
-        echo("^04[MGE] the atmo is empty: To atmo (Objects > Advanced) or New add to it")
+        MGE.say("the atmo is empty: To atmo (Objects > Advanced) or New add to it")
         return
     end
     if not MGE.Atmo.hasChanges() then
-        echo("^04[MGE] data/atmospheres/" .. tostring(MGE.Atmo.fileName(MGE.sourcePath)) .. " is up to date")
+        MGE.say("data/atmospheres/" .. tostring(MGE.Atmo.fileName(MGE.sourcePath)) .. " is up to date")
         return
     end
     MGE.Atmo.saveFor(MGE.sourcePath)

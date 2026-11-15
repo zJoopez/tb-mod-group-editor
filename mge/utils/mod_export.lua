@@ -223,7 +223,7 @@ function ModData.allocateIds(plans)
     local free = ModData.freeIds
     local total = #free.nonStatic + #free.static
     if #plans > total then
-        print("Not enough object ids: " .. #plans .. " needed, " .. total .. " free")
+        MGE.say("Not enough object ids: " .. #plans .. " needed, " .. total .. " free")
         return nil
     end
     local linkedCount = 0
@@ -231,7 +231,7 @@ function ModData.allocateIds(plans)
         if plan.linked then linkedCount = linkedCount + 1 end
     end
     if not freeLowIds(linkedCount) then
-        print("Not enough ids 1-" .. MAX_NONSTATIC_OBJECTS .. " for objects linked by joints: " .. linkedCount ..
+        MGE.say("Not enough ids 1-" .. MAX_NONSTATIC_OBJECTS .. " for objects linked by joints: " .. linkedCount ..
             " needed, " .. #free.nonStatic .. " free")
         return nil
     end
@@ -423,7 +423,7 @@ function ModData.reloadObjects()
         rebaseModels()
         ModData.jointIds = getJointIds(ModData.parsed.env_obj_joint)
     else
-        print("Mod not found")
+        MGE.say("Mod not found")
     end
     ModData.parsed.atmo = atmo
 
@@ -434,7 +434,7 @@ function ModData.reloadObjects()
             table.insert(pool, i + 1)
         end
     end
-    print("Mod data updated")
+    MGE.say("Mod data updated")
 end
 
 init() --initialize data on load

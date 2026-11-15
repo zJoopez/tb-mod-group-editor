@@ -54,10 +54,10 @@ end
 local FIELDS = {
     { label = "Scale", keys = { "scale" }, hints = { tostring(DEFAULTS.scale) },
         info = "Toribash units per map unit.\nSource: a player is 72 units, a tori about 2.5." },
-    { label = "Budget", keys = { "budget" }, hints = { tostring(freeIds()) },
+    { label = "Budget", keys = { "budget" }, hints = { tostring(freeIds()) }, whole = true,
         info = "Most boxes added as objects, the biggest surfaces\nfirst. Empty: all " .. freeIds() ..
             " object ids free in this mod.\n0: every box to the atmo, the object ids stay free." },
-    { label = "Atmo", keys = { "atmo" }, hints = { "0" },
+    { label = "Atmo", keys = { "atmo" }, hints = { "0" }, whole = true,
         info = "Boxes after the Budget's added to the atmo (drawn\nonly, no collisions, the Atmo list), " ..
             "the\nsmaller ones. Up to " .. MGE.AtmoLayer.room() .. ". Empty: none." },
     { label = "Min size", keys = { "minSize" }, hints = { tostring(DEFAULTS.minSize) },
@@ -171,7 +171,8 @@ for _, field in ipairs(FIELDS) do
             pos = { (i - 1) * (w + gap), 0 },
             size = { w, ROW_H },
         })
-        local input = Rows.createInput(holder, function() convert() end, field.hints[i])
+        -- Enter converts; box counts (whole) step by 1 on the wheel
+        local input = Rows.createInput(holder, function() convert() end, field.hints[i], "form", field.whole)
         Widgets.closeOnEscape(input)
         local text = state.texts[key] or ""
         input.textfieldstr[1] = text
@@ -354,7 +355,7 @@ local function place(options)
                 -- new ids, selected, one undo step, kept in place. The boxes after objectBudget (the
                 -- smallest, the converter's order) go to the atmo
                 MGE.Assets.addObjects(result.objects, false, false, nil, opts.objectBudget or true)
-                for _, line in ipairs(MapConv.reportLines(result.report)) do echo("^04[MGE] " .. line) end
+                for _, line in ipairs(MapConv.reportLines(result.report)) do MGE.say("" .. line) end
             end
         end,
         onSettings = function(p)

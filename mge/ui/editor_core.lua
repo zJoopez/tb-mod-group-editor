@@ -1,4 +1,4 @@
--- Core tab: Pos/Move, Rot/Rotate, Scale/Resize (math in utils/transforms.lua), Color, Mass, Shape, Visible, and
+-- Core tab: Pos, Rot, Scale (math in utils/transforms.lua), Color, Mass, Shape, Visible, and
 -- Atmo: To atmo (Objects list) / To objects and Save atmo (Atmo list).
 -- Also the Atmo list's Core tab: the same rows on the selected atmo objects (ModData.getEditSelection),
 -- through their lines only (an atmo object's id isn't an object's). Mass and Visible aren't there: the
@@ -20,118 +20,44 @@ local createChoiceRow = Rows.createChoiceRow
 local function refreshProperties() Rows.refreshProperties() end
 
 local Transforms = MGE.Transforms
-local Gizmo = MGE.Gizmo
 
--- Enter in a transform field applies that field only (only = its index)
-local function moveSelected(only) Transforms.move(readInputs(inwuts.pos, only)) end
-local function rotSelected(only) Transforms.rotate(readInputs(inwuts.rot, only)) end
-local function scaleSelected(only) Transforms.scale(readInputs(inwuts.scale, only)) end
+-- a transform field applies only itself (only = its index): the row's other fields are left as they are
 local function positionSelected(only) Transforms.positionTo(readInputs(inwuts.position, only)) end
 local function angleSelected(only) Transforms.angleTo(readInputs(inwuts.angle, only)) end
 local function sizeSelected(only) Transforms.sizeTo(readInputs(inwuts.size, only)) end
 local shownPosition, groupAngles, groupExtents = Transforms.shownPosition, Transforms.groupAngles, Transforms.groupExtents
 
--- Each transform row has two modes, switched by clicking the row's name. Both rows exist in the same
--- slot (offset rows built once, absolute rows rebuilt with the measured values), one is hidden:
---   absolute: Pos / Rot / Scale, the group ends up at the typed values
---   offset:   Move / Rotate / Resize, the typed values are added (Resize multiplies)
----@alias TransformMode "absolute"|"offset"
-local TRANSFORMS = { "move", "rotate", "scale" }
----@type table<string, TransformMode> kept while the script runs, also over editor rebuilds
-local transformModes = { move = "absolute", rotate = "absolute", scale = "absolute" }
----@type table<string, table<TransformMode, UIElement>>
-local transformRows = { move = {}, rotate = {}, scale = {} }
----@type table<string, table<TransformMode, UIElement?>> name buttons of the transform rows, the one of the
----active tool is highlighted (both modes, only one is shown)
-local transformLabels = { move = {}, rotate = {}, scale = {} }
+---@type table<string, UIElement> the Pos / Rot / Scale names by gizmo tool, rebuilt with the rows
+local transformLabels = {}
 
----Highlights the transform row names that belong to the active gizmo tool (toolbar toggles, ui/main.lua).
----The rows themselves don't change the tool
+---Lights the name of the row that belongs to the active gizmo tool (toolbar, Alt + Q / W / E)
 local function highlightTransformLabels()
-    for key, labels in pairs(transformLabels) do
-        for _, label in pairs(labels) do Rows.setHighlighted(label, key == Gizmo.mode) end
-    end
+    for mode, label in pairs(transformLabels) do Rows.setHighlighted(label, mode == MGE.Gizmo.mode) end
 end
-table.insert(Gizmo.modeListeners, highlightTransformLabels)
+table.insert(MGE.Gizmo.modeListeners, highlightTransformLabels)
 
----Shows each transform row in its current mode and hides the other one. hide(true) keeps the hidden
----row hidden when the panel is shown again (tab switch, F1). The shown row only needs showing while
----the core panel is visible, otherwise the panel shows it when it comes back
----@param coreShown boolean the core panel is visible
-local function applyTransformModes(coreShown)
-    for _, key in ipairs(TRANSFORMS) do
-        for mode, row in pairs(transformRows[key]) do
-            if not row.destroyed then
-                if mode ~= transformModes[key] then
-                    row:hide(true)
-                elseif coreShown then
-                    row:show(true)
-                else
-                    row.noreload = nil -- hidden with the panel, comes back with it
-                end
-            end
-        end
-    end
-end
-
----@param key "move"|"rotate"|"scale"
-local function toggleTransformMode(key)
-    transformModes[key] = transformModes[key] == "absolute" and "offset" or "absolute"
-    applyTransformModes(true) -- the label clicked is on the shown core panel
-end
-
-local SWITCH_HELP = "\nClick the name: "
-
----Move/Rotate/Resize rows (offset mode, core panel), built once so typed values stay when the selection changes
----@param holder UIElement
-local function buildTransformRows(holder)
-    Rows.begin()
-    transformRows = { move = {}, rotate = {}, scale = {} } -- built before the measured rows
-    transformLabels = { move = {}, rotate = {}, scale = {} }
-    local zeros = { "0.00", "0.00", "0.00" }
-    local function switch(key) return function() toggleTransformMode(key) end end
-    -- Enter applies only the field it's pressed in (index i), the row's other fields are ignored
-    inwuts.pos, transformRows.move.offset, transformLabels.move.offset = createInputRow("Move", holder,
-        function(_, i) moveSelected(i) end, zeros,
-        "Moves the selection by X, Y, Z." ..
-        SWITCH_HELP .. "Pos (move to).", switch("move"))
-    inwuts.rot, transformRows.rotate.offset, transformLabels.rotate.offset = createInputRow("Rotate", holder,
-        function(_, i) rotSelected(i) end, zeros,
-        "Turns the selection around its center by degrees." ..
-        SWITCH_HELP .. "Rot (turn to).", switch("rotate"))
-    inwuts.scale, transformRows.scale.offset, transformLabels.scale.offset = createInputRow("Resize", holder,
-        function(_, i) scaleSelected(i) end, zeros,
-        "Multiplies the group's size along its axes. 0: no change." ..
-        SWITCH_HELP .. "Scale (set size).", switch("scale"))
-    highlightTransformLabels()
-end
-
----Pos / Rot / Scale rows (absolute), the whole-group versions of Move / Rotate / Resize. Placeholders show the
----selection's current center, orientation (degrees) and size ("0.00" without a selection)
+---Pos / Rot / Scale rows: the group ends up at the typed values. Placeholders show the selection's current
+---center, orientation (degrees) and size ("0.00" without a selection). Small steps: the mouse wheel. The name
+---of the active gizmo tool's row is lit
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
 local function buildMeasuredRows(holder, selected)
     Rows.begin()
     local zeros = { "0.00", "0.00", "0.00" }
     local any = #selected > 0
-    local function switch(key) return function() toggleTransformMode(key) end end
-    inwuts.position, transformRows.move.absolute, transformLabels.move.absolute = createInputRow("Pos", holder,
-        function(_, i) positionSelected(i) end,
+    local _
+    inwuts.position, _, transformLabels.move = createInputRow("Pos", holder, function(_, i) positionSelected(i) end,
         any and formatHints(shownPosition(selected)) or zeros,
-        "Moves selection to given location." ..
-        SWITCH_HELP .. "Name click changes mode.", switch("move"))
+        "Moves the selection's center to X, Y, Z.")
     local angles = any and groupAngles(selected) or { 0, 0, 0 }
     for i = 1, 3 do angles[i] = math.deg(angles[i]) end
-    inwuts.angle, transformRows.rotate.absolute, transformLabels.rotate.absolute = createInputRow("Rot", holder,
-        function(_, i) angleSelected(i) end, formatHints(angles),
-        "Turns selection to given angles." ..
-        SWITCH_HELP .. "Name click changes mode.", switch("rotate"))
-    inwuts.size, transformRows.scale.absolute, transformLabels.scale.absolute = createInputRow("Scale", holder,
-        function(_, i) sizeSelected(i) end,
+    inwuts.angle, _, transformLabels.rotate = createInputRow("Rot", holder, function(_, i) angleSelected(i) end,
+        formatHints(angles),
+        "Turns the selection to the angles (degrees).")
+    inwuts.size, _, transformLabels.scale = createInputRow("Scale", holder, function(_, i) sizeSelected(i) end,
         any and formatHints(groupExtents(selected)) or zeros,
-        "Sets the selection's size." ..
-        SWITCH_HELP .. "Name click changes mode.", switch("scale"))
-    highlightTransformLabels() -- rebuilt rows start with the panel look
+        "Sets the selection's size along its axes.")
+    highlightTransformLabels()
 end
 
 -- an object's color when neither its file line nor the game has one (0-255), and the placeholders
@@ -207,12 +133,12 @@ local function pickFromWorld()
         local now = getSelected()
         if #now == 0 then return end
         setColors(now, function() return color end)
-        echo(string.format("^04[MGE] %d objects got object %d's color", #now, source.id))
+        MGE.say(string.format("%d objects got object %d's color", #now, source.id))
     end, function()
         Rows.setHighlighted(colorLabel, false)
     end)
     Rows.setHighlighted(colorLabel, true)
-    echo("^04[MGE] click an object: the selection gets its color (Esc cancels)")
+    MGE.say("click an object: the selection gets its color (Esc cancels)")
 end
 
 ---The Color row's name: the color picker (ui/color_picker.lua), starting from the first selected object's
@@ -225,7 +151,7 @@ local function pickColor()
     end
     local targets = getSelected()
     if #targets == 0 then
-        echo("^04[MGE] select the objects to color first")
+        MGE.say("select the objects to color first")
         return
     end
     MGE.ColorPicker.open({
@@ -254,7 +180,7 @@ local function buildCoreProps(holder, selected)
     end
     local _
     inwuts.color, _, colorLabel = createInputRow("Color", holder, function() adjustColor() end, colorHints,
-        "RGBA 0-255 (up to 500 is brighter). Enter applies\nthe typed fields, empty ones keep each object's own.\n" ..
+        "RGBA 0-255 (up to 500 is brighter). A typed field\napplies when you leave it, empty ones keep each own.\n" ..
         "\"mixed\": the selected objects differ.\nName click: color picker, or pick from an object in the world.",
         pickColor)
     Rows.setHighlighted(colorLabel, MGE.WorldSelect.picking ~= nil) -- rebuilt while picking
@@ -360,11 +286,9 @@ end
 
 ---@type EditorPanelModule
 return {
-    fixed = { { build = buildTransformRows, panel = "core", row = 0, rows = 3 } },
     blocks = {
         { name = "measured", build = buildMeasuredRows, panel = "core", row = 0, rows = 3 },
         { name = "coreProps", build = buildCoreRest, panel = "core", row = 3, rows = 5 },
     },
-    inputs = { fixed = { "pos", "rot", "scale" }, rebuilt = { "position", "angle", "size", "color", "coreProps" } },
-    applyTransformModes = applyTransformModes,
+    inputs = { rebuilt = { "position", "angle", "size", "color", "coreProps" } },
 }

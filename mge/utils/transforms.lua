@@ -250,14 +250,6 @@ function Transforms.liveSides(selectedObjects)
     return out
 end
 
----Move row: moves selected objects by the typed offsets
----@param typed (number?)[] x y z, nil axes don't move
-function Transforms.move(typed)
-    local selectedObjects = getSelected()
-    if #selectedObjects == 0 then return end
-    moveBy(selectedObjects, { typed[1] or 0, typed[2] or 0, typed[3] or 0 })
-end
-
 ---Pos row: moves selected objects so their center (same pivot as rotate) lands on the typed
 ---coordinates, counted from POS_ORIGIN. Axes left empty don't move
 ---@param typed (number?)[] x y z, nil axes don't move
@@ -329,15 +321,6 @@ local function rotBy(selectedObjects, offsets, pivot)
         return a[1], a[2], a[3]
     end)
     Transforms.onChanged()
-end
-
----Rotate row: rotates selected objects by the typed degrees (direction: Transforms.fileAngles)
----@param typed (number?)[] x y z degrees, nil axes don't turn
-function Transforms.rotate(typed)
-    local selectedObjects = getSelected()
-    if #selectedObjects == 0 then return end
-    local sign = angleSign()
-    rotBy(selectedObjects, { sign * math.rad(typed[1] or 0), sign * math.rad(typed[2] or 0), sign * math.rad(typed[3] or 0) })
 end
 
 ---World directions of an object's local x, y, z axes (columns of its orientation)
@@ -589,19 +572,6 @@ local function scaleBy(selectedObjects, scale, pivot, frame)
     if MGE.Camera.followMoves then MGE.Camera.focus(selectedObjects) end
     finishTransform(selectedObjects, scalePos)
     Transforms.onChanged()
-end
-
----Resize row: multiplies size and spacing of selected objects by the typed factors
----@param typed (number?)[] x y z factors, nil (or 0 / -1) axes don't change
-function Transforms.scale(typed)
-    local selectedObjects = getSelected()
-    if #selectedObjects == 0 then return end
-    local scale = {}
-    for i = 1, 3 do
-        local value = typed[i] or 0
-        scale[i] = (value == 0 or value == -1) and 1 or value -- 0 and -1 mean no change
-    end
-    scaleBy(selectedObjects, scale)
 end
 
 ---Group axes (columns of the group frame) as vectors

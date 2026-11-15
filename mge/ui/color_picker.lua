@@ -304,7 +304,7 @@ function ColorPicker.open(options)
             if result == "added" then
                 MGE.Config.save()
             elseif result == "full" then
-                echo("^04[MGE] the palette is full: right click a color to remove it")
+                MGE.say("the palette is full: right click a color to remove it")
             end
         end)
     TBMenu:displayPopup(plus, "Save the new color to the palette.\nOn a color: click uses it, right click removes it.")

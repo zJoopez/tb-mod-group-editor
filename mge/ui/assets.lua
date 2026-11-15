@@ -70,7 +70,7 @@ end
 local function saveSelectedToAsset()
     local selectedObjects = ModData.getSelected()
     if #selectedObjects == 0 then
-        print("No objects selected")
+        MGE.say("No objects selected")
         return
     end
 
@@ -99,7 +99,7 @@ local function saveSelectedToAsset()
                 end
                 local halfHeight = getObjHalfHeight(obj)
                 if x == nil or y == nil or z == nil or halfHeight == nil then
-                    print("Unable to read selected object position or scale")
+                    MGE.say("Unable to read selected object position or scale")
                     return false
                 end
                 positions[i] = { x = x, y = y, z = z }
@@ -127,10 +127,10 @@ local function saveSelectedToAsset()
                 table.insert(parser.env_obj_joint, assetJoint)
             end
             if FileHandler.WriteMod(parser, path) then
-                print("asset saved: " .. path)
+                MGE.say("asset saved: " .. path)
                 return true
             end
-            print("failed to save asset")
+            MGE.say("failed to save asset")
             return false
         end
     }
@@ -240,7 +240,7 @@ local function importObjects(parser, keepTab, inView, jointIds, atmoExcess)
         if type(atmoExcess) == "number" then free = math.max(0, math.min(free, atmoExcess)) end
         local over = #parser.env_obj - free
         if over > MGE.AtmoLayer.room() then
-            print("Not enough room: " .. over .. " objects for the atmo, " .. MGE.AtmoLayer.room() .. " more fit there")
+            MGE.say("Not enough room: " .. over .. " objects for the atmo, " .. MGE.AtmoLayer.room() .. " more fit there")
             return false
         end
         for _ = 1, over do table.insert(excess, 1, table.remove(parser.env_obj)) end
@@ -252,7 +252,7 @@ local function importObjects(parser, keepTab, inView, jointIds, atmoExcess)
     local ids = ModData.allocateIds(plans) -- all or nothing
     if not ids then return false end
     local filled = fillJointAnchors(parser) -- before placeInView: the anchors move with the objects
-    if filled > 0 then echo("^04[MGE] " .. filled .. " joints had no anchor (pos), placed between their objects") end
+    if filled > 0 then MGE.say("" .. filled .. " joints had no anchor (pos), placed between their objects") end
     if inView then placeInView(parser) end
 
     -- selection moves to the imported objects so they can be moved right away
@@ -284,7 +284,7 @@ local function importObjects(parser, keepTab, inView, jointIds, atmoExcess)
     if not keepTab then MGE.Main.setTab("core") end
     MGE.focusAfterReload = true
     MGE.apply() -- the reload refreshes the window
-    print("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints" ..
+    MGE.say("imported " .. #parser.env_obj .. " objects, " .. importedJoints .. " joints" ..
         (#atmoObjs > 0 and (", " .. #atmoObjs .. " atmo objects") or ""))
     return true
 end
@@ -293,13 +293,13 @@ end
 local function importAssetFromFile(assetName)
     local path = getImportPath(assetName)
     if not path or not Files.Exists(path) then
-        print("Asset not found")
+        MGE.say("Asset not found")
         return
     end
 
     local parser = FileHandler.ParseMod(path)
     if #parser.env_obj == 0 then
-        print("Asset file contains no objects")
+        MGE.say("Asset file contains no objects")
         return
     end
     -- converted maps say where they go (MGE.KEEP_POSITION_TAG), other assets go in front of the camera
@@ -327,7 +327,7 @@ local function savePlayerToAsset(playerId)
     playerId = playerId or Main.selectedPlayer
     local parts = assetsView.playerParts(playerId)
     if not parts then
-        print("Player " .. playerId .. " uses the default body, the mod has no body or joint changes for it")
+        MGE.say("Player " .. playerId .. " uses the default body, the mod has no body or joint changes for it")
         return
     end
 
@@ -349,10 +349,10 @@ local function savePlayerToAsset(playerId)
             local lines = { "player 0" }
             for _, line in ipairs(parts) do table.insert(lines, line) end
             if FileHandler.WriteMod({ env_obj = {}, env_obj_joint = {}, ignores = lines }, path) then
-                print("player model saved: " .. path)
+                MGE.say("player model saved: " .. path)
                 return true
             end
-            print("failed to save player model")
+            MGE.say("failed to save player model")
             return false
         end
     }
@@ -365,7 +365,7 @@ end
 local function replacePlayerFromFile(assetName)
     local path = getImportPath(assetName)
     if not path or not Files.Exists(path) then
-        print("Asset not found")
+        MGE.say("Asset not found")
         return
     end
     -- first player section in the file, or parts for all players, so mods like fatkido.tbm can be
@@ -373,13 +373,13 @@ local function replacePlayerFromFile(assetName)
     local assetParser = FileHandler.ParseMod(path)
     local parts = FileHandler.getPlayerLines(assetParser) or FileHandler.getSharedPlayerLines(assetParser)
     if not parts then
-        print("Asset file contains no body or joint changes")
+        MGE.say("Asset file contains no body or joint changes")
         return
     end
 
     local players = Main.selectedPlayerList()
     if #players == 0 then
-        print("Select the players to import the model to first")
+        MGE.say("Select the players to import the model to first")
         return
     end
     for _, playerId in ipairs(players) do
@@ -387,7 +387,7 @@ local function replacePlayerFromFile(assetName)
     end
     History.commit()
     MGE.apply() -- body changes need a reload
-    print((#players == 1 and "player " or "players ") .. table.concat(players, ", ") .. " replaced with " .. assetName)
+    MGE.say((#players == 1 and "player " or "players ") .. table.concat(players, ", ") .. " replaced with " .. assetName)
 end
 
 
@@ -449,7 +449,7 @@ local function addAtmo(objects, inView)
     if #objects == 0 then return false end
     local room = MGE.AtmoLayer.room()
     if #objects > room then
-        echo("^04[MGE] " .. #objects .. " atmo objects, room for " .. room .. " (Settings > Max atmo objects)")
+        MGE.say("" .. #objects .. " atmo objects, room for " .. room .. " (Settings > Max atmo objects)")
         return false
     end
     if inView then placeInView({ env_obj = objects, env_obj_joint = {}, ignores = {} }) end
@@ -492,21 +492,21 @@ function assetsView.openAtmoImport()
             local filePath = root == ATMO_ROOTS[1].root and (ATMO_DIR .. "/" .. path) or ("../data/atmospheres/" .. path)
             local file = Files.Open(filePath, FILES_MODE_READONLY)
             if not file or not file.data then
-                echo("^04[MGE] couldn't read " .. path)
+                MGE.say("couldn't read " .. path)
                 return
             end
             local lines = file:readAll()
             file:close()
             local atmo = MGE.Atmo.parse(lines)
             if #atmo.objects == 0 then
-                echo("^04[MGE] no objects in " .. path)
+                MGE.say("no objects in " .. path)
                 return
             end
             local state = MGE.Atmo.state
             local headerTaken = #atmo.header > 0 and #state.header == 0
             if addAtmo(atmo.objects, false) then
                 if headerTaken then state.header = atmo.header end
-                echo("^04[MGE] imported " .. #atmo.objects .. " atmo objects from " .. path ..
+                MGE.say("imported " .. #atmo.objects .. " atmo objects from " .. path ..
                     (headerTaken and " (with its shader / options lines)" or ""))
             end
         end,
@@ -517,7 +517,7 @@ end
 function assetsView.exportAtmo()
     local selected = ModData.getSelectedAtmo()
     if #selected == 0 then
-        echo("^04[MGE] select the atmo objects to export first")
+        MGE.say("select the atmo objects to export first")
         return
     end
     MGE.saveOverlayContext = {
@@ -534,14 +534,14 @@ function assetsView.exportAtmo()
             local path = ATMO_DIR .. "/" .. fileName
             local file = Files.Open(path, FILES_MODE_WRITE)
             if not file or not file.data then
-                echo("^04[MGE] couldn't write assets/atmo/" .. fileName)
+                MGE.say("couldn't write assets/atmo/" .. fileName)
                 return false
             end
             local text = MGE.Atmo.text({ objects = selected })
             for line in (text .. "\n"):gmatch("(.-)\n") do file:writeLine(line) end
             file:close()
             lastAtmo = fileName
-            echo("^04[MGE] saved assets/atmo/" .. fileName .. " (" .. #selected .. " atmo objects)")
+            MGE.say("saved assets/atmo/" .. fileName .. " (" .. #selected .. " atmo objects)")
             return true
         end,
     }

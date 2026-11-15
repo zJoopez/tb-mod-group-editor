@@ -3,7 +3,8 @@
 --
 --   uiScale 1.3
 --   cameraFollow 1
---   moveStep 0.5
+--   snapStep 0.5              the gizmo's move / scale snap (Ctrl)
+--   wheelStep 0.5             the mouse wheel over a number field, wheelFineStep with Shift
 --   palette 255 128 0 255     one line a color, r g b a 0-255
 --
 -- Read when MGE starts (Config.load, before the window is built: the UI size is needed then), put on the
@@ -11,6 +12,11 @@
 -- palette changes (Config.save). Unknown keys and bad values are skipped: the defaults stay
 local Config = {}
 MGE.Config = Config
+
+-- the mouse wheel over a number field (ui/editor_rows.lua): the step, and with Shift the fine one. Kept here:
+-- the editor rows load after the config is applied
+Config.wheelStep = 0.5
+Config.wheelFineStep = 0.05
 
 ---@class MgeConfigEntry
 ---@field key string
@@ -29,14 +35,16 @@ Config.ENTRIES = {
         set = function(v) if MGE_UI_SCALE == nil then MGE_UI_SCALE = v end end }, -- a restart's choice wins
     { key = "cameraFollow", kind = "boolean",
         get = function() return MGE.Camera.followMoves end, set = function(v) MGE.Camera.followMoves = v end },
-    { key = "moveStep", kind = "number", min = 1e-6, max = 100,
-        get = function() return MGE.Gizmo.moveStep end, set = function(v) MGE.Gizmo.moveStep = v end },
+    { key = "snapStep", kind = "number", min = 1e-6, max = 100,
+        get = function() return MGE.Gizmo.step end, set = function(v) MGE.Gizmo.step = v end },
     { key = "rotateStep", kind = "number", min = 1e-6, max = 180,
         get = function() return MGE.Gizmo.rotateStep end, set = function(v) MGE.Gizmo.rotateStep = v end },
-    { key = "scaleStep", kind = "number", min = 1e-6, max = 10,
-        get = function() return MGE.Gizmo.scaleStep end, set = function(v) MGE.Gizmo.scaleStep = v end },
     { key = "maxAtmo", kind = "number", min = 0, max = 100000, whole = true,
         get = function() return MGE.AtmoLayer.maxAtmo end, set = function(v) MGE.AtmoLayer.maxAtmo = v end },
+    { key = "wheelStep", kind = "number", min = 1e-6, max = 1000,
+        get = function() return Config.wheelStep end, set = function(v) Config.wheelStep = v end },
+    { key = "wheelFineStep", kind = "number", min = 1e-6, max = 1000,
+        get = function() return Config.wheelFineStep end, set = function(v) Config.wheelFineStep = v end },
 }
 
 ---@type table<string, number|boolean> values read from the file, by key
@@ -161,7 +169,7 @@ function Config.save()
     end
     local ok, file = pcall(io.open, Config.path(), "w")
     if not ok or not file then
-        echo("^04[MGE] couldn't save the settings to " .. Config.path())
+        MGE.say("couldn't save the settings to " .. Config.path())
         return
     end
     file:write(Config.format(Config.values, Config.palette))

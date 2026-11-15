@@ -3,7 +3,7 @@
 --   none:   no tool on, clicking only selects
 --   move:   arrows (one world axis) and squares (two axes) at the selection's center
 --   rotate: a ring per group axis (the axes Rot shows) around the selection
---   scale:  a cube handle per group axis (the axes Resize uses) and a white one for all three
+--   scale:  a cube handle per group axis (the axes Scale uses) and a white one for all three
 -- Keeps its size on screen (Gizmo.size of the camera distance). Drawn in draw2d on top of the world
 -- like rph's, so objects never hide it (picking ignores objects too).
 --
@@ -16,9 +16,9 @@
 -- player (utils/players.lua: Move, Rotate, Scale with the white cube only), on the Joints list the
 -- selected joints' anchors (utils/joints.lua: Move only).
 -- A drag only changes the live world (target.previewMove / previewRotate). Releasing applies it
--- once like the Move / Rotate / Resize rows do (target.moveBy / rotateByMatrix / scaleBy): one undo
--- step (Shift + Z takes the drag back), joints follow, editor rows refresh. Ctrl snaps: Gizmo.moveStep,
--- rotateStep, scaleStep.
+-- once like the Pos / Rot / Scale rows do (target.moveBy / rotateByMatrix / scaleBy): one undo
+-- step (Shift + Z takes the drag back), joints follow, editor rows refresh. Ctrl snaps: Gizmo.step (move,
+-- scale) and rotateStep.
 local GizmoMath = MGE.GizmoMath
 local WorldSelect = MGE.WorldSelect
 local ModData = MGE.ModData
@@ -36,9 +36,9 @@ local Gizmo = {
     ---(ui/editor_core.lua)
     modeListeners = {},
     size = 0.10,      -- arrow length as a share of the camera distance, keeps the gizmo's size on screen
-    moveStep = 0.1,   -- Ctrl while dragging an arrow / square: the offset moves in these steps
+    step = 0.5,       -- Ctrl while dragging: an arrow / square moves in these units, a scale handle multiplies in
+                      -- these steps (0.5: x1, x1.5, x2...). One setting for both (Settings > Gizmo snapping)
     rotateStep = 15,  -- Ctrl while dragging a ring: degrees
-    scaleStep = 0.1,  -- Ctrl while dragging a scale handle: factor steps
     ---@type (fun(mode: GizmoMode): GizmoTarget?)? when set, the gizmo works on what this gives instead
     ---of the selection (ui/map_place.lua: the region or the map being placed)
     targetOverride = nil,
@@ -429,12 +429,12 @@ local function updateDrag(x, y)
         drag.target.previewRotate(drag.rotation)
     elseif drag.scale then
         local factors, travel = GizmoMath.scaleFactors(drag.handle, drag.grab, o, d, drag.base.size,
-            snapping and Gizmo.scaleStep or nil)
+            snapping and Gizmo.step or nil)
         if not factors then return end -- ray parallel to the handle this frame, keep the last factors
         drag.scale, drag.travel = factors, travel
         drag.target.previewScale(factors, drag.baseSides)
     else
-        local offset = GizmoMath.dragOffset(drag.handle, drag.center, drag.grab, o, d, snapping and Gizmo.moveStep or nil)
+        local offset = GizmoMath.dragOffset(drag.handle, drag.center, drag.grab, o, d, snapping and Gizmo.step or nil)
         if not offset then return end -- ray parallel to the axis this frame, keep the last offset
         drag.offset = offset
         drag.target.previewMove(offset)
@@ -592,7 +592,7 @@ add_hook("draw3d", HOOK_SET, function()
         shapes = nil
         if not Gizmo.errorShown then -- report once instead of every frame
             Gizmo.errorShown = true
-            echo("[MGE] gizmo error: " .. tostring(err))
+            MGE.say("gizmo error: " .. tostring(err))
         end
     end
 end)
@@ -607,7 +607,7 @@ add_hook("draw2d", HOOK_SET, function()
     end)
     if not ok and not Gizmo.errorShown then
         Gizmo.errorShown = true
-        echo("[MGE] gizmo draw error: " .. tostring(err))
+        MGE.say("gizmo draw error: " .. tostring(err))
     end
 end)
 

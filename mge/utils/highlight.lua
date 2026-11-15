@@ -427,6 +427,6 @@ add_hook("draw3d", MGE.hookname, function()
     end)
     if not ok and not Highlight.errorShown then -- report once instead of spamming every frame
         Highlight.errorShown = true
-        echo("[MGE] highlight error: " .. tostring(err))
+        MGE.say("highlight error: " .. tostring(err))
     end
 end)

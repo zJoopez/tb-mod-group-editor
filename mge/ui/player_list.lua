@@ -57,7 +57,7 @@ function player_list.deleteSelected()
     local count = #list
     if count == 0 or (MGE.confirmOverlay and not MGE.confirmOverlay.destroyed) then return end
     if count >= Main.getPlayerCount() then
-        echo("^04[MGE] a mod needs at least one player")
+        MGE.say("a mod needs at least one player")
         return
     end
     local message = "Delete " .. (count == 1 and "player " .. list[1] or count .. " selected players") ..

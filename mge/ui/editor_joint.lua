@@ -119,7 +119,7 @@ local function buildType(holder, joints)
     inwuts.jointType = Rows.createInputRow("Type", holder, function(inputs)
         local value = tonumber(inputs[1].textfieldstr[1])
         if value then setAll("jointtype", tostring(math.floor(value))) end
-    end, { hint }, "The jointtype line, a number (most mods write 0).")
+    end, { hint }, "The jointtype line, a number (most mods write 0).", nil, { whole = true })
 end
 
 ---Visible row: the visible line, the selected joints' shared value lit

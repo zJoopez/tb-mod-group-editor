@@ -847,7 +847,7 @@ add_hook("draw3d", HOOK_SET, function()
     if box then
         pendingBox = nil
         local ok, err = pcall(boxSelect, box)
-        if not ok then echo("[MGE] box select error: " .. tostring(err)) end
+        if not ok then MGE.say("box select error: " .. tostring(err)) end
     end
     local picking = WorldSelect.picking
     if not linkSlot() and not picking then
@@ -873,9 +873,9 @@ add_hook("draw3d", HOOK_SET, function()
         local ok, obj = pcall(WorldSelect.pick, click.x, click.y)
         if ok and obj then
             local done, err = pcall(picking.done, obj)
-            if not done then echo("^04[MGE] pick error: " .. tostring(err)) end
+            if not done then MGE.say("pick error: " .. tostring(err)) end
         else
-            echo("^04[MGE] no object there, pick cancelled")
+            MGE.say("no object there, pick cancelled")
         end
         if picking.ended then picking.ended() end
         return
@@ -883,7 +883,7 @@ add_hook("draw3d", HOOK_SET, function()
     -- whatever is under the cursor, whichever list shows: a joint, player or object switches to its list
     local ok, kind, hit = pcall(WorldSelect.pickAny, click.x, click.y)
     if not ok then
-        echo("[MGE] world select error: " .. tostring(kind))
+        MGE.say("world select error: " .. tostring(kind))
     elseif kind == "joint" then
         clickJoint(hit, click.additive)
     elseif kind == "player" then

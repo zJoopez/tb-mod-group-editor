@@ -73,7 +73,7 @@ local function buildAtmoProps(holder, selected)
     end
     inputs.atmoLevels = Rows.createInputRow("Graphics", holder, setLevels, { level("min_level", 0), level("max_level", 2) },
         "The game's graphics levels it's drawn at, lowest\nand highest: 0 lowest, 2 highest. Players on other\n" ..
-        "settings don't see it: a way to keep detail off\nslower computers.")
+        "settings don't see it: a way to keep detail off\nslower computers.", nil, { whole = true })
     -- the other lines (count, randompos, rotate, parent...): kept, not edited, not drawn as the game does
     local kept, keys = 0, {}
     for _, obj in ipairs(selected) do

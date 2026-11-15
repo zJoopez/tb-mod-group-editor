@@ -50,8 +50,8 @@ local BAR_GAP = Widgets.GAP -- between the bar's buttons, the same gap as everyw
 local BAR_SEP = px(14) -- between its groups
 local EDITOR_TABS_H = px(20)
 local TAB_PADDING = px(6) -- space between a tab panel's edge and its content
--- the editor area: fits the panels (8 rows each, PANELS in ui/editor.lua), a gap and the reset button
-local EDITOR_H = 8 * Widgets.ROW_H + px(4) + Widgets.ROW_H
+-- the editor area: fits the panels (8 rows each, PANELS in ui/editor.lua)
+local EDITOR_H = 8 * Widgets.ROW_H
 local FOOTER_H = Widgets.INFO_HEIGHT + px(4) -- the footer row along the screen's bottom
 local LIST_ROWS = 6 -- the list's height, it scrolls; fewer when the panel wouldn't fit the screen (below)
 local rowH = Widgets.LIST_ROW_H -- ScrollList.rowHeight (loaded below) is the same
@@ -319,7 +319,6 @@ local function listHasTab(list, id)
 end
 
 -- the editor area inside the tab panel: fits the panels (8 rows each, see PANELS in ui/editor.lua)
--- with the reset button under them
 local areaH = EDITOR_H
 local tabPanel = content:addChild({
     pos = defaultPos,
@@ -336,10 +335,13 @@ updateContentHeight(tabPanel.size.h)
 -- Rename are with the tools, Reindex is in the Advanced panel
 
 -- footer: one row along the bottom of the screen over the game's view, no background, a child of the panel
--- reaching past its edges like the top bar. Left: the counters, middle: credits, right: the mod Save writes
+-- reaching past its edges like the top bar. Left: the counters, middle: the latest message (MGE.say: chat
+-- isn't shown with the HUD off) or the credits, right: the mod Save writes
 -- Placed by Main.fitScreen, like the top bar's width
 local FOOTER_EDGE = px(8) -- from the screen's sides
-local CREDITS_W = px(260)
+local CREDITS_W = px(380) -- the middle: room for a message
+local CREDITS = "Project Mod Group Editor by joopez"
+local MESSAGE_SHOW, MESSAGE_FADE = 4, 1 -- seconds a message shows, then fades back to the credits
 ---@return UIElement
 local function addFooterPart()
     return Main.window:addChild({ pos = { 0, 0 }, size = { 1, FOOTER_H } })
@@ -349,6 +351,36 @@ local creditsRow = addFooterPart()
 creditsRow.uiColor = { 0, 0, 0, 1 } -- black like the rest of the footer (FOOTER_COLOR, set below)
 local fileRow = addFooterPart() -- the file Save writes, unsaved changes
 local shown = {} -- what the file row shows (below)
+
+---@type { text: string, at: number }? the latest message while it shows
+local message = nil
+---@type string? what the middle has laid out (Widgets.infoText fits the text to the width once)
+local middleText = nil
+
+---MGE.say's footer half: the message in the middle, one line, without chat color codes
+---@param text string
+function MGE.onMessage(text)
+    text = text:gsub("%^%d%d", ""):gsub("%s*\n%s*", "  ")
+    message = { text = text, at = os.clock_real() }
+end
+
+Widgets.addDrawBefore(creditsRow, function()
+    local text, alpha = CREDITS, 1
+    if message then
+        local age = os.clock_real() - message.at
+        if age < MESSAGE_SHOW + MESSAGE_FADE then
+            text = message.text
+            if age > MESSAGE_SHOW then alpha = 1 - (age - MESSAGE_SHOW) / MESSAGE_FADE end
+        else
+            message = nil
+        end
+    end
+    creditsRow.uiColor[4] = alpha -- the text reads the row's color as it draws
+    if text ~= middleText then
+        Widgets.infoText(creditsRow, text)
+        middleText = text
+    end
+end)
 
 ---Fits what spans the screen to its size: the top bar's width (its right-hand groups count from its right
 ---edge) and the footer along the bottom. At start and when the game's window or GUI scale changes (the
@@ -364,7 +396,7 @@ function Main.fitScreen()
         part[1].size.w = part[3]
         part[1]:moveTo(part[2], h - FOOTER_H)
     end
-    Widgets.infoText(creditsRow, "Project Mod Group Editor by joopez")
+    middleText = nil -- the middle lays its text out again for the new width
     shown = {} -- the file row lays its text out again for its new width
     if Main.refreshCounters then Main.refreshCounters() end
 end
@@ -442,7 +474,7 @@ function Main.getPlayerCount()
     return count
 end
 
----Selected players in order, what the gizmo, the highlight, Import, Resize and camera follow work on.
+---Selected players in order, what the gizmo, the highlight, Import, the Scale row and camera follow work on.
 ---Can be empty (Ctrl + A on all, Shift + click on the last one)
 ---@return integer[]
 function Main.selectedPlayerList()

@@ -70,8 +70,8 @@ local function objectRadius(id)
 end
 
 ---Center and radius of a sphere around the objects, each object counting with at most
----Camera.maxObjectRadius (huge ground objects). The center is the selection pivot the gizmo, Rotate,
----Resize and the Pos row use (Transforms.getSelectionPivot: average of the file positions), so the
+---Camera.maxObjectRadius (huge ground objects). The center is the selection pivot the gizmo and the
+---Pos / Rot / Scale rows use (Transforms.getSelectionPivot: average of the file positions), so the
 ---gizmo sits in the middle of the screen. The middle of the objects' box was used before: for an uneven
 ---selection (Select All) it's somewhere else and the gizmo ended up off center
 ---@param objects FileParserEnvObj[]

@@ -140,16 +140,16 @@ end
 local function reindex()
     local moved, left = ModData.reindex()
     if left > 0 then
-        print("reindex: " .. left .. " dynamic objects still above id " .. MGE.MAX_NONSTATIC_OBJECTS ..
+        MGE.say("reindex: " .. left .. " dynamic objects still above id " .. MGE.MAX_NONSTATIC_OBJECTS ..
             ", make some static")
     end
     if moved == 0 then
-        print("reindex: nothing to move")
+        MGE.say("reindex: nothing to move")
         return
     end
     History.commit()
     MGE.apply()
-    print("reindex moved " .. moved .. " objects")
+    MGE.say("reindex moved " .. moved .. " objects")
 end
 
 ---Ids row, built once: its button acts on all objects, nothing to refresh
@@ -172,7 +172,7 @@ local function buildMapRow(holder)
             -- loaded on first use (MGE.loadMapConv): a broken converter says so and the editor keeps working
             local ok, err = pcall(MGE.loadMapConv)
             if not ok then
-                echo("^04[MGE] the map converter didn't load: " .. tostring(err))
+                MGE.say("the map converter didn't load: " .. tostring(err))
                 return
             end
             dofile(MGE.scriptPath .. "ui/map_overlay.lua")

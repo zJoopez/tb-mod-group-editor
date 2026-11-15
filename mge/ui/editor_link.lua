@@ -11,7 +11,7 @@
 --             picked makes two default objects joined in the slot              (block jointLinkButtons)
 -- A pick only rebuilds the heading and the buttons, the grid restyles its cells in place: rebuilding it
 -- would scroll it back to the top. Selecting another slot rebuilds all three.
--- Has its own buttons instead of the editor's Reset inputs footer (PANELS in ui/editor.lua).
+-- Has its own buttons (Reset: the draft back to the saved link).
 -- Like the Properties tab, a click on a joint's anchor selects that joint (it becomes the current
 -- slot) and the Move gizmo drags the selected joints' anchors: those come before picking objects
 
@@ -164,9 +164,9 @@ local function commit(slot)
             MGE.Main.setTab("joint") -- next: its values
         end
     elseif state == "incomplete" then
-        echo("^04[MGE] pick 2 objects first")
+        MGE.say("pick 2 objects first")
     elseif state == "unchanged" then
-        echo("^04[MGE] " .. (#slots > 1 and "the selected joints already link" or "joint " .. slot .. " already links")
+        MGE.say("" .. (#slots > 1 and "the selected joints already link" or "joint " .. slot .. " already links")
             .. " those objects")
     elseif Joints.commitDraft(slot, slots) then
         MGE.Main.followJoints() -- camera follow frames the linked objects, like selecting the joint does

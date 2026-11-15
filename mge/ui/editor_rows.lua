@@ -81,8 +81,133 @@ local function formatHints(values)
     return hints
 end
 
+---A number as a field shows it after a wheel step: no trailing zeros, "-0" as "0"
+---@param value number
+---@return string
+local function formatStep(value)
+    local s = string.format("%.4f", value):gsub("0+$", ""):gsub("%.$", "")
+    if s == "-0" then s = "0" end
+    return s
+end
+Rows.formatWheelValue = formatStep -- for the tests
+
+---The value a wheel step starts from: the typed number, else the placeholder's (the selection's current
+---value), else 0 ("mixed", or nothing to read)
+---@param text string?
+---@param placeholder string?
+---@return number
+function Rows.wheelBase(text, placeholder)
+    -- the placeholder's leading number: "8 obj" (Generate's Amount) is 8
+    return tonumber(text) or tonumber(tostring(placeholder or ""):match("^%s*(-?%d*%.?%d+)")) or 0
+end
+
+---The value after a wheel step. Whole-number fields step by 1 (Shift too) and round first
+---@param base number
+---@param up boolean
+---@param step number the wheel's step for decimal fields (Config.wheelStep or .wheelFineStep)
+---@param whole boolean?
+---@return number
+function Rows.wheelValue(base, up, step, whole)
+    if whole then
+        base, step = math.floor(base + 0.5), 1
+    end
+    return base + (up and step or -step)
+end
+
+---@alias InputMode
+---| "live" # the editor's rows: the wheel and leaving the field apply it, then the field empties (its placeholder
+---          shows the value now): what you see is what the selection has, no Enter needed. Esc drops the typing
+---| "keep" # Settings: the wheel and leaving apply it, the value stays in the field
+---| "form" # Generate, Convert Map: fields an action reads (Enter runs it), the wheel only changes the text
+
+---@type UIElement? the field being applied: a rebuild (ui/editor.lua) doesn't put its text back in the new field
+Rows.applying = nil
+
+---Applies a field the way its mode says
+---@param input UIElement
+---@param onInputFunc fun()
+---@param mode InputMode
+---@param mergeKey string? History.mergeKey for its commit: wheel steps on one field are one undo step
+local function applyField(input, onInputFunc, mode, mergeKey)
+    if mode ~= "live" then
+        onInputFunc()
+        return
+    end
+    local text = input.textfieldstr[1]
+    if text == "" then return end
+    if tonumber(text) then
+        Rows.applying = input
+        History.mergeKey = mergeKey
+        local ok, err = pcall(onInputFunc)
+        History.mergeKey = nil
+        Rows.applying = nil
+        if not ok then MGE.say("" .. tostring(err)) end
+    end
+    -- empty again (also "-" or "." alone): the placeholder shows the selection's value now
+    if not input.destroyed then input:clearTextfield() end
+end
+
+---Mouse wheel over a number field: up adds the step (Config.wheelStep, with Shift Config.wheelFineStep), down
+---takes it away, from the typed number or the
+---placeholder's (the selection's value). Live and keep fields apply it right away, form fields only get the
+---text. toriui sends the wheel to every scrollEnabled element, wherever the mouse is, so the field checks the
+---cursor itself (MOUSE_X / Y: the wheel's own x, y aren't the cursor)
+---@param input UIElement
+---@param placeholder string? the field's placeholder (toriui's text field doesn't keep it)
+---@param apply fun(mergeKey: string?) applies the field (applyField with its mode), nil for form fields
+---@param whole boolean? a whole-number field: steps of 1
+local function addWheelStep(input, placeholder, apply, whole)
+    local press = input.btnDown
+    input.scrollEnabled = true
+    input.btnDown = function(btn, x, y)
+        if btn ~= 4 and btn ~= 5 then return press(btn, x, y) end
+        local mx, my = MOUSE_X or x, MOUSE_Y or y
+        if not input:isDisplayed() or mx < input.pos.x or mx > input.pos.x + input.size.w
+            or my < input.pos.y or my > input.pos.y + input.size.h then
+            return false -- not this field: the wheel goes on to the next element (a list, the camera)
+        end
+        local value = Rows.wheelBase(input.textfieldstr[1], placeholder)
+        local Config = MGE.Config
+        local step = get_keyboard_shift() ~= 0 and Config.wheelFineStep or Config.wheelStep
+        local text = formatStep(Rows.wheelValue(value, btn == 4, step, whole))
+        input.textfieldstr[1] = text
+        input.textfieldindex = #text
+        if apply then apply(Rows.fieldKey(input)) end -- one undo step while the mouse stays on the field
+        return true
+    end
+end
+
+---A field's key for merged wheel steps (History.mergeKey): its place on screen, the same for the field a
+---rebuild puts there
+---@param input UIElement
+---@return string
+function Rows.fieldKey(input)
+    return "field " .. math.floor(input.pos.x) .. "," .. math.floor(input.pos.y)
+end
+
+---Leaving a field (a click elsewhere: toriui takes its keyboard focus away) applies what's typed. The mouse
+---leaving it ends its wheel steps' undo step (History.endMerge). Checked each frame it's drawn: toriui has no
+---focus-lost callback
+---@param input UIElement
+---@param apply fun()
+local function applyOnLeave(input, apply)
+    local focused = false
+    Widgets.addDrawBefore(input, function()
+        local now = input.keyboard == true
+        if focused and not now and input.textfieldstr[1] ~= "" then apply() end
+        focused = now
+        if History.lastMerge and (MOUSE_X < input.pos.x or MOUSE_X > input.pos.x + input.size.w
+            or MOUSE_Y < input.pos.y or MOUSE_Y > input.pos.y + input.size.h) then
+            History.endMerge(Rows.fieldKey(input))
+        end
+    end)
+end
+
 ---@param placeholder string? text shown while empty, defaults to "0"
-local function createInput(container, onInputFunc, placeholder)
+---@param mode InputMode? defaults to "live"
+---@param whole boolean? a whole-number field (a count, a level): the wheel steps by 1
+local function createInput(container, onInputFunc, placeholder, mode, whole)
+    mode = mode or "live"
     local input = TBMenu:spawnTextField2(container, nil, "",
         placeholder or "0",
         {
@@ -97,10 +222,16 @@ local function createInput(container, onInputFunc, placeholder)
             darkerMode = true, -- base window color, matches the panel buttons (Widgets.PANEL_STYLE)
             textScale = MGE.Widgets.TEXT_SCALE_SMALL, -- smaller than the labels
         })
-    input:addKeyboardHandlers(nil, function(key)
+    ---@param mergeKey string?
+    local function apply(mergeKey) applyField(input, onInputFunc, mode, mergeKey) end
+    input:addKeyboardHandlers(mode == "live" and function(key)
+        if key == 27 then input:clearTextfield() end -- Esc: the typing is dropped, leaving applies nothing
+    end or nil, function(key)
         if key ~= 13 then return end --enter
-        onInputFunc()
+        apply()
     end)
+    if mode ~= "form" then applyOnLeave(input, apply) end
+    addWheelStep(input, placeholder, mode ~= "form" and apply or nil, whole)
     return input
 end
 
@@ -110,7 +241,8 @@ end
 ---@param parent UIElement
 ---@param help string? explanation shown when hovering the "?" icon
 ---@param onLabelClick function? makes the label a button (switches a transform row's mode)
----@return UIElement row, number contentX, number contentW, UIElement? labelButton only with onLabelClick
+---@return UIElement row, number contentX, number contentW, UIElement labelElement the name's button with
+---onLabelClick, else its label (Rows.setHighlighted lights either)
 local function createRow(label, parent, help, onLabelClick)
     local row = parent:addChild({
         pos = { 0, totalHeight },
@@ -127,11 +259,15 @@ local function createRow(label, parent, help, onLabelClick)
         labelButton = Widgets.button(row, { x = inset, y = inset, w = labelW - inset * 2, h = row.size.h - inset * 2 }, label, onLabelClick,
             Widgets.TEXT_SCALE, Widgets.PANEL_STYLE) -- label size, like the plain labels under it
     else
-        local labelContainer = row:addChild({
-            pos = { 0, 0 },
-            size = { labelW, row.size.h },
+        -- inset like the name buttons, see-through until highlighted (Rows.setHighlighted)
+        local inset = Widgets.INSET
+        labelButton = row:addChild({
+            pos = { inset, inset },
+            size = { labelW - inset * 2, row.size.h - inset * 2 },
+            bgColor = { 0, 0, 0, 0 },
         }, true)
-        labelContainer:addAdaptedText(label, nil, nil, MGE.Widgets.FONT, CENTERMID, MGE.Widgets.TEXT_SCALE, nil, nil)
+        labelButton.plainLabel = true
+        labelButton:addAdaptedText(label, nil, nil, MGE.Widgets.FONT, CENTERMID, MGE.Widgets.TEXT_SCALE, nil, nil)
     end
 
     if help then
@@ -150,8 +286,9 @@ end
 ---@param placeholders string[] one per input
 ---@param help string? explanation shown when hovering the "?" icon
 ---@param onLabelClick function? see createRow
+---@param opts { mode: InputMode?, whole: boolean? }? see createInput, default: live decimal fields
 ---@return UIElement[] inputs, UIElement row, UIElement? labelButton see createRow
-local function createInputRow(label, parent, func, placeholders, help, onLabelClick)
+local function createInputRow(label, parent, func, placeholders, help, onLabelClick, opts)
     local row, contentX, contentW, labelButton = createRow(label, parent, help, onLabelClick)
     local columnSize = contentW / #placeholders
     local inputs = {}
@@ -161,17 +298,19 @@ local function createInputRow(label, parent, func, placeholders, help, onLabelCl
             size = { columnSize, row.size.h },
             interactive = true,
         }, true)
-        inputs[i] = createInput(inputContainer, function() func(inputs, i) end, placeholder)
+        inputs[i] = createInput(inputContainer, function() func(inputs, i) end, placeholder, opts and opts.mode,
+            opts and opts.whole)
     end
     return inputs, row, labelButton
 end
 
----Highlights a button like the current choice in createChoiceRow, or gives it the panel look back
+---Highlights a button like the current choice in createChoiceRow, or gives it the panel look back. A row's
+---plain label (createRow) goes back to see-through
 ---@param btn UIElement? nil and destroyed buttons are skipped
 ---@param on boolean
 local function setHighlighted(btn, on)
     if btn and not btn.destroyed then
-        btn.bgColor = on and Widgets.ACTIVE_COLOR or Widgets.PANEL_STYLE.bg
+        btn.bgColor = on and Widgets.ACTIVE_COLOR or (btn.plainLabel and { 0, 0, 0, 0 } or Widgets.PANEL_STYLE.bg)
     end
 end
 

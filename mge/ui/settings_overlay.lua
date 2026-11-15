@@ -1,8 +1,9 @@
 -- Settings overlay, opened by the toolbar's settings button (ui/main.lua):
 --   Camera follow: the camera looks at the selection when selecting and moving (MGE.Camera.followMoves)
---   Gizmo snapping: the steps a gizmo drag snaps to while Ctrl is held (Gizmo.moveStep / rotateStep /
---                   scaleStep). A typed step applies on Enter or when the overlay closes, an invalid
---                   one goes back to the current step
+--   Gizmo snapping: the steps a gizmo drag snaps to while Ctrl is held (Gizmo.step for move and scale,
+--                   Gizmo.rotateStep). A typed step applies when you leave the field or the overlay
+--                   closes, an invalid one goes back to the current step
+--   Mouse wheel:    the step a wheel turn over a number field adds, and with Shift (MGE.Config)
 --   Atmo objects:   the atmo's size (AtmoLayer.maxAtmo), every one is drawn: the game's graphics
 --                   settings set how many shapes it draws a frame. Typed like the steps
 --   Shortcuts:      heading with a "?", hovering it lists the keyboard and mouse shortcuts
@@ -42,18 +43,18 @@ local SETTINGS = {
 ---@field max number largest value accepted
 ---@field whole boolean? rounded down to a whole number
 
----@param key "moveStep"|"rotateStep"|"scaleStep" field on Gizmo
+---@param key "step"|"rotateStep" field on Gizmo
 local function gizmoField(label, key, max)
     return { label = label, min = 0, max = max, get = function() return Gizmo[key] end, set = function(v) Gizmo[key] = v end }
 end
 
 ---@type MgeNumberSetting[]
 local SNAP_STEPS = {
-    gizmoField("Move step", "moveStep", 100),
+    gizmoField("Move / scale step", "step", 100),
     gizmoField("Rotate step", "rotateStep", 180),
-    gizmoField("Scale step", "scaleStep", 10),
 }
-local SNAP_INFO = "Hold Ctrl while dragging. Move: units, rotate: degrees"
+local SNAP_INFO = "Hold Ctrl while dragging the gizmo.\nMove: units. Scale: the size multiplies in these\n" ..
+    "steps (0.5: x1, x1.5, x2...). Rotate: degrees."
 
 -- atmo objects (utils/atmo_layer.lua): the atmo's size. MGE draws every one, the game draws only so
 -- many shapes a frame, how many depends on its graphics settings (lowest: 10 000)
@@ -63,7 +64,21 @@ local ATMO_FIELDS = {
     { label = "Max atmo objects", min = 0, minInclusive = true, max = 100000, whole = true,
         get = function() return AtmoLayer.maxAtmo end, set = function(v) AtmoLayer.maxAtmo = v end },
 }
--- (all are drawn: above 256, lower graphics settings may be needed to see them all)
+local ATMO_INFO = "How many objects the atmo holds. MGE draws every one,\n" ..
+    "but the game draws only so many shapes a frame:\nlower graphics settings draw more. Above 256 you may\n" ..
+    "need lower graphics to see them all."
+
+-- the mouse wheel over a number field (ui/editor_rows.lua): its step, with Shift the fine one (MGE.Config)
+local Config = MGE.Config
+---@type MgeNumberSetting[]
+local WHEEL_FIELDS = {
+    { label = "Step", min = 0, max = 1000,
+        get = function() return Config.wheelStep end, set = function(v) Config.wheelStep = v end },
+    { label = "Shift step", min = 0, max = 1000,
+        get = function() return Config.wheelFineStep end, set = function(v) Config.wheelFineStep = v end },
+}
+local WHEEL_INFO = "Wheel over a number field adds the step (up)\nor takes it away (down), applied right away.\n" ..
+    "Hold Shift for the fine step."
 
 -- shortcut list, shown by the "?" next to the Shortcuts heading (the toolbar used to have it)
 local SHORTCUTS = table.concat({
@@ -75,8 +90,8 @@ local SHORTCUTS = table.concat({
     "Ctrl + N / D: new / duplicate selected (of the shown list)",
     "Delete: delete selected, of the shown list (asks first)",
     "Shift + Z / Y: undo / redo",
-    "Enter: apply the typed field",
-    "Click Pos / Rot / Scale: switch to Move / Rotate / Resize",
+    "Number fields apply when you leave them (or Enter), Esc drops the typing",
+    "Wheel over a number field: + / - the wheel step, Shift: the fine step (one undo step a scroll)",
     "Alt + Q / W / E: Move / Rotate / Scale gizmo on / off",
     "Ctrl while dragging the gizmo: snap steps (above)",
     "Drag (off the gizmo) / wheel: orbit / zoom camera",
@@ -93,10 +108,11 @@ local SETTING_H = ROW_H + ROW_GAP -- a row, its explanation is its "?" (like the
 local SECTION_H = px(26) -- section heading
 local SNAP_H = SECTION_H + #SNAP_STEPS * SETTING_H
 local ATMO_H = SECTION_H + #ATMO_FIELDS * SETTING_H
+local WHEEL_H = SECTION_H + #WHEEL_FIELDS * SETTING_H
 local SHORTCUTS_H = SECTION_H + px(4)
 local CLOSE_H = Widgets.ROW_H
 local LABEL_W = px(150)
-local panelH = TITLE_H + (#SETTINGS + 1) * SETTING_H + SNAP_H + ATMO_H + SHORTCUTS_H + CLOSE_H + PAD * 2 -- + UI size
+local panelH = TITLE_H + (#SETTINGS + 1) * SETTING_H + SNAP_H + WHEEL_H + ATMO_H + SHORTCUTS_H + CLOSE_H + PAD * 2 -- + UI size
 
 local overlay = TBMenu:spawnWindowOverlay(true) -- true: a click on the dark background closes it
 MGE.settingsOverlay = overlay
@@ -230,7 +246,7 @@ do
             MGE_UI_SCALE = scale
             MGE.Config.save() -- before the restart: the next game session starts at this size too
             local entry = MGE.scriptPath:gsub("mge/$", "") .. "mge.lua" -- the script /ls loads
-            echo("^04[MGE] UI size " .. items[i].label .. ", restarting MGE")
+            MGE.say("UI size " .. items[i].label .. ", restarting MGE")
             pcall(MGE.quit)
             -- started again on the next frame, out of this click (the window it's in is gone)
             add_hook("draw2d", "mge_restart", function()
@@ -275,7 +291,9 @@ local function addNumberSection(name, fields, infoText)
     for _, step in ipairs(fields) do
         local content = addRow(y, step.label)
         local entry = { step = step }
-        entry.input = Rows.createInput(content, function() applySnap(entry) end, formatStep(step.get()))
+        -- keep: the wheel and leaving the field apply it, the value stays in the field
+        entry.input = Rows.createInput(content, function() applySnap(entry) end, formatStep(step.get()), "keep",
+            step.whole)
         Widgets.closeOnEscape(entry.input) -- Esc while typing closes too (applies it, like Close)
         table.insert(numberInputs, entry)
         applySnap(entry) -- fills the field with the current value
@@ -284,7 +302,8 @@ local function addNumberSection(name, fields, infoText)
 end
 
 addNumberSection("Gizmo snapping", SNAP_STEPS, SNAP_INFO) -- three steps, one explanation: on the heading
-addNumberSection("Atmo objects", ATMO_FIELDS) -- the label says enough
+addNumberSection("Mouse wheel", WHEEL_FIELDS, WHEEL_INFO)
+addNumberSection("Atmo objects", ATMO_FIELDS, ATMO_INFO)
 
 -- Shortcuts heading with the "?" right after the text, hovering it lists them
 addHelpHeading(y, "Shortcuts", SHORTCUTS)

@@ -262,7 +262,7 @@ function Atmo.load(modPath)
     ModData.parsed.atmo = file.objects
     Atmo.state = { name = name, header = file.header }
     Atmo.state.text = Atmo.currentText()
-    echo("^04[MGE] atmo: " .. #file.objects .. " objects from data/atmospheres/" .. name)
+    MGE.say("atmo: " .. #file.objects .. " objects from data/atmospheres/" .. name)
 end
 
 ---@param name string
@@ -278,7 +278,7 @@ end
 local function write(name, text)
     local file = Files.Open(Atmo.folder .. name, FILES_MODE_WRITE)
     if not file or not file.data then
-        echo("^04[MGE] couldn't write data/atmospheres/" .. name)
+        MGE.say("couldn't write data/atmospheres/" .. name)
         return false
     end
     for line in (text .. "\n"):gmatch("(.-)\n") do file:writeLine(line) end
@@ -298,13 +298,13 @@ function Atmo.saveFor(modPath)
     if action == "write" then
         if write(name, text) then
             Atmo.state.name, Atmo.state.text = name, text
-            echo("^04[MGE] saved data/atmospheres/" .. name .. " (" .. #atmoObjs .. " atmo objects)")
+            MGE.say("saved data/atmospheres/" .. name .. " (" .. #atmoObjs .. " atmo objects)")
         end
     elseif action == "empty" then
         MGE.confirm("No atmo objects left. Empty data/atmospheres/" .. name .. "?", function()
             if write(name, text) then
                 Atmo.state.name, Atmo.state.text = name, text
-                echo("^04[MGE] emptied data/atmospheres/" .. name .. " (scripts can't delete files: delete it by hand if you like)")
+                MGE.say("emptied data/atmospheres/" .. name .. " (scripts can't delete files: delete it by hand if you like)")
             end
         end)
     else

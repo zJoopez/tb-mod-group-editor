@@ -54,6 +54,7 @@ remove_hooks = remove_hooks or function() end
 
 local testDir = arg[0]:match("^(.*[/\\])") or "./"
 MGE = { scriptPath = testDir .. "../mge/", hookname = "mge_test", onQuit = {} }
+function MGE.say(text) echo("[MGE] " .. tostring(text)) end -- main.lua's, without the footer
 
 -- Files (system/iofiles.lua) stand-in: FileHandler.ParseMod reads through it. Tests register file
 -- contents by path with T.files[path] = text, nothing touches the disk

@@ -386,3 +386,42 @@ T.test("undo / redo of atmo changes: restored without a reload", function()
     T.eq(#ModData.parsed.env_obj, 1, "undo: the object is back")
     T.eq(applied, 1, "an object list change reloads")
 end)
+
+T.test("merged history steps: a wheel scroll is one undo step", function()
+    local History = MGE.History
+    local atmoObj = { kind = "atmo", id = 1, lines = {}, props = { shape = "box", pos = "0 0 0", sides = "1 1 1" } }
+    ModData.parsed = { env_obj = {}, env_obj_joint = {}, atmo = { atmoObj }, ignores = {}, trailer = {} }
+    History.reset()
+    local function step(x, key)
+        ModData.parsed.atmo[1].props.pos = x .. " 0 0"
+        History.mergeKey = key
+        History.commit()
+        History.mergeKey = nil
+    end
+    step(1, "field 1,1")
+    step(2, "field 1,1")
+    step(3, "field 1,1")
+    T.eq(#History.states, 2, "three steps on one field: one state")
+    History.undo()
+    T.eq(ModData.parsed.atmo[1].props.pos, "0 0 0", "undo: before the scroll")
+    History.redo()
+    T.eq(ModData.parsed.atmo[1].props.pos, "3 0 0", "redo: the scroll's last value")
+    -- after an undo / redo the next step is new
+    step(4, "field 1,1")
+    T.eq(#History.states, 3, "after redo: a new state")
+    -- another field, a plain commit and the mouse leaving the field all end the run
+    step(5, "field 9,9")
+    T.eq(#History.states, 4, "another field: a new state")
+    step(6, nil)
+    step(7, nil)
+    T.eq(#History.states, 6, "plain commits never merge")
+    step(8, "field 1,1")
+    History.endMerge("field 1,1")
+    step(9, "field 1,1")
+    T.eq(#History.states, 8, "mouse left the field: a new state")
+    History.endMerge("field 5,5") -- another field's leaving doesn't end this run
+    step(10, "field 1,1")
+    T.eq(#History.states, 8, "still the same run")
+    History.reset()
+    T.eq(History.lastMerge, nil, "reset ends the run")
+end)

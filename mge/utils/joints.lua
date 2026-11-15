@@ -86,7 +86,7 @@ end
 function Joints.haveRoom(count)
     local free = #Joints.freeIds()
     if count <= free then return true end
-    print("Not enough joints available: " .. count .. " needed, " .. free .. " free (max " .. MGE.MAX_ENV_JOINTS .. ")")
+    MGE.say("Not enough joints available: " .. count .. " needed, " .. free .. " free (max " .. MGE.MAX_ENV_JOINTS .. ")")
     return false
 end
 
@@ -209,7 +209,7 @@ local function unstaticLinked(obj1, obj2)
         local flag = tonumber(obj.props.flag) or get_obj_flag(obj.id - 1) or 0
         obj.props.flag = tostring(flag - bit.band(flag, STATIC))
     end
-    echo("^04[MGE] objects " .. obj1 .. " and " .. obj2 .. " were both static, made dynamic: the game doesn't join two static objects")
+    MGE.say("objects " .. obj1 .. " and " .. obj2 .. " were both static, made dynamic: the game doesn't join two static objects")
 end
 
 ---The game ignores joints to objects above the dynamic ids (mod_export.lua's id rules). A new link to
@@ -225,10 +225,10 @@ local function fitLinkedIds(jointId, obj1, obj2)
     ModData.refreshJointIds() -- the new link counts before the reload
     local moved, left = ModData.reindex()
     if left > 0 then
-        echo("^04[MGE] joint " .. jointId .. ": the game only joins objects 1-" .. max .. ", " .. left ..
+        MGE.say("joint " .. jointId .. ": the game only joins objects 1-" .. max .. ", " .. left ..
             " dynamic or joined objects still above (no lower ids left), make some static")
     elseif moved > 0 then
-        echo("^04[MGE] joint " .. jointId .. ": reindexed, " .. moved .. " objects moved so the joined ones are on ids 1-" .. max)
+        MGE.say("joint " .. jointId .. ": reindexed, " .. moved .. " objects moved so the joined ones are on ids 1-" .. max)
     end
 end
 
@@ -393,12 +393,12 @@ end
 ---@return boolean changed
 function Joints.setObjects(joint, obj1, obj2)
     if obj1 == obj2 then
-        echo("^04[MGE] a joint links two different objects")
+        MGE.say("a joint links two different objects")
         return false
     end
     for _, id in ipairs({ obj1, obj2 }) do
         if not Joints.objectById(id) then
-            echo("^04[MGE] this mod has no object " .. tostring(id))
+            MGE.say("this mod has no object " .. tostring(id))
             return false
         end
     end
@@ -477,7 +477,7 @@ function Joints.offerDraft(slotId, objId)
     elseif not draft.obj2 then
         draft.obj2 = objId
     else
-        echo("^04[MGE] a joint links two objects: click a picked one to take it out first")
+        MGE.say("a joint links two objects: click a picked one to take it out first")
         return false
     end
     Joints.onDraftChanged()
@@ -500,12 +500,12 @@ end
 ---@return integer changed slots that changed, 0 when none did or the objects can't be linked (says why)
 function Joints.linkSlots(slotIds, obj1, obj2)
     if obj1 == obj2 then
-        echo("^04[MGE] a joint links two different objects")
+        MGE.say("a joint links two different objects")
         return 0
     end
     local a, b = Joints.objectById(obj1), Joints.objectById(obj2)
     if not a or not b then
-        echo("^04[MGE] the picked objects are gone, pick them again")
+        MGE.say("the picked objects are gone, pick them again")
         return 0
     end
     local changed, anchor = 0, nil

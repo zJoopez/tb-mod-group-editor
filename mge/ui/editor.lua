@@ -1,6 +1,6 @@
 -- Editor area under the object list: one panel per tab, picked by the window's tab row
 -- (Main.applyTab -> editor.applyPanel). Each tab's rows live in their own file:
---   core:     ui/editor_core.lua      Pos/Move, Rot/Rotate, Scale/Resize, Color, Mass, Shape, Visible
+--   core:     ui/editor_core.lua      Pos, Rot, Scale, Color, Mass, Shape, Visible
 --   advanced: ui/editor_advanced.lua  Friction, Bounce, Flags, Model, Ids (Reindex)
 --   thrust:   ui/editor_thrust.lua    Frames, Direction, Axes (World / Object / Off)
 --   generate: ui/editor_generate.lua  Align, Amount, Gap, Angle, Size, Increment, Position, Generate / To view
@@ -12,7 +12,7 @@
 -- Shared row widgets are in ui/editor_rows.lua, the transform math in utils/transforms.lua.
 -- Every block of rows has its own holder. Fixed blocks are built once (typed values stay), the
 -- others are rebuilt when the selection or the objects change, so their placeholders / highlights
--- show current values (typed text is carried over the rebuild). The reset button is under each panel.
+-- show current values (typed text is carried over the rebuild).
 
 local editor = {}
 local ModData = MGE.ModData
@@ -35,13 +35,11 @@ local inwuts = Rows.inputs
 
 ---@class EditorPanel
 ---@field height number
----@field ownButtons boolean? the panel has its own buttons in place of the Reset inputs footer
 
 ---@class EditorPanelModule
 ---@field fixed EditorBlock[]? built once
 ---@field blocks EditorBlock[]? rebuilt with the selection, in this order
 ---@field inputs { fixed: string[]?, rebuilt: string[]? }? Rows.inputs lists the module fills
----@field applyTransformModes fun(coreShown: boolean)? core only
 
 local Core = dofile(MGE.scriptPath .. "ui/editor_core.lua") ---@type EditorPanelModule
 local MODULES = {
@@ -57,10 +55,8 @@ local MODULES = {
 }
 
 local ROW_H = MGE.Widgets.ROW_H
-local FOOTER_GAP = MGE.Widgets.px(4)
-local FOOTER_H = ROW_H -- reset button
--- panel heights, all as tall as the tallest (Generate, 8 rows) so the reset button stays in place
--- between tabs. The editor area in ui/main.lua fits them with the reset button under them
+-- panel heights, all as tall as the tallest (Generate, 8 rows). The editor area in ui/main.lua fits them.
+-- No Reset inputs button: the editor's fields empty themselves once applied (ui/editor_rows.lua)
 local PANEL_H = 8 * ROW_H
 local PANELS = {
     core = { height = PANEL_H },
@@ -68,10 +64,10 @@ local PANELS = {
     thrust = { height = PANEL_H },
     generate = { height = PANEL_H },
     player = { height = PANEL_H }, -- the Players list's Core tab (TAB_SETS in ui/main.lua)
-    jointLink = { height = PANEL_H, ownButtons = true }, -- the Joints list's Link tab, has its own Reset
+    jointLink = { height = PANEL_H }, -- the Joints list's Link tab
     joint = { height = PANEL_H }, -- the Joints list's Properties tab
     atmo = { height = PANEL_H }, -- the Atmo list's Atmo tab
-    misc = { height = PANEL_H, ownButtons = true }, -- the Misc list's panel: no fields Reset would clear
+    misc = { height = PANEL_H }, -- the Misc list's panel
 }
 
 -- collected from the modules: fixed and rebuilt blocks, rebuilt block names in build order, input lists
@@ -81,8 +77,8 @@ local FIXED = {}
 local BLOCKS = {}
 ---@type string[]
 local BLOCK_ORDER = {}
--- all input lists are cleared by "Reset inputs", the rebuilt ones keep typed text over a rebuild
-local ALL_INPUTS, REBUILT_INPUTS = {}, {}
+-- the rebuilt input lists keep typed text over a rebuild
+local REBUILT_INPUTS = {}
 for _, module in ipairs(MODULES) do
     for _, block in ipairs(module.fixed or {}) do table.insert(FIXED, block) end
     for _, block in ipairs(module.blocks or {}) do
@@ -90,11 +86,7 @@ for _, module in ipairs(MODULES) do
         table.insert(BLOCK_ORDER, block.name)
     end
     local inputs = module.inputs or {}
-    for _, key in ipairs(inputs.fixed or {}) do table.insert(ALL_INPUTS, key) end
-    for _, key in ipairs(inputs.rebuilt or {}) do
-        table.insert(ALL_INPUTS, key)
-        table.insert(REBUILT_INPUTS, key)
-    end
+    for _, key in ipairs(inputs.rebuilt or {}) do table.insert(REBUILT_INPUTS, key) end
 end
 
 ---@type table<string, UIElement>
@@ -111,13 +103,6 @@ local shownPanel = nil
 local dirty = {}
 ---@type fun(names: string[])
 local rebuildBlocks
----@type UIElement? reset button, shown under the shown panel
-local inputFooter = nil
-
----Shows the core panel's transform rows in their current mode (ui/editor_core.lua)
-local function applyTransformModes()
-    Core.applyTransformModes(panels.core ~= nil and not panels.core.destroyed and panels.core.displayed)
-end
 
 ---Shows one editor panel, called by Main.applyTab
 ---@param id string "core"|"advanced"|"thrust"|"generate"|"player"|"jointLink"|"joint"
@@ -137,29 +122,11 @@ function editor.applyPanel(id)
         if dirty[name] and BLOCKS[name].panel == id then stale[#stale + 1] = name end
     end
     if #stale > 0 then rebuildBlocks(stale) end
-    applyTransformModes() -- after the panel, rebuilt rows start visible
-    if inputFooter and not inputFooter.destroyed then
-        if panel.ownButtons then
-            inputFooter:hide(true)
-        else
-            inputFooter:show(true)
-            inputFooter:moveTo(nil, panel.height + FOOTER_GAP)
-        end
-    end
 end
 
 ---Rebuilt children are visible by default, let the window re-apply which tab/panel is shown
 local function reapplyTabs()
     if MGE.Main and MGE.Main.applyTab then MGE.Main.applyTab() end
-end
-
----Empties all input fields, placeholders show again
-local function clearInputs()
-    for _, key in ipairs(ALL_INPUTS) do
-        for _, input in ipairs(inwuts[key] or {}) do
-            if not input.destroyed then input:clearTextfield() end
-        end
-    end
 end
 
 ---Text typed in the rebuilt input rows, kept over a rebuild
@@ -168,7 +135,10 @@ local function saveTypedProperties()
     local saved = {}
     for _, key in ipairs(REBUILT_INPUTS) do
         saved[key] = {}
-        for i, input in ipairs(inwuts[key] or {}) do saved[key][i] = input.textfieldstr[1] end
+        for i, input in ipairs(inwuts[key] or {}) do
+            -- the field being applied (Rows.applying) comes back empty: its placeholder shows the new value
+            saved[key][i] = input ~= Rows.applying and input.textfieldstr[1] or nil
+        end
     end
     return saved
 end
@@ -232,11 +202,10 @@ rebuildBlocks = function(names)
         -- one failing block must not stop the rest: the blocks after it would keep old rows, and
         -- reapplyTabs below would be skipped, leaving every panel's new rows visible on top of each other
         local ok, err = pcall(BLOCKS[name].build, blocks[name], selected)
-        if not ok then echo("^04[MGE] editor panel error (" .. name .. "): " .. tostring(err)) end
+        if not ok then MGE.say("editor panel error (" .. name .. "): " .. tostring(err)) end
     end
     restoreTypedProperties(typed)
     reapplyTabs()
-    applyTransformModes() -- also when the editor isn't the shown tab (applyPanel isn't called then)
 
     ---@type UIElement?
     local refocus = focusKey and focusIndex and (inwuts[focusKey] or {})[focusIndex] or nil
@@ -259,7 +228,7 @@ local function duplicateAtmo()
     local selected = ModData.getSelectedAtmo()
     if #selected == 0 then return end
     if #selected > MGE.AtmoLayer.room() then
-        echo("^04[MGE] no room for " .. #selected .. " more atmo objects (Settings > Max atmo objects)")
+        MGE.say("no room for " .. #selected .. " more atmo objects (Settings > Max atmo objects)")
         return
     end
     local atmoObjs = ModData.parsed.atmo
@@ -360,8 +329,7 @@ function editor.create(parent)
         })
     end
     local selected = getEditSelection()
-    -- fixed blocks first: the core panel's offset rows register before the measured rows that share
-    -- their slot (Core.applyTransformModes shows one of them)
+    -- fixed blocks first (built once), then the rebuilt ones
     for _, block in ipairs(FIXED) do
         block.build(addHolder(parent, block), selected)
     end
@@ -372,14 +340,6 @@ function editor.create(parent)
         block.build(blocks[name], selected)
     end
 
-    -- full width reset button under the input fields (it only clears inputs, Enter in a field applies it)
-    inputFooter = parent:addChild({
-        pos = { 0, 0 },
-        size = { parent.size.w, FOOTER_H },
-    })
-    local inset = Widgets.INSET -- lines up with the number fields above
-    Widgets.button(inputFooter, { x = inset, y = inset, w = inputFooter.size.w - inset * 2, h = FOOTER_H - inset * 2 },
-        "Reset inputs", clearInputs, nil, Widgets.PANEL_STYLE)
     -- Duplicate/Delete are in the list's button bar (Main.setListActions), Save in the toolbar
     -- (ui/main.lua). Positions and visibility are applied by Main.applyTab after create
 end

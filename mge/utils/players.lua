@@ -187,7 +187,7 @@ add_hook("draw3d", HOOK_SET, function()
     local done = pending
     pending = nil -- before running: the work may wait for another reload
     local ok, err = pcall(done.run)
-    if not ok then echo("^04[MGE] players: " .. tostring(err)) end
+    if not ok then MGE.say("players: " .. tostring(err)) end
 end)
 
 ---Moves every listed player's positions so their centers are at targets (measured now), returns the
@@ -676,7 +676,7 @@ local DUPLICATE_GAP = 0.3 -- between the copied players and their copies, along 
 ---@return boolean room for n more players (says why not in chat)
 local function haveRoom(n)
     if Players.count() + n <= Players.MAX then return true end
-    echo("^04[MGE] a mod can have at most " .. Players.MAX .. " players")
+    MGE.say("a mod can have at most " .. Players.MAX .. " players")
     return false
 end
 
@@ -784,7 +784,7 @@ function Players.remove(players, done)
     for _ in pairs(removed) do n = n + 1 end
     if n == 0 then return end
     if n >= Players.count() then
-        echo("^04[MGE] a mod needs at least one player")
+        MGE.say("a mod needs at least one player")
         return
     end
     ensurePositions(function()

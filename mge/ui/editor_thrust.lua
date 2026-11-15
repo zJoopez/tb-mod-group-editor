@@ -127,7 +127,7 @@ local function buildThrust(holder, selected)
         dir[i] = shown(function(t) return Rows.formatHint(t.dir[i]) end) or "0.00"
     end
     local framesInputs = createInputRow("Frames", holder, function() setThrustField(1) end, { frames },
-        "Pushes every N frames, 1: every frame.")
+        "Pushes every N frames, 1: every frame.", nil, { whole = true })
     local dirInputs = createInputRow("Direction", holder, function(_, i) setThrustField(i + 1) end, dir,
         "Push along the axes below. Turns thrust on if it's off.")
     inwuts.thrust = { framesInputs[1], dirInputs[1], dirInputs[2], dirInputs[3] }

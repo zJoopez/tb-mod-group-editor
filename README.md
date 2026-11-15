@@ -27,13 +27,16 @@ The window has five lists, each with its own tabs.
 | **Players** | Start position, rotation, scale and body parts of each player. |
 | **Misc** | The mod's message, the atmo's shader, reindexing ids, map import. |
 
+- Number fields apply what you type when you leave them (click elsewhere) or press Enter, then show the
+  new value as their placeholder. Esc while typing drops it. The Generate tab's fields keep their text:
+  Enter there generates.
 - Click objects in the world to select them. Shift + click adds to the selection.
 - The gizmo (Move, Rotate, Scale) works on everything selected. Hold Ctrl while dragging to snap. The
   snap steps are in Settings.
 - **Export** saves the selected objects (or a player's model) as an asset. **Import** adds one in
   front of the camera. Assets live in `mge/mge/assets/obj` and `mge/mge/assets/player`, and a few
   examples come with the download.
-- **Settings** (UI size, camera follow, snap steps, max atmo objects) and the color picker's saved colors
+- **Settings** (UI size, camera follow, snap steps, mouse wheel steps, max atmo objects) and the color picker's saved colors
   are kept in `mge/mge/config.cfg`, so they stay between game sessions and over updates.
 - **Save** writes the mod to `data/mod/modmaker/`. While you edit, MGE reloads a working copy
   (`mge-modmaker.tbm` / `mge-modmaker1.tbm`) so changes show in the game straight away.
@@ -101,6 +104,7 @@ the mod.
 | Delete | Delete the selection on the shown list (asks first) |
 | Shift + drag | Box select: adds what the box shows (the front ones) |
 | Ctrl + Shift + drag | Box select through: adds everything inside the box, hidden ones too (fast on big atmos) |
+| Mouse wheel over a number field | +0.5 up, -0.5 down (Shift: 0.05; whole-number fields like Frames or Amount: 1), from the typed number or the current value, applied right away. Steps in Settings > Mouse wheel. One undo step until the mouse leaves the field. On the Generate tab it only changes the field |
 | Esc | Close the open popup, prompt or overlay |
 
 Ctrl + Z / Y are taken by the game, so undo and redo use Shift.

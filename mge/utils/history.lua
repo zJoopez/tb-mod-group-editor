@@ -144,14 +144,36 @@ local function applyLive(parsed)
     end
 end
 
+-- Merged steps: while History.mergeKey is set, a commit with the same key as the last one replaces that state
+-- instead of adding one. The mouse wheel over a number field (ui/editor_rows.lua) applies every step, the
+-- whole scroll is one undo step: it ends when the mouse leaves the field (History.endMerge), any other
+-- commit, an undo or redo
+---@type string? set by the caller around a commit that may merge
+History.mergeKey = nil
+---@type string? key of the last commit, nil when it can't be merged into
+History.lastMerge = nil
+
+---Ends a run of merged steps: the next commit with this key adds a state again
+---@param key string
+function History.endMerge(key)
+    if History.lastMerge == key then History.lastMerge = nil end
+end
+
 ---Starts a new history from the current mod data, call after loading a mod
 function History.reset()
     History.states = { copyParsed(ModData.parsed) }
     History.index = 1
+    History.lastMerge = nil
 end
 
 ---Stores the current mod data as a new state, call after each change
 function History.commit()
+    local key = History.mergeKey
+    if key and key == History.lastMerge and History.index == #History.states and History.index > 1 then
+        History.states[History.index] = copyParsed(ModData.parsed) -- the same step, its newest value
+        return
+    end
+    History.lastMerge = key
     for i = #History.states, History.index + 1, -1 do
         table.remove(History.states, i) -- new change drops redo states
     end
@@ -167,6 +189,7 @@ local function restore(index)
     local state = History.states[index]
     if not state then return end
     History.index = index
+    History.lastMerge = nil -- the next change is a new step
     local current = ModData.parsed
     ModData.parsed = copyParsed(state) -- copy so later edits don't change the stored state
 
@@ -193,7 +216,7 @@ function History.canRedo() return History.index < #History.states end
 
 function History.undo()
     if not History.canUndo() then
-        print("nothing to undo")
+        MGE.say("nothing to undo")
         return
     end
     restore(History.index - 1)
@@ -201,7 +224,7 @@ end
 
 function History.redo()
     if not History.canRedo() then
-        print("nothing to redo")
+        MGE.say("nothing to redo")
         return
     end
     restore(History.index + 1)
