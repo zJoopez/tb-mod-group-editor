@@ -400,6 +400,7 @@ add_hook("match_begin", MGE.hookname, function()
         if not isSaveOutput(MGE.modPath) then
             MGE.setSource(MGE.modPath)
             Atmo.load(MGE.modPath)
+            Atmo.applyShader() -- the new mod's atmo shader, or the player's own
         end
     end
     -- a mod file was loaded: its rules are the new baseline. Applying gamerules in the game's menu
@@ -649,5 +650,12 @@ MGE_ATMO = {
     state = function() return Atmo.state end,
 }
 MGE.AtmoLayer.unloadGameAtmo() -- MGE draws the atmo itself, a loaded one would show it twice
+-- the player's shader (the unload put it back), then the mod's atmo shader shown live (Atmo.applyShader)
+Atmo.rememberShader()
+Atmo.applyShader()
+table.insert(MGE.onQuit, function()
+    Atmo.applyShader(true) -- the player's own shader back
+    MGE_SHADER_BEFORE = nil
+end)
 loadModule("ui/main.lua")
 MGE.running = true -- set last so a failed start isn't treated as running

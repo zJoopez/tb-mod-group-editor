@@ -1,8 +1,9 @@
 -- Misc list tab's panel: things about the whole mod, not the selected objects
 --   Message: the mod's `message` line (the game shows it in chat when the mod loads), one of the mod file's
 --            lines before its objects (ModData.parsed.ignores). Typed, Enter applies it, empty removes it
---   Shader:  the atmo file's `shader` line (utils/atmo.lua: Atmo.state.header), a data/shader/<name>.inc. It
---            applies when a player loads the mod's atmo (Shaders & Atmos > Atmos), Save writes it
+--   Shader:  the atmo file's `shader` line (utils/atmo.lua: Atmo.state.header), a data/shader/<name>.inc. Loaded
+--            in the game right away (Atmo.applyShader); players get it when they load the mod's atmo (Shaders &
+--            Atmos > Atmos), Save writes it
 --   Ids:     Reindex (it was on the Advanced tab: acts on all objects, not the selection)
 --   Map:     Convert map (it was on the Advanced tab: adds a whole map, not about the selection)
 local Rows = MGE.EditorRows
@@ -73,6 +74,7 @@ local function setShader(name)
         table.remove(header, i)
     end
     MGE.Atmo.headerVersion = MGE.Atmo.headerVersion + 1 -- the footer shows the unsaved change
+    MGE.Atmo.applyShader() -- shown right away (the player's own shader back when removed)
     Rows.refreshBlocks({ "miscFile" })
 end
 
@@ -110,8 +112,9 @@ local function buildFileRows(holder)
 
     local _, shader = findShader()
     row, contentX, contentW = createRow("Shader", holder,
-        "The atmo's shader (data/shader), loaded with the mod's atmo\n" ..
-        "(Shaders & Atmos > Atmos). Save writes it. Trash icon: no shader.")
+        "The atmo's shader (data/shader), shown right away. Players\n" ..
+        "get it with the mod's atmo (Shaders & Atmos > Atmos), Save\n" ..
+        "writes it. Trash icon: no shader (your own comes back).")
     local gap, inset = Widgets.GAP, Widgets.INSET -- like the number fields
     local h = row.size.h - inset * 2
     local noneW = h -- square icon button, the shader's name gets the rest

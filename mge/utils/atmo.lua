@@ -212,6 +212,44 @@ end
 
 ---The layer from the mod's atmo file, replacing what's there (opening a mod). No file: an empty layer
 ---@param modPath string? under data/mod
+-- The atmo's shader shown live: the game loads a world shader with `lws <name>.inc` (its Shaders & Atmos
+-- menu does the same). The mod's atmo shader (a `shader` line) is loaded when the mod opens and when the Misc
+-- list sets it; without one, and when MGE closes, the player's own shader comes back: the one loaded when MGE
+-- started (after the game's atmo was unloaded), kept in a global over a restart
+---@type string? data/shader file the game had when MGE started, "" for none
+MGE_SHADER_BEFORE = MGE_SHADER_BEFORE
+
+---Remembers the player's shader, once (MGE's start, after AtmoLayer.unloadGameAtmo put it back)
+function Atmo.rememberShader()
+    if MGE_SHADER_BEFORE or not get_shader_name then return end
+    MGE_SHADER_BEFORE = (tostring(get_shader_name() or ""):gsub("^data/shader/", ""))
+end
+
+---@return string? the atmo's shader line's name, nil without one
+function Atmo.shaderName()
+    for _, line in ipairs(Atmo.state.header or {}) do
+        local name = line:match("^%s*shader%s+(.-)%s*$")
+        if name and name ~= "" then return name end
+    end
+    return nil
+end
+
+---Loads the atmo's shader in the game, or the player's own without one. Only when it changes
+---@param restore boolean? the player's own whatever the atmo has (MGE closing)
+function Atmo.applyShader(restore)
+    if not runCmd then return end
+    local name = not restore and Atmo.shaderName() or nil
+    local file
+    if name then
+        file = name:find("%.inc$") and name or (name .. ".inc")
+    else
+        file = (MGE_SHADER_BEFORE and MGE_SHADER_BEFORE ~= "") and MGE_SHADER_BEFORE or "default.inc"
+    end
+    if file == Atmo.appliedShader then return end
+    Atmo.appliedShader = file
+    runCmd("lws " .. file)
+end
+
 function Atmo.load(modPath)
     local name = Atmo.fileName(modPath)
     local lines = name and readLines(name)
