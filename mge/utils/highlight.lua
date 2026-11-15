@@ -15,10 +15,6 @@ local Highlight = {
     fillAlpha = 0.25,
     previewColor = { 1.0, 0.6, 0.0 },
     previewAlpha = 0.2,
-    -- the Settings overlay's "Highlights" toggle: off skips the selection highlights (objects, atmo,
-    -- players, a joint's objects). The Generate preview, the atmo, joint anchors and the white hover of
-    -- a pick still draw: they show what isn't there yet or what a click would take
-    enabled = true,
     -- the highlights' share of the shapes the game draws a frame: 256 objects, 256 atmo objects, 256
     -- highlights (256 x 3). The Generate preview never needs any of it: it adds at most as many pieces as
     -- its list has room for (free ids, the atmo's room), so it fits in that list's share. A bigger atmo
@@ -164,19 +160,8 @@ local function drawShapeHighlight(shape, x, y, z, sx, sy, sz, rot, color, fillOn
     end
 end
 
----A selected atmo object's highlight, the same as objects get
----@param g AtmoGhost
----@param fillOnly boolean?
-local function drawAtmoHighlight(g, fillOnly)
-    local p, s = g.pos, g.sides
-    local rot = rotCache[g.frame]
-    if not rot then
-        rot = toMatrixTB(g.frame)
-        rotCache[g.frame] = rot
-    end
-    local shape = g.shape == "cylinder" and "pill" or g.shape
-    drawShapeHighlight(shape, p[1], p[2], p[3], s[1], s[2], s[3], rot, Highlight.color, fillOnly)
-end
+-- a selected atmo object drawn in the highlight color (the Atmo list) is at least this opaque
+local SELECTED_ALPHA = 0.75
 
 ---@type CameraProjection? this frame's view (WorldSelect.measureProjection), set at the start of draw3d
 local view = nil
@@ -207,35 +192,38 @@ end
 ---(AtmoLayer.maxAtmo, 256) has its own share of the shapes the game draws a frame: 256 objects, 256
 ---atmo objects and 256 for the highlights (Highlight.drawRoom)
 --- full false (Objects list): translucent ghosts in AtmoLayer.color
---- full true (the Atmo list): in their own color, the selected ones where a gizmo drag has them
----   (AtmoLayer.liveGhost)
+--- full true (the Atmo list): in their own color, the selected ones in the highlight color instead, where a
+---   gizmo drag has them (AtmoLayer.liveGhost). Color only, no extra highlight draw: every one of
+---   thousands selected shows, an outlined highlight had room for 256 at most
 --- Only the ones that can show on screen (onScreen)
 ---@param full boolean
----@return AtmoGhost[] selected the Atmo list's selected ones on screen, for their highlights (drawn after)
 local function drawAtmo(full)
     local AtmoLayer = MGE.AtmoLayer
     local list = ModData.parsed.atmo or {}
-    local selected = {}
     if not full then
         for _, obj in ipairs(list) do
             local g = AtmoLayer.ghost(obj)
             if g and onScreen(g) then drawGhost(g, AtmoLayer.color, AtmoLayer.alpha, false) end
         end
-        return selected
+        return
     end
     -- a gizmo drag: the selected ones' ghosts as it leaves them (AtmoLayer.liveGhost: matrices on the cached
     -- ghost; copying and re-parsing every selected object's lines each frame stuttered with thousands)
     local live = AtmoLayer.live
     for _, atmoObj in ipairs(list) do
         local g = AtmoLayer.ghost(atmoObj)
-        if g and live and atmoObj.selected then g = AtmoLayer.liveGhost(g, live) end
+        local selected = atmoObj.selected
+        if g and live and selected then g = AtmoLayer.liveGhost(g, live) end
         if g and onScreen(g) then
-            local c = colorOf(atmoObj) -- the object's color: copies don't change it
-            drawGhost(g, c, c[4], false)
-            if atmoObj.selected then selected[#selected + 1] = g end
+            local c = colorOf(atmoObj)
+            if selected then
+                -- see-through ones too: a selected box is never fainter than SELECTED_ALPHA
+                drawGhost(g, Highlight.color, math.max(c[4], SELECTED_ALPHA), false)
+            else
+                drawGhost(g, c, c[4], false)
+            end
         end
     end
-    return selected
 end
 
 ---The object highlight (drawShapeHighlight) on a game object, read from the game
@@ -350,9 +338,7 @@ local function drawJointHighlights(joints)
         if joint.obj1 then objects[joint.obj1] = true end
         if joint.obj2 then objects[joint.obj2] = true end
     end
-    if Highlight.enabled then
-        for id in pairs(objects) do drawObjectHighlight(id - 1) end
-    end
+    for id in pairs(objects) do drawObjectHighlight(id - 1) end
     for _, joint in ipairs(ModData.parsed.env_obj_joint) do
         if not selected[joint] then drawJointAnchor(joint, true) end
     end
@@ -370,10 +356,8 @@ local function drawLinkHighlights(slot)
     local Joints = MGE.Joints
     local draft = Joints.draftFor(slot)
     local hover = MGE.WorldSelect and MGE.WorldSelect.hover
-    if Highlight.enabled then
-        if draft.obj1 then drawObjectHighlight(draft.obj1 - 1) end
-        if draft.obj2 then drawObjectHighlight(draft.obj2 - 1) end
-    end
+    if draft.obj1 then drawObjectHighlight(draft.obj1 - 1) end
+    if draft.obj2 then drawObjectHighlight(draft.obj2 - 1) end
     if hover then drawObjectHighlight(hover.id - 1, HOVER_COLOR) end
     -- the other selected joints bright (Update links them all to the picked pair), the rest faint
     local selected = MGE.Main.selectedJoints
@@ -408,9 +392,6 @@ add_hook("draw3d", MGE.hookname, function()
             -- During a scale drag the scaled players instead
             local Players = MGE.Players
             local scale = Players and Players.scalePreview
-            -- Highlights off: no selection highlights, but a scale drag's preview still draws (bodies can't
-            -- be resized live, it's the only thing showing the result before the release)
-            if not Highlight.enabled and not scale then return end
             for _, player in ipairs(scale and scale.players or Main.selectedPlayerList()) do
                 if Players and Players.exists(player) then drawPlayerHighlight(player, scale) end
             end
@@ -429,17 +410,13 @@ add_hook("draw3d", MGE.hookname, function()
         for _, box in ipairs(boxes or {}) do drawPreviewBox(box) end
         for _, p in ipairs(anchors or {}) do drawAnchor(p[1], p[2], p[3]) end -- Generate's joints
         local atmo = Main.listTab == "atmo"
-        local selectedGhosts = drawAtmo(atmo)
+        drawAtmo(atmo) -- on the Atmo list the selected ones show in the highlight color
         -- a pick in progress (the Core tab's color picker): the object a click would take, in white
         local WorldSelect = MGE.WorldSelect
         if WorldSelect and WorldSelect.picking and WorldSelect.hover then
             drawObjectHighlight(WorldSelect.hover.id - 1, HOVER_COLOR)
         end
-        if not Highlight.enabled then return end
-        if atmo then -- the Atmo list shows the atmo selection, not the objects'
-            local fillOnly, drawn = highlightPlan(#selectedGhosts, Highlight.drawRoom)
-            for i = 1, drawn do drawAtmoHighlight(selectedGhosts[i], fillOnly) end
-        else
+        if not atmo then -- the Atmo list's selection is shown by drawAtmo's colors
             local ids = {}
             for _, obj in ipairs(ModData.parsed.env_obj) do
                 if obj.selected then ids[#ids + 1] = obj.id - 1 end

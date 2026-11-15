@@ -1,6 +1,5 @@
 -- Settings overlay, opened by the toolbar's settings button (ui/main.lua):
 --   Camera follow: the camera looks at the selection when selecting and moving (MGE.Camera.followMoves)
---   Highlights:    the selection highlights on or off (MGE.Highlight.enabled)
 --   Gizmo snapping: the steps a gizmo drag snaps to while Ctrl is held (Gizmo.moveStep / rotateStep /
 --                   scaleStep). A typed step applies on Enter or when the overlay closes, an invalid
 --                   one goes back to the current step
@@ -30,12 +29,6 @@ local SETTINGS = {
         -- the camera looks at the selection, or the picked player
         get = function() return Camera.followMoves end,
         set = function(on) Camera.followMoves = on end,
-    },
-    {
-        label = "Highlights",
-        -- the selection highlights; the preview, atmo and anchors still draw
-        get = function() return MGE.Highlight.enabled end,
-        set = function(on) MGE.Highlight.enabled = on end,
     },
 }
 
