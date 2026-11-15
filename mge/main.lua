@@ -598,7 +598,18 @@ end)
 -- another script loaded (/ls) ends MGE without its quit: the HUD comes back then too. (A game closed with
 -- MGE open keeps it off: the option is saved by the game, Settings > HUD or /opt hud 1 brings it back)
 add_hook("unload", MGE.hookname, function() MGE.hideGameHud(false) end)
-MGE.hideGameHud(true)
+-- Hidden on the next frame, not right away: a /ls of MGE (starting it, or showing the running one) fires
+-- "unload" after MGE's code ran, and the hook above (already MGE's, it replaced the old one) put the HUD
+-- back at once. A hook set of its own, removed once it ran (and by quit, when MGE closes before a frame)
+local HUD_START_HOOK = MGE.hookname .. "_hudStart"
+function MGE.hideGameHudNextFrame()
+    add_hook("draw2d", HUD_START_HOOK, function()
+        remove_hooks(HUD_START_HOOK)
+        if MGE and MGE.Main and MGE.Main.window and MGE.Main.window.displayed then MGE.hideGameHud(true) end
+    end)
+end
+table.insert(MGE.onQuit, function() remove_hooks(HUD_START_HOOK) end)
+MGE.hideGameHudNextFrame()
 
 add_hook("key_up", MGE.hookname, function(key)
     if key ~= 282 then return end --F1

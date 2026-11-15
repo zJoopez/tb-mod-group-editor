@@ -4,7 +4,8 @@ if MGE and MGE.running then
     local Main = MGE.Main
     if Main and Main.window and not Main.window.displayed then
         Main.window:show(false)
-        if MGE.hideGameHud then MGE.hideGameHud(true) end -- like F1 showing it
+        -- like F1 showing it, a frame later: this /ls fires "unload" after this runs, which puts the HUD back
+        if MGE.hideGameHudNextFrame then MGE.hideGameHudNextFrame() end
         Main.updateWindow()
     end
     return
