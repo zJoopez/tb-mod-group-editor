@@ -18,7 +18,7 @@ local Highlight = {
     -- the highlights' share of the shapes the game draws a frame: 256 objects, 256 atmo objects, 256
     -- highlights (256 x 3). The Generate preview never needs any of it: it adds at most as many pieces as
     -- its list has room for (free ids, the atmo's room), so it fits in that list's share. A bigger atmo
-    -- (Settings > Most atmo objects) goes past it on purpose: lower graphics settings draw more a frame
+    -- (Settings > Max atmo objects) goes past it on purpose: lower graphics settings draw more a frame
     drawRoom = 256,
     ---@type (fun(): HighlightBox[]?, number[][]?)? set by the Generate tab, boxes and joint anchors to draw this frame
     preview = nil,

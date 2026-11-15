@@ -415,6 +415,11 @@ function ModData.reloadObjects()
 
     if MGE.modPath then
         ModData.parsed = FileHandler.ParseMod(MGE.modFolder .. MGE.modPath)
+        -- shared body/joint parts (fatkido.tbm) as every player's own section, written back shared while
+        -- they're all the same
+        local rules = get_game_rules and get_game_rules() or {} -- the offline tests have no game
+        local count = math.max(tonumber(rules.numplayers) or 2, 1)
+        FileHandler.splitSharedPlayers(ModData.parsed, count)
         rebaseModels()
         ModData.jointIds = getJointIds(ModData.parsed.env_obj_joint)
     else

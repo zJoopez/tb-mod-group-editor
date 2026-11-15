@@ -76,7 +76,7 @@ the mod.
 - **Drawing:** the game draws only so many shapes per frame, and how many depends on its graphics settings.
   MGE draws every atmo object: in color on the Atmo list, as faint ghosts on the Objects list. The atmo
   holds 256 by default, which leaves room for the mod's 256 objects and 256 more shapes (outlines, the
-  Generate preview, which is always drawn first). **Settings → Most atmo objects** raises it. Above 256
+  Generate preview, which is always drawn first). **Settings → Max atmo objects** raises it. Above 256
   you may need lower graphics settings to see them all. On the Atmo list the selected atmo objects show in
   the highlight color (no extra shape each), so every selected one shows however many there are.
 - **Convert map** has two budgets: **Budget** is how many boxes become objects (up to the free ids),
@@ -95,6 +95,8 @@ the mod.
 | Ctrl + A | Select / deselect all (objects, atmo objects, players or joints, whichever list is shown) |
 | Ctrl + N / Ctrl + D | New / duplicate (an object, atmo object, player or joint, on the shown list) |
 | Delete | Delete the selection on the shown list (asks first) |
+| Shift + drag | Box select: adds what the box shows (the front ones) |
+| Ctrl + Shift + drag | Box select through: adds everything inside the box, hidden ones too (fast on big atmos) |
 | Esc | Close the open popup, prompt or overlay |
 
 Ctrl + Z / Y are taken by the game, so undo and redo use Shift.

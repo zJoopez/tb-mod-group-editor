@@ -26,7 +26,7 @@ in-game checks below, then the rest of Phase 5.
     nothing to ration.
   - Removed: the nearest-first sort in `utils/highlight.lua`, `drawLimit` / `atmoDrawLimit`, and
     Settings' Ghosts drawn.
-  - Above 256 (Most atmo objects) it's the player's call, with lower graphics settings.
+  - Above 256 (Max atmo objects) it's the player's call, with lower graphics settings.
 - **Still to do:** custom-model atmo objects, the optional Preview in game.
 
 ## Phases 2–4 as built (2026-11-14)
@@ -68,7 +68,7 @@ in-game checks below, then the rest of Phase 5.
   - The mod's objects go see-through: their alpha is set live to `AtmoLayer.seeThroughAlpha`, put back on
     leaving the list or quitting, and applied again after a reload.
   - The Objects list draws atmo objects as plain ghosts.
-- **Limits (D6):** Most atmo objects defaults to 256 (Settings "Atmo objects" section).
+- **Limits (D6):** Max atmo objects defaults to 256 (Settings "Atmo objects" section).
 - **Assets:** `mge/assets/atmo/pillars.atmo`, a sample shipped with the release
   (`tools/package.ps1`), also creates the folder Export writes to. Scripts can't create folders.
 - **In-game checks for Phases 2–4:**
@@ -190,7 +190,7 @@ list tab** next to Objects / Joints / Players:
 - The editor tabs show only the inputs that apply to atmo objects.
 - On this tab the atmo objects are drawn in full color and the mod's objects become ghosts.
   The Objects tab does the reverse.
-- Most atmo objects: **256 by default**. That leaves room for 256 more drawn shapes, which should be safe
+- Max atmo objects: **256 by default**. That leaves room for 256 more drawn shapes, which should be safe
   on any graphics setting.
 - Consider an asset folder of its own for atmos, so atmo objects no longer live as comments in the mod.
 
@@ -307,7 +307,7 @@ rules:
 
 - **Atmo tab:**
   - Atmo objects are drawn in their own color: selected ones with the highlight outline, the rest
-    filled. Most atmo objects is 256 by default, so normally all of them are drawn.
+    filled. Max atmo objects is 256 by default, so normally all of them are drawn.
   - The mod's objects are ghosted. The preferred way is the game drawing them translucent: their alpha
     set live only, and put back when leaving the tab, saving or quitting. That costs MGE no draws.
     It's expected to work and gets confirmed in game in Phase 4.
@@ -319,7 +319,7 @@ rules:
 
 ### D6. Limits
 
-**Most atmo objects** (today's **Most parked**) defaults to 256, and Settings can raise it. The map
+**Max atmo objects** (today's **Most parked**) defaults to 256, and Settings can raise it. The map
 converter's **Parked** budget becomes **Atmo**.
 
 ## Atmo tab: what's on it

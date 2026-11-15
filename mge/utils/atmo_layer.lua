@@ -24,7 +24,7 @@ local AtmoLayer = {
     -- the atmo's size, what imports, Generate, Duplicate and To atmo may fill. MGE draws every atmo object
     -- (utils/highlight.lua): 256 leaves 256 more shapes for the rest MGE draws, next to the game's 256
     -- objects. How many the game draws a frame depends on its graphics settings (10 000 drew on the
-    -- lowest): Settings > Most atmo objects raises it, the player's call
+    -- lowest): Settings > Max atmo objects raises it, the player's call
     maxAtmo = 256,
     -- the objects' alpha while the Atmo list shows (set live, put back after): see-through, the atmo in front
     seeThroughAlpha = 0.15,

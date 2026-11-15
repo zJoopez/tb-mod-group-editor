@@ -56,7 +56,7 @@ local function maxGenerate(atmo, perPair)
 end
 
 ---What the limits depend on, for the preview's key: the preview is planned again when they change (an
----import, a delete, Most atmo objects), so it never shows something Generate wouldn't add
+---import, a delete, Max atmo objects), so it never shows something Generate wouldn't add
 ---@return string
 local limitsCache = {} -- countDynamic scans every object: once per undo state / reload, not every frame
 local function limitsKey()
@@ -149,7 +149,7 @@ local function planFromFields(factors)
     local most, limit = maxGenerate(atmo, amount >= 2 and math.max(perPair, 0) or 0)
     if most == 0 then
         if atmo then
-            note = "no room in the atmo (Settings > Most atmo objects)"
+            note = "no room in the atmo (Settings > Max atmo objects)"
         elseif MGE.ModData.freeCount() > 0 then
             note = "no free dynamic ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. " for joined pieces: Joints 0, or Reindex (Misc)"
         else
@@ -469,7 +469,7 @@ end
 local function buildAmount(holder)
     Rows.begin()
     amountForAtmo = forAtmo()
-    local pieces = (amountForAtmo and "Pieces in the shape, as many as the atmo has room\nfor (Settings > Most atmo objects)"
+    local pieces = (amountForAtmo and "Pieces in the shape, as many as the atmo has room\nfor (Settings > Max atmo objects)"
         or "Pieces in the shape, as many as there are free ids\n(joined ones: free dynamic ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. ")") ..
         ". 1, or values that\ncan't make a shape: one default object"
     if amountForAtmo then

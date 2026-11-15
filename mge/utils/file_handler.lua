@@ -394,6 +394,118 @@ function FileHandler.renumberPlayers(parser, map)
     end
 end
 
+---The list without the body/joint parts outside player sections (what getSharedPlayerLines collects)
+---@param list string[]
+---@return string[]
+local function withoutSharedParts(list)
+    local out = {}
+    local inPlayer, inPart = false, false
+    for _, line in ipairs(list) do
+        local word = firstWord(line)
+        local keep = true
+        if word then
+            if inPlayer and (not line:match("^%s") or (SECTION_WORDS[word] and not PLAYER_PART_WORDS[word])) then
+                inPlayer = false
+            end
+            if word == "player" then
+                inPlayer, inPart = true, false
+            elseif not inPlayer and PLAYER_PART_WORDS[word] then
+                inPart, keep = true, false
+            elseif SECTION_WORDS[word] or inPlayer then
+                inPart = false
+            elseif inPart then
+                keep = false
+            end
+        end
+        if keep then out[#out + 1] = line end
+    end
+    return out
+end
+
+---A player section's lines as parts: each body / joint header with the lines under it
+---@param lines string[]
+---@return { key: string, lines: string[] }[]
+local function partsOf(lines)
+    local parts = {}
+    for _, line in ipairs(lines) do
+        local word = firstWord(line)
+        if word and PLAYER_PART_WORDS[word] then
+            parts[#parts + 1] = { key = line:gsub("^%s+", ""):gsub("%s+$", ""), lines = { line } }
+        elseif parts[#parts] then
+            table.insert(parts[#parts].lines, line)
+        end
+    end
+    return parts
+end
+
+---Mods like fatkido.tbm give every player the same model with body/joint parts outside any player section.
+---Read: those parts become every player's own section (a player's own parts win over the shared ones for the
+---same body part or joint), so every player's model is edited on its own (Reset, Import, the Players panel).
+---parser.sharedPlayers remembers the file's way: written back shared while every model is the same
+---(writeParser), as full sections for every player once they differ (or a player has none: reset)
+---@param parser FileParserResult
+---@param playerCount integer
+function FileHandler.splitSharedPlayers(parser, playerCount)
+    local shared = FileHandler.getSharedPlayerLines(parser)
+    if not shared then return end
+    for _, key in ipairs(PLAYER_LISTS) do
+        if parser[key] then parser[key] = withoutSharedParts(parser[key]) end
+    end
+    for id = 0, playerCount - 1 do
+        local own = FileHandler.getPlayerLines(parser, id)
+        local lines = {}
+        if own then
+            local ownParts, taken = partsOf(own), {}
+            for _, part in ipairs(ownParts) do taken[part.key] = true end
+            for _, part in ipairs(partsOf(shared)) do
+                if not taken[part.key] then
+                    for _, line in ipairs(part.lines) do lines[#lines + 1] = line end
+                end
+            end
+            for _, part in ipairs(ownParts) do
+                for _, line in ipairs(part.lines) do lines[#lines + 1] = line end
+            end
+        else
+            for i, line in ipairs(shared) do lines[i] = line end
+        end
+        FileHandler.setPlayerLines(parser, id, lines)
+    end
+    parser.sharedPlayers = playerCount -- how many got the shared model: written shared only while all still have it
+end
+
+---For writing a mod that came with shared parts (splitSharedPlayers): while every player section is the same,
+---one copy of it as shared parts in place of the sections, else nil (the sections are written as they are)
+---@param parser FileParserResult
+---@return string[]? ignores, string[]? trailer
+local function collapsedShared(parser)
+    if not parser.sharedPlayers then return nil, nil end
+    local first, ids = nil, {}
+    for _, key in ipairs(PLAYER_LISTS) do
+        for _, line in ipairs(parser[key] or {}) do
+            local id = tonumber(line:match("^%s*player%s+(%d+)%s*$"))
+            if id then ids[#ids + 1] = id end
+        end
+    end
+    -- shared only when every player has a section: a player reset to the default body (its section removed)
+    -- would get the model back from shared parts
+    if #ids == 0 or #ids < (tonumber(parser.sharedPlayers) or 0) then return nil, nil end
+    for _, id in ipairs(ids) do
+        local text = table.concat(FileHandler.getPlayerLines(parser, id) or {}, "\n")
+        if first == nil then first = text elseif text ~= first then return nil, nil end
+    end
+    local model = FileHandler.getPlayerLines(parser, ids[1]) or {}
+    local copy = { ignores = parser.ignores, trailer = parser.trailer }
+    local map = {}
+    for _, id in ipairs(ids) do map[id] = false end
+    FileHandler.renumberPlayers(copy, map)
+    local trailer = {}
+    for _, line in ipairs(copy.trailer or {}) do trailer[#trailer + 1] = line end
+    if #trailer > 0 and not trailer[#trailer]:match("^%s*$") then trailer[#trailer + 1] = "" end
+    -- as in a section (indented parts, their lines indented twice): how fatkido.tbm writes its shared ones
+    for _, line in ipairs(model) do trailer[#trailer + 1] = line end
+    return copy.ignores, trailer
+end
+
 -- numplayers goes first in the section, like in the game's own mods: the game reads the rules in
 -- order, and the per-player lists after it (engageplayerpos / engageplayerrot) are read for that many
 -- players. Written after them, a one-player mod's 3-number positions were read for two players and lost
@@ -476,6 +588,10 @@ end
 ---@param file { writeLine: fun(self, line: string) }
 ---@param parser FileParserResult
 local function writeParser(file, parser)
+    -- a mod that came with shared player parts goes back that way while every model is the same
+    local ignores, trailer = collapsedShared(parser)
+    if ignores then parser = { ignores = ignores, trailer = trailer, env_obj = parser.env_obj,
+        env_obj_joint = parser.env_obj_joint } end
     -- Write ignored lines first (headers, gamerules, etc.)
     for _, line in ipairs(parser.ignores or {}) do
         file:writeLine(line)

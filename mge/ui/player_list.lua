@@ -88,6 +88,20 @@ function player_list.exportFirst()
     MGE.Assets.exportPlayer(first)
 end
 
+---Reset model (the Players Core tab's Model row): the selected players with a model of their own (a
+---`player N` section) back on the default body. One undo step, the mod reloads
+---@param players integer[]
+function player_list.resetModels(players)
+    local map, any = {}, false
+    for _, id in ipairs(players) do
+        if FileHandler.getPlayerLines(ModData.parsed, id) then map[id], any = false, true end
+    end
+    if not any then return end
+    FileHandler.renumberPlayers(ModData.parsed, map) -- false: the section goes, the other players keep theirs
+    MGE.History.commit()
+    MGE.apply() -- body changes need a reload
+end
+
 ---@return boolean every player is selected
 local function allSelected()
     for id = 0, Main.getPlayerCount() - 1 do

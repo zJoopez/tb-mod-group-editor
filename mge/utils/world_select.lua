@@ -278,10 +278,21 @@ function WorldSelect.pickAtmo(x, y)
     local origin, dir = WorldSelect.cameraRay(x, y)
     if not origin or not dir then return nil end
     local best, bestT = nil, math.huge
+    local AtmoLayer = MGE.AtmoLayer
     for _, obj in ipairs(ModData.parsed.atmo or {}) do
-        local shape = ghostShape(obj)
-        local t = shape and shape.hit(origin, dir)
-        if t and t < bestT then best, bestT = obj, t end
+        -- the ray against its cached sphere first (as nearSphere, below): the exact shape (closures, axes)
+        -- only for the few it can hit, not for every one of thousands on each click
+        local g = AtmoLayer.ghost(obj)
+        if g then
+            local ox, oy, oz = origin[1] - g.pos[1], origin[2] - g.pos[2], origin[3] - g.pos[3]
+            local c = ox * ox + oy * oy + oz * oz - g.radius * g.radius
+            local b = ox * dir[1] + oy * dir[2] + oz * dir[3]
+            if c <= 0 or (b < 0 and b * b >= c) then
+                local shape = ghostShape(obj)
+                local t = shape and shape.hit(origin, dir)
+                if t and t < bestT then best, bestT = obj, t end
+            end
+        end
     end
     return best, best and bestT
 end
@@ -423,6 +434,27 @@ local function boxOf(x1, y1, x2, y2)
     return { left = math.min(x1, x2), top = math.min(y1, y2), right = math.max(x1, x2), bottom = math.max(y1, y2) }
 end
 
+---Where a sphere can show on screen: the rectangle around its outline (generous, like the atmo drawing's
+---culling). nil behind the camera, the whole screen around the camera
+---@param p CameraProjection
+---@param center number[]
+---@param radius number
+---@return number? left, number? top, number? right, number? bottom
+local function screenExtent(p, center, radius)
+    local rel = sub(center, p.eye)
+    local depth = dot(rel, p.forward)
+    if depth < -radius then return nil end -- behind the camera
+    if depth <= radius then return -math.huge, -math.huge, math.huge, math.huge end -- around the camera
+    local x, y = WorldSelect.project(p, center)
+    if not x then return -math.huge, -math.huge, math.huge, math.huge end
+    local sr = radius / depth * math.sqrt(p.m11 * p.m11 + p.m21 * p.m21) * 1.5 + 4
+    return x - sr, y - sr, x + sr, y + sr
+end
+
+-- box select's screen cells: each shape is listed in the cells its outline covers, a ray (a screen point)
+-- tests only its cell's shapes. Pixels a side
+local BOX_CELL = 24
+
 ---Objects the rays through a screen box hit: a grid of rays over it plus one through every object
 ---center inside it (small objects between the grid's rays), each ray takes only the nearest object, so
 ---objects hidden behind others aren't taken. Must be called from draw3d
@@ -432,17 +464,51 @@ function WorldSelect.pickBox(x1, y1, x2, y2)
     local p = WorldSelect.measureProjection()
     if not p then return {} end
     local box = boxOf(x1, y1, x2, y2)
+    -- Every ray was tested against every shape: with a converted map's thousands of atmo objects that froze
+    -- the game, worst with a box over the whole map. Now only shapes whose outline reaches the box count, each
+    -- listed in the screen cells (BOX_CELL) its outline covers, and a ray tests its own cell's shapes only. A
+    -- ray through a point can only hit a shape whose outline covers that point, so the picks are the same
+    -- (cellCols / cellRows: the ray grid below has its own cols / rows)
+    local cellCols = math.max(1, math.ceil((box.right - box.left) / BOX_CELL))
+    local cellRows = math.max(1, math.ceil((box.bottom - box.top) / BOX_CELL))
+    local cells = {}
     local shapes = {}
+    local function addShape(shape, l, t, r, b)
+        if r < box.left or l > box.right or b < box.top or t > box.bottom then return end
+        shapes[#shapes + 1] = shape
+        local c0 = math.max(0, math.floor((l - box.left) / BOX_CELL))
+        local c1 = math.min(cellCols - 1, math.floor((r - box.left) / BOX_CELL))
+        local r0 = math.max(0, math.floor((t - box.top) / BOX_CELL))
+        local r1 = math.min(cellRows - 1, math.floor((b - box.top) / BOX_CELL))
+        for c = c0, c1 do
+            for rr = r0, r1 do
+                local key = rr * cellCols + c
+                local list = cells[key]
+                if not list then list = {}; cells[key] = list end
+                list[#list + 1] = shape
+            end
+        end
+    end
     for _, obj in ipairs(ModData.parsed.env_obj) do
-        local s = objectShape(obj.id - 1)
-        if s then
-            s.obj = obj
-            shapes[#shapes + 1] = s
+        local sh = objectShape(obj.id - 1)
+        if sh then
+            local l, t, r, b = screenExtent(p, sh.center, sh.radius)
+            if l then
+                sh.obj = obj
+                addShape(sh, l, t, r, b)
+            end
         end
     end
     if atmoListed() then -- the ghosts too, they hide what's behind them like objects do
+        local AtmoLayer = MGE.AtmoLayer
         for _, obj in ipairs(ModData.parsed.atmo or {}) do
-            shapes[#shapes + 1] = ghostShape(obj)
+            local g = AtmoLayer.ghost(obj) -- its cached sphere first, the ray shape only for ones on screen
+            if g then
+                local l, t, r, b = screenExtent(p, g.pos, g.radius)
+                if l and not (r < box.left or l > box.right or b < box.top or t > box.bottom) then
+                    addShape(ghostShape(obj), l, t, r, b)
+                end
+            end
         end
     end
     local points = {}
@@ -459,9 +525,12 @@ function WorldSelect.pickBox(x1, y1, x2, y2)
     local taken, list = {}, {}
     for _, pt in ipairs(points) do
         local origin, dir = WorldSelect.rayFrom(p, pt[1], pt[2])
-        if dir then
+        local c = math.min(cellCols - 1, math.max(0, math.floor((pt[1] - box.left) / BOX_CELL)))
+        local rr = math.min(cellRows - 1, math.max(0, math.floor((pt[2] - box.top) / BOX_CELL)))
+        local inCell = cells[rr * cellCols + c]
+        if dir and inCell then
             local best, bestT = nil, math.huge
-            for _, s in ipairs(shapes) do
+            for _, s in ipairs(inCell) do
                 if nearSphere(origin, dir, s.center, s.radius) then
                     local t = s.hit(origin, dir)
                     if t and t < bestT then best, bestT = s.obj, t end
@@ -471,6 +540,30 @@ function WorldSelect.pickBox(x1, y1, x2, y2)
                 taken[best] = true
                 list[#list + 1] = best
             end
+        end
+    end
+    table.sort(list, function(a, b) return a.id < b.id end)
+    return list
+end
+
+---Everything whose center shows inside a screen box, hidden or not (Ctrl + Shift + drag): one projection per
+---object, no rays, so a box over a whole converted map is instant. On the Objects list atmo ghosts count too.
+---Must be called from draw3d
+---@return FileParserEnvObj[] in id order
+function WorldSelect.pickBoxThrough(x1, y1, x2, y2)
+    local p = WorldSelect.measureProjection()
+    if not p then return {} end
+    local box = boxOf(x1, y1, x2, y2)
+    local list = {}
+    for _, obj in ipairs(ModData.parsed.env_obj) do
+        local x, y, z = get_obj_pos(obj.id - 1)
+        if x and projectsInto(p, { x, y, z }, box) then list[#list + 1] = obj end
+    end
+    if atmoListed() then
+        local AtmoLayer = MGE.AtmoLayer
+        for _, obj in ipairs(ModData.parsed.atmo or {}) do
+            local g = AtmoLayer.ghost(obj)
+            if g and projectsInto(p, g.pos, box) then list[#list + 1] = obj end
         end
     end
     table.sort(list, function(a, b) return a.id < b.id end)
@@ -535,7 +628,8 @@ add_hook("mouse_button_down", HOOK_SET, function(button, x, y)
     if WorldSelect.clicksOff then return end -- only the gizmo (map placement), drags still turn the camera
     -- Shift: a drag draws a select box instead of turning the camera. Not while a one-shot pick waits
     if get_keyboard_shift() ~= 0 and not WorldSelect.picking then
-        pressed = { x = x, y = y, box = true, endX = x, endY = y }
+        -- Ctrl too: everything inside the box, hidden ones included (pickBoxThrough). Not Alt: the game hides the cursor with it
+        pressed = { x = x, y = y, box = true, endX = x, endY = y, through = get_keyboard_ctrl() ~= 0 }
         return 1
     end
     pressed = { x = x, y = y }
@@ -552,7 +646,7 @@ add_hook("mouse_button_up", HOOK_SET, function(button, x, y)
     pressed = nil
     if not isActive() then return start.box and 1 or nil end
     if start.box and start.moved then
-        pendingBox = { x1 = start.x, y1 = start.y, x2 = x, y2 = y }
+        pendingBox = { x1 = start.x, y1 = start.y, x2 = x, y2 = y, through = start.through or get_keyboard_ctrl() ~= 0 }
         return 1
     end
     local limit = WorldSelect.clickMoveLimit
@@ -692,14 +786,16 @@ local function clickJoint(joint, additive)
     Main.setListTab("joints") -- rebuilds the window, camera follow frames the joint's objects
 end
 
----A Shift + drag box: what's in it is added to the current list's selection
----@param b { x1: number, y1: number, x2: number, y2: number }
+---A Shift + drag box: what's in it is added to the current list's selection. Objects / atmo: the ones it
+---shows (in front), with Ctrl (b.through) everything inside it
+---@param b { x1: number, y1: number, x2: number, y2: number, through: boolean? }
 local function boxSelect(b)
     local Main = MGE.Main
     if Main.listTab == "objects" or Main.listTab == "atmo" then
         -- the shown list's layer: objects, or the atmo objects (ghosts in front still hide what's behind)
         local atmo, any = Main.listTab == "atmo", false
-        for _, obj in ipairs(WorldSelect.pickBox(b.x1, b.y1, b.x2, b.y2)) do
+        local pick = b.through and WorldSelect.pickBoxThrough or WorldSelect.pickBox
+        for _, obj in ipairs(pick(b.x1, b.y1, b.x2, b.y2)) do
             if (obj.kind == "atmo") == atmo then
                 obj.selected, any = true, true
             end
@@ -734,9 +830,12 @@ add_hook("draw2d", HOOK_SET, function()
     if not b or not b.box or not b.moved then return end
     local l, t = math.min(b.x, b.endX), math.min(b.y, b.endY)
     local r, btm = math.max(b.x, b.endX), math.max(b.y, b.endY)
-    set_color(0.35, 0.65, 1, 0.15)
+    -- orange while Ctrl makes it take everything inside (hidden ones too), blue: the ones in front
+    local through = b.through or get_keyboard_ctrl() ~= 0
+    local c = through and { 1, 0.6, 0.2 } or { 0.35, 0.65, 1 }
+    set_color(c[1], c[2], c[3], 0.15)
     draw_quad(l, t, r - l, btm - t)
-    set_color(0.35, 0.65, 1, 0.9)
+    set_color(c[1], c[2], c[3], 0.9)
     draw_line(l, t, r, t, 1)
     draw_line(r, t, r, btm, 1)
     draw_line(r, btm, l, btm, 1)

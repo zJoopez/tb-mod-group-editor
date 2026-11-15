@@ -26,7 +26,8 @@ end
 ---@param parsed FileParserResult
 ---@return FileParserResult
 local function copyParsed(parsed)
-    local copy = { ignores = parsed.ignores, trailer = parsed.trailer, env_obj = {}, env_obj_joint = {}, atmo = {} }
+    local copy = { ignores = parsed.ignores, trailer = parsed.trailer, env_obj = {}, env_obj_joint = {}, atmo = {},
+        sharedPlayers = parsed.sharedPlayers } -- the file's way of writing player models (FileHandler.splitSharedPlayers)
     for i, obj in ipairs(parsed.env_obj or {}) do copy.env_obj[i] = copyObject(obj) end
     for i, obj in ipairs(parsed.env_obj_joint or {}) do copy.env_obj_joint[i] = copyObject(obj) end
     for i, obj in ipairs(parsed.atmo or {}) do copy.atmo[i] = copyObject(obj) end

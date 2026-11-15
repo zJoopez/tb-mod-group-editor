@@ -60,7 +60,7 @@ local SNAP_INFO = "Hold Ctrl while dragging. Move: units, rotate: degrees"
 local AtmoLayer = MGE.AtmoLayer
 ---@type MgeNumberSetting[]
 local ATMO_FIELDS = {
-    { label = "Most atmo objects", min = 0, minInclusive = true, max = 100000, whole = true,
+    { label = "Max atmo objects", min = 0, minInclusive = true, max = 100000, whole = true,
         get = function() return AtmoLayer.maxAtmo end, set = function(v) AtmoLayer.maxAtmo = v end },
 }
 -- (all are drawn: above 256, lower graphics settings may be needed to see them all)
@@ -80,6 +80,7 @@ local SHORTCUTS = table.concat({
     "Shift + Q / W / E: Move / Rotate / Scale gizmo on / off",
     "Ctrl while dragging the gizmo: snap steps (above)",
     "Drag (off the gizmo) / wheel: orbit / zoom camera",
+    "Shift + drag: box select what shows, Ctrl + Shift + drag: everything inside",
 }, "\n")
 
 local px = Widgets.px -- MGE's overall size (Widgets.UI_SCALE)

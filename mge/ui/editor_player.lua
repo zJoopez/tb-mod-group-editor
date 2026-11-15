@@ -9,6 +9,7 @@
 --               parts of all of them scaled together, their ratios stay)
 --   Strength:   the same for the average joint strength (neck 1 / knees 4 differences stay)
 --   Friction / Bounce: the same for body parts and joints together
+--   Model:      Reset puts them back on the default body (their player sections removed)
 -- The Move / Rotate / Scale gizmos do the same in the world.
 local Rows = MGE.EditorRows
 local inwuts = Rows.inputs
@@ -148,9 +149,21 @@ local function buildParts(holder)
     end
 end
 
+---Model row, built once: Reset puts the panel's players back on the default body
+---@param holder UIElement
+local function buildModel(holder)
+    Rows.begin()
+    Rows.createToggleButtonRow("Model", holder, {
+        { label = "Reset", active = false, onClick = function() MGE.PlayerList.resetModels(panelPlayers()) end },
+    }, "Back to the default body: the players' own\nbody and joint changes go (one undo step).")
+end
+
 ---@type EditorPanelModule
 return {
-    fixed = { { build = buildScale, panel = "player", row = 2, rows = 1 } },
+    fixed = {
+        { build = buildScale, panel = "player", row = 2, rows = 1 },
+        { build = buildModel, panel = "player", row = 3 + #PART_ROWS, rows = 1 },
+    },
     blocks = {
         { name = "player", build = buildPlayer, panel = "player", row = 0, rows = 2 },
         { name = "playerParts", build = buildParts, panel = "player", row = 3, rows = #PART_ROWS },

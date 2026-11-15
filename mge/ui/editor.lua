@@ -259,7 +259,7 @@ local function duplicateAtmo()
     local selected = ModData.getSelectedAtmo()
     if #selected == 0 then return end
     if #selected > MGE.AtmoLayer.room() then
-        echo("^04[MGE] no room for " .. #selected .. " more atmo objects (Settings > Most atmo objects)")
+        echo("^04[MGE] no room for " .. #selected .. " more atmo objects (Settings > Max atmo objects)")
         return
     end
     local atmoObjs = ModData.parsed.atmo

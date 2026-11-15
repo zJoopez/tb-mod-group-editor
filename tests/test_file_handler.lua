@@ -87,3 +87,85 @@ T.test("new props in key order", function()
     -- each object block ends with a blank line
     T.eq(text, "env_obj 3\n   shape box\n   pos 0 0 0\n   mass 1\n   zzz x\n", "KEY_ORDER, then unknown keys")
 end)
+
+-- Shared player parts (fatkido.tbm: body/joint lines outside player sections, every player gets them):
+-- read as every player's own section, written back shared while they're all the same, as full sections for
+-- every player once they differ (FileHandler.splitSharedPlayers)
+local SHARED = table.concat({
+    "#!/usr/bin/toribash",
+    "gamerule",
+    "   matchframes 350",
+    "",
+    "# for all players",
+    "",
+    "   body chest",
+    "      pos 1 0.9 2.2",
+    "      sides 0.6 0.15 0.26",
+    "",
+    "   body head",
+    "      sides 0.16 0 0",
+    "",
+}, "\n")
+
+local function count(text, pattern)
+    local n = 0
+    for _ in text:gmatch(pattern) do n = n + 1 end
+    return n
+end
+
+T.test("shared player parts: read per player, written back shared", function()
+    T.files["fat.tbm"] = SHARED
+    local p = FileHandler.ParseMod("fat.tbm")
+    FileHandler.splitSharedPlayers(p, 2)
+    T.ok(p.sharedPlayers, "remembered as shared")
+    T.eq(FileHandler.getSharedPlayerLines(p), nil, "no shared lines left in the data")
+    local zero, one = FileHandler.getPlayerLines(p, 0), FileHandler.getPlayerLines(p, 1)
+    T.ok(zero and one, "both players have a section")
+    T.eq(table.concat(zero, "|"), table.concat(one, "|"), "the same model")
+    T.eq(#zero, 5, "both parts with their lines")
+    local text = FileHandler.modText(p)
+    T.eq(count(text, "player %d"), 0, "all the same: no player sections written")
+    T.eq(count(text, "body chest"), 1, "the shared parts once")
+    -- reading what was written gives the same again
+    T.files["again.tbm"] = text
+    local p2 = FileHandler.ParseMod("again.tbm")
+    FileHandler.splitSharedPlayers(p2, 2)
+    T.eq(FileHandler.modText(p2), text, "a second round changes nothing")
+end)
+
+T.test("shared player parts: one player changed, every player written in full", function()
+    T.files["fat.tbm"] = SHARED
+    local p = FileHandler.ParseMod("fat.tbm")
+    FileHandler.splitSharedPlayers(p, 2)
+    FileHandler.renumberPlayers(p, { [1] = false }) -- player 1 reset to the default body
+    local text = FileHandler.modText(p)
+    T.eq(count(text, "player 0"), 1, "player 0 written")
+    T.eq(count(text, "player 1"), 0, "player 1 on the default body")
+    T.eq(count(text, "body chest"), 1, "player 0's model in its section, nothing shared left")
+    local p2 = FileHandler.ParseMod("fat.tbm")
+    FileHandler.splitSharedPlayers(p2, 2)
+    FileHandler.setPlayerLines(p2, 1, { "   body head", "      sides 0.3 0 0" })
+    text = FileHandler.modText(p2)
+    T.eq(count(text, "player 0"), 1, "differing models: player 0's section")
+    T.eq(count(text, "player 1"), 1, "and player 1's")
+    T.eq(count(text, "body chest"), 1, "player 0's full model (player 1's has no chest)")
+end)
+
+T.test("shared player parts: a player's own section wins for its parts", function()
+    T.files["mixed.tbm"] = SHARED .. "\nplayer 1\n   body head\n      sides 0.5 0 0\n"
+    local p = FileHandler.ParseMod("mixed.tbm")
+    FileHandler.splitSharedPlayers(p, 2)
+    local one = table.concat(FileHandler.getPlayerLines(p, 1), "|")
+    T.ok(one:find("body chest", 1, true), "the shared chest")
+    T.ok(one:find("sides 0.5 0 0", 1, true), "its own head")
+    T.ok(not one:find("sides 0.16 0 0", 1, true), "not the shared head")
+end)
+
+T.test("player sections as written stay as they are", function()
+    local text = "player 0\n   body head\n      sides 0.3 0 0\n\nplayer 1\n   body head\n      sides 0.3 0 0\n"
+    T.files["own.tbm"] = text
+    local p = FileHandler.ParseMod("own.tbm")
+    FileHandler.splitSharedPlayers(p, 2)
+    T.ok(not p.sharedPlayers, "no shared parts: nothing changes")
+    T.eq(count(FileHandler.modText(p), "player %d"), 2, "the same models still in their own sections")
+end)

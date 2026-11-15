@@ -449,7 +449,7 @@ local function addAtmo(objects, inView)
     if #objects == 0 then return false end
     local room = MGE.AtmoLayer.room()
     if #objects > room then
-        echo("^04[MGE] " .. #objects .. " atmo objects, room for " .. room .. " (Settings > Most atmo objects)")
+        echo("^04[MGE] " .. #objects .. " atmo objects, room for " .. room .. " (Settings > Max atmo objects)")
         return false
     end
     if inView then placeInView({ env_obj = objects, env_obj_joint = {}, ignores = {} }) end
