@@ -1,6 +1,6 @@
 -- Map placement view, opened by the Convert Map overlay's Place button (ui/map_overlay.lua): where a
 -- map conversion is picked. The map is drawn in the world where Convert puts it, with the box of it
--- that gets converted (the region). The gizmo (toolbar Move / Rotate / Scale, Shift + Q / W / E) works
+-- that gets converted (the region). The gizmo (toolbar Move / Rotate / Scale, Alt + Q / W / E) works
 -- on what the bar at the top picks:
 --   Region: Move it, Scale it per axis (its size), in the map's own axes
 --   Map:    Move (where the map sits: the anchor), Rotate around z (yaw), Scale (white cube: map scale)
@@ -130,7 +130,7 @@ local function setInfo(message)
     Widgets.infoText(info, message or (#kept .. " boxes of " .. budget .. (#cut > 0 and (", " .. #cut .. " over (red)") or "")
         .. (atmoCount > 0 and (", " .. atmoCount .. " to the atmo (purple)") or "")
         .. (shown.trimmed and ", preview trimmed" or "")
-        .. "   Move / Scale: Shift + Q / E" .. (editing == "map" and ", Rotate: Shift + W" or "")))
+        .. "   Move / Scale: Alt + Q / E" .. (editing == "map" and ", Rotate: Alt + W" or "")))
 end
 
 ---The grey context: boxes of the whole map whose middle is around the region but not in it

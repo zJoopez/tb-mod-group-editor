@@ -58,6 +58,9 @@
 ---@field confirm fun(message: string, onConfirm: fun(), onCancel: fun()?): boolean asks first, Enter confirms, Esc cancels
 ---@field saveOverlayContext table? options for the next name prompt
 ---@field pickerOverlay UIElement? open file picker: asset import, Model row (ui/file_picker.lua)
+---@field colorOverlay UIElement? open color picker: the Core tab's Color name (ui/color_picker.lua)
+---@field ColorPicker table ui/color_picker.lua
+---@field Config table utils/config.lua: settings and palette kept in config.cfg
 ---@field settingsOverlay UIElement? open settings: camera follow, world clicking (ui/settings_overlay.lua)
 ---@field mapOverlay UIElement? open Convert Map overlay (ui/map_overlay.lua)
 ---@field MapPlace table? map placement view (ui/map_place.lua), loaded by the overlay's Place button
@@ -110,6 +113,9 @@ function MGE.loadMapConv()
 end
 
 runCmd("reset") --Fixes sync if there are unsaved rotations
+-- the config file first: the UI size is needed before the window is built, the rest is applied below
+loadModule("utils/config.lua")
+MGE.Config.load()
 loadModule("utils/mat3.lua")
 loadModule("utils/file_handler.lua")
 loadModule("utils/mod_export.lua")
@@ -125,6 +131,7 @@ loadModule("utils/shape_gen.lua")
 loadModule("utils/players.lua") -- players' start positions (engageplayerpos), after highlight and history
 loadModule("utils/gizmo_math.lua")
 loadModule("utils/gizmo.lua") -- after world_select, highlight and transforms
+MGE.Config.apply() -- the saved settings over the modules' defaults
 
 local FileHandler = MGE.FileHandler
 local ModData = MGE.ModData
@@ -347,7 +354,7 @@ end
 -- MGE's overlays (fields holding an open UIElement), topmost first: Esc closes them in this order
 -- (the picker can be open over the map overlay, the confirmation over anything). A new overlay only
 -- needs adding here for quit, Esc and overlayOpen to handle it
-local OVERLAY_KEYS = { "confirmOverlay", "saveOverlay", "pickerOverlay", "settingsOverlay", "mapOverlay" }
+local OVERLAY_KEYS = { "confirmOverlay", "colorOverlay", "saveOverlay", "pickerOverlay", "settingsOverlay", "mapOverlay" }
 
 ---The topmost open overlay
 ---@return string? key its MGE field
@@ -429,8 +436,8 @@ add_hook("match_begin", MGE.hookname, function()
     MGE.AtmoLayer.reapplySeeThrough() -- the reload gave the objects their file colors again (the Atmo list)
 end)
 
--- Shift + Q / W / E: Move / Rotate / Scale gizmo on / off, same as the toolbar toggles (ui/main.lua).
--- Not R: the game handles Shift + R before this hook can consume it
+-- Alt + Q / W / E: Move / Rotate / Scale gizmo on / off, same as the toolbar toggles (ui/main.lua).
+-- Alt, not Shift: the game has its own Shift binds on some of these keys
 local TOOL_KEYS = {
     [string.byte("q")] = "move",
     [string.byte("w")] = "rotate",
@@ -513,7 +520,7 @@ function MGE.closeTopOverlay()
 end
 
 -- Shift+Z undo, Shift+Y redo (Ctrl+Z/Y are taken by the game), Ctrl+S saves the mod (MGE.save),
--- Ctrl+A selects / deselects all objects, Shift + Q / W / E toggles a gizmo tool,
+-- Ctrl+A selects / deselects all objects, Alt + Q / W / E toggles a gizmo tool,
 -- Ctrl + N / D new / duplicate, Delete deletes the selection (asks first), Esc closes MGE's overlays,
 -- Enter confirms MGE's confirmation popup (Esc cancels it).
 add_hook("key_down", MGE.hookname, function(key)
@@ -531,17 +538,22 @@ add_hook("key_down", MGE.hookname, function(key)
         end
         return 1
     end
+    if (key == KEY_RETURN or key == KEY_KEYPAD_ENTER) and topOverlay() == "colorOverlay" then
+        if MGE.ColorPicker.confirm then MGE.ColorPicker.confirm() end -- Apply
+        return 1
+    end
     if TB_MENU_INPUT_ISACTIVE then return end -- typing in a text field
-    if get_keyboard_alt() ~= 0 then return end
     local shift, ctrl = get_keyboard_shift() ~= 0, get_keyboard_ctrl() ~= 0
-    -- the map placement view hides the window: only its gizmo tools work, the rest acts on objects
-    if MGE.isPlacing() then
-        if shift and not ctrl and TOOL_KEYS[key] then
+    if get_keyboard_alt() ~= 0 then
+        -- Alt + Q / W / E: the gizmo tools, also in the map placement view (it hides the window)
+        if not shift and not ctrl and TOOL_KEYS[key] and (MGE.isPlacing() or MGE.Main.window.displayed) then
             MGE.Gizmo.toggle(TOOL_KEYS[key])
             return 1
         end
         return
     end
+    -- the map placement view: only its gizmo tools work (above), the rest acts on objects
+    if MGE.isPlacing() then return end
     if not MGE.Main.window.displayed then return end
     if key == KEY_DELETE and not shift and not ctrl then
         if not overlayOpen() then listAction("delete") end -- confirmation popup
@@ -556,9 +568,6 @@ add_hook("key_down", MGE.hookname, function(key)
             return 1 -- consume so the game doesn't also handle the key
         elseif key == string.byte("y") then
             History.redo()
-            return 1
-        elseif TOOL_KEYS[key] then
-            MGE.Gizmo.toggle(TOOL_KEYS[key])
             return 1
         end
     elseif ctrl and not shift and key == string.byte("s") then

@@ -33,6 +33,8 @@ The window has five lists, each with its own tabs.
 - **Export** saves the selected objects (or a player's model) as an asset. **Import** adds one in
   front of the camera. Assets live in `mge/mge/assets/obj` and `mge/mge/assets/player`, and a few
   examples come with the download.
+- **Settings** (UI size, camera follow, snap steps, max atmo objects) and the color picker's saved colors
+  are kept in `mge/mge/config.cfg`, so they stay between game sessions and over updates.
 - **Save** writes the mod to `data/mod/modmaker/`. While you edit, MGE reloads a working copy
   (`mge-modmaker.tbm` / `mge-modmaker1.tbm`) so changes show in the game straight away.
 
@@ -90,7 +92,7 @@ the mod.
 | Keys | Action |
 |---|---|
 | F1 | Hide / show the window |
-| Shift + Q / W / E | Move / Rotate / Scale tool (press again to turn it off) |
+| Alt + Q / W / E | Move / Rotate / Scale tool (press again to turn it off) |
 | Shift + Z / Shift + Y | Undo / redo |
 | Ctrl + S | Save |
 | Ctrl + Shift + S | Save under another name |

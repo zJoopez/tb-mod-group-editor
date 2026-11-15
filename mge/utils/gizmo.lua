@@ -1,5 +1,5 @@
 -- Gizmo in the world for the active tool (Gizmo.mode). The toolbar's Move / Rotate / Scale toggles
--- (ui/main.lua) and Shift + Q / W / E (main.lua) switch it with Gizmo.toggle:
+-- (ui/main.lua) and Alt + Q / W / E (main.lua) switch it with Gizmo.toggle:
 --   none:   no tool on, clicking only selects
 --   move:   arrows (one world axis) and squares (two axes) at the selection's center
 --   rotate: a ring per group axis (the axes Rot shows) around the selection

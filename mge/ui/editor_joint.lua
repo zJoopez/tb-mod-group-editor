@@ -107,7 +107,7 @@ local function buildPos(holder, joints)
     end, hints,
         "Anchor: where the game joins the two objects, in\n" ..
         "world coordinates. Several joints: their center,\n" ..
-        "they move together. The Move gizmo (Shift + Q)\n" ..
+        "they move together. The Move gizmo (Alt + Q)\n" ..
         "drags them, Recenter puts each between its objects.")
 end
 

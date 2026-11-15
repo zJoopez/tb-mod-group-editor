@@ -8,8 +8,8 @@
 --   Shortcuts:      heading with a "?", hovering it lists the keyboard and mouse shortcuts
 -- Every row explains itself on the "?" at its end, like the editor rows
 --   UI size:        MGE's overall size (Widgets.UI_SCALE), restarts MGE to apply it
--- Kept while the script runs, not saved. Clicking outside the panel, Close or Esc closes it, MGE.quit
--- closes it too (MGE.settingsOverlay).
+-- Saved in MGE's config file when the overlay closes (utils/config.lua), the UI size when it's picked.
+-- Clicking outside the panel, Close or Esc closes it, MGE.quit closes it too (MGE.settingsOverlay).
 if MGE.settingsOverlay and not MGE.settingsOverlay.destroyed then return end
 
 local Widgets = MGE.Widgets
@@ -77,7 +77,7 @@ local SHORTCUTS = table.concat({
     "Shift + Z / Y: undo / redo",
     "Enter: apply the typed field",
     "Click Pos / Rot / Scale: switch to Move / Rotate / Resize",
-    "Shift + Q / W / E: Move / Rotate / Scale gizmo on / off",
+    "Alt + Q / W / E: Move / Rotate / Scale gizmo on / off",
     "Ctrl while dragging the gizmo: snap steps (above)",
     "Drag (off the gizmo) / wheel: orbit / zoom camera",
     "Shift + drag: box select what shows, Ctrl + Shift + drag: everything inside",
@@ -130,6 +130,7 @@ end
 local defaultKillAction = overlay.killAction
 overlay.killAction = function()
     for _, entry in ipairs(numberInputs) do applySnap(entry) end -- typed but not entered still counts
+    if MGE and MGE.Config then MGE.Config.save() end -- kept for the next game session
     if defaultKillAction then defaultKillAction() end
     Widgets.releaseKeyboard(overlay) -- the step fields would otherwise stay in toriui's keyboard list
     if MGE then MGE.settingsOverlay = nil end
@@ -227,6 +228,7 @@ do
         items[i] = { label = math.floor(scale * 100 + 0.5) .. "%", onClick = function()
             if scale == Widgets.UI_SCALE then return end
             MGE_UI_SCALE = scale
+            MGE.Config.save() -- before the restart: the next game session starts at this size too
             local entry = MGE.scriptPath:gsub("mge/$", "") .. "mge.lua" -- the script /ls loads
             echo("^04[MGE] UI size " .. items[i].label .. ", restarting MGE")
             pcall(MGE.quit)

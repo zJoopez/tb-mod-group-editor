@@ -21,6 +21,8 @@ local FILES = {
     "test_mapconv.lua",
     "test_bsp.lua",
     "test_shape_gen.lua",
+    "test_color_picker.lua",
+    "test_config.lua",
 }
 
 -- game libraries plain 5.1 lacks (same shims as the workspace CLAUDE.md harness header)
@@ -74,7 +76,7 @@ Files = {
 
 for _, module in ipairs({ "utils/mat3.lua", "utils/file_handler.lua", "utils/mod_export.lua",
     "utils/history.lua", "utils/atmo_layer.lua", "utils/atmo.lua", "mapconv/vmf.lua", "mapconv/bsp.lua", "mapconv/brush.lua", "mapconv/boxfit.lua",
-    "mapconv/merge.lua", "mapconv/convert.lua", "ui/scroll_list.lua", "utils/shape_gen.lua" }) do
+    "mapconv/merge.lua", "mapconv/convert.lua", "ui/scroll_list.lua", "utils/shape_gen.lua", "utils/config.lua" }) do
     dofile(MGE.scriptPath .. module)
 end
 

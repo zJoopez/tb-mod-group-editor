@@ -198,20 +198,10 @@ end
 ---@type UIElement? the Color row's name button, lit while picking (rebuilt with the panel)
 local colorLabel = nil
 
----Color picker (the Color row's name): the next object clicked in the world gives the selection its
----exact color, all four channels. The name again or Esc cancels (MGE.closeTopOverlay)
-local function pickColor()
-    local WorldSelect = MGE.WorldSelect
-    if WorldSelect.picking then
-        WorldSelect.cancelPick()
-        return
-    end
-    local targets = getSelected()
-    if #targets == 0 then
-        echo("^04[MGE] select the objects to color first, then pick")
-        return
-    end
-    WorldSelect.startPick(function(source)
+---Pick from world (the color picker's button): the next object clicked in the world gives the selection
+---its exact color, all four channels. The Color name or Esc cancels (MGE.closeTopOverlay)
+local function pickFromWorld()
+    MGE.WorldSelect.startPick(function(source)
         local color = colorUnits(source)
         -- the objects selected now: the selection may have changed in the list meanwhile
         local now = getSelected()
@@ -223,6 +213,30 @@ local function pickColor()
     end)
     Rows.setHighlighted(colorLabel, true)
     echo("^04[MGE] click an object: the selection gets its color (Esc cancels)")
+end
+
+---The Color row's name: the color picker (ui/color_picker.lua), starting from the first selected object's
+---color. Apply gives every selected object that color. While a pick from the world runs: cancels it
+local function pickColor()
+    local WorldSelect = MGE.WorldSelect
+    if WorldSelect.picking then
+        WorldSelect.cancelPick()
+        return
+    end
+    local targets = getSelected()
+    if #targets == 0 then
+        echo("^04[MGE] select the objects to color first")
+        return
+    end
+    MGE.ColorPicker.open({
+        color = colorUnits(targets[1]),
+        onApply = function(color)
+            local now = getSelected() -- the objects selected now
+            if #now == 0 then return end
+            setColors(now, function() return color end)
+        end,
+        onPickWorld = pickFromWorld,
+    })
 end
 
 ---Color and mass rows (core panel). Placeholders show the selection's values per channel, "mixed"
@@ -241,7 +255,7 @@ local function buildCoreProps(holder, selected)
     local _
     inwuts.color, _, colorLabel = createInputRow("Color", holder, function() adjustColor() end, colorHints,
         "RGBA 0-255 (up to 500 is brighter). Enter applies\nthe typed fields, empty ones keep each object's own.\n" ..
-        "\"mixed\": the selected objects differ.\nName click: pick a color from an object in the world.",
+        "\"mixed\": the selected objects differ.\nName click: color picker, or pick from an object in the world.",
         pickColor)
     Rows.setHighlighted(colorLabel, MGE.WorldSelect.picking ~= nil) -- rebuilt while picking
     -- atmo objects have no mass

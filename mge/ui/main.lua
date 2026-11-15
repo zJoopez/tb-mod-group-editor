@@ -136,9 +136,9 @@ Main.ACTIONS_BG = Widgets.PANEL_STYLE.bg
 
 -- gizmo tools: on / off toggles, at most one on (utils/gizmo.lua). Icons in mge/textures/
 local TOOLS = {
-    { mode = "move", label = "Move (Shift + Q)" },
-    { mode = "rotate", label = "Rotate (Shift + W)" },
-    { mode = "scale", label = "Scale (Shift + E)" },
+    { mode = "move", label = "Move (Alt + Q)" },
+    { mode = "rotate", label = "Rotate (Alt + W)" },
+    { mode = "scale", label = "Scale (Alt + E)" },
 }
 local bar = {}
 for _, tool in ipairs(TOOLS) do
@@ -399,6 +399,7 @@ end)
 dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by the lists and the file picker
 MGE.ScrollList.bgColor = LIST_BG -- every list: the object grid, players, the file picker, assets
 dofile(MGE.scriptPath .. "ui/file_picker.lua") -- MGE.FilePicker, folder browser: asset import, Model row
+dofile(MGE.scriptPath .. "ui/color_picker.lua") -- MGE.ColorPicker, the Core tab's Color name
 dofile(MGE.scriptPath .. "ui/assets.lua") -- MGE.Assets, export / import overlay for the lists' buttons
 local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
 local joint_list = dofile(MGE.scriptPath .. "ui/joint_list.lua")
