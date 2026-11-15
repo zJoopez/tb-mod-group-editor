@@ -48,9 +48,19 @@ end
 
 -- the thrust line an object had before Off, by object id: picking World / Object after Off brings it back
 -- (it brought back a thrust with no direction, it pushed nothing). By id: every save reloads the mod and
--- re-reads the objects as new tables, the ids stay. Kept while MGE runs, not saved
----@type table<integer, string>
+-- re-reads the objects as new tables, the ids stay. An id can be another object's later (a delete, Reindex,
+-- another mod): the memory keeps the object's pos and sides and only counts for an object that still has
+-- them. Used up once it's back. Kept while MGE runs, not saved
+---@type table<integer, { thrust: string, pos: string?, sides: string? }>
 local thrustBeforeOff = {}
+
+---@param obj FileParserEnvObj
+---@return string? the thrust line obj had before Off, nil for another object on its id
+local function rememberedThrust(obj)
+    local kept = thrustBeforeOff[obj.id]
+    if kept and kept.pos == obj.props.pos and kept.sides == obj.props.sides then return kept.thrust end
+    return nil
+end
 
 ---@param thrust Thrust
 ---@return string
@@ -66,13 +76,17 @@ local function editThrust(edit)
     for _, v in ipairs(getSelected()) do
         local had = getThrust(v)
         -- an object turned Off starts from the thrust it had (thrustBeforeOff), not from nothing
-        local current = had or parseThrust(thrustBeforeOff[v.id]) or THRUST_DEFAULT
+        local current = had or parseThrust(rememberedThrust(v)) or THRUST_DEFAULT
         local thrust = edit({ frames = current.frames, dir = { current.dir[1], current.dir[2], current.dir[3] },
             space = current.space })
         local value = thrust and formatThrust(thrust) or nil
         -- compared as values, the file may write the same thrust differently ("1.00" / "1")
         if value ~= (had and formatThrust(had) or nil) then
-            if not value and had then thrustBeforeOff[v.id] = formatThrust(had) end
+            if not value and had then
+                thrustBeforeOff[v.id] = { thrust = formatThrust(had), pos = v.props.pos, sides = v.props.sides }
+            elseif value then
+                thrustBeforeOff[v.id] = nil -- back on: used up
+            end
             v.props.thrust = value
             changed = true
         end

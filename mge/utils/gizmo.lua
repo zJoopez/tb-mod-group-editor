@@ -100,14 +100,47 @@ local drag = nil
 ---AtmoLayer.live (their ghosts drawn where it puts them, utils/highlight.lua)
 ---@param objects FileParserEnvObj[] in the world, or atmo objects with a pos line
 ---@return GizmoTarget
+-- The target is built again every frame, its pivot and frame read every object's lines (parsed from text):
+-- with thousands of atmo objects selected (Select all) that was most of the frame. They change only with
+-- the data (every edit commits an undo state, a reload re-reads it) or the selection, so they're kept for
+-- those: the undo state, the data, how many are selected and the first and last of them
+---@type { key: string?, pivot: number[]?, frame: number[][]? }
+local targetCache = {}
+
+---@param objects FileParserEnvObj[]
+---@return string
+local function selectionKey(objects)
+    local History = MGE.History
+    return tostring(History.states[History.index]) .. "|" .. tostring(MGE.ModData.parsed) .. "|" .. #objects ..
+        "|" .. tostring(objects[1]) .. "|" .. tostring(objects[#objects])
+end
+
+---A value of the target kept while selectionKey stays the same
+---@param objects FileParserEnvObj[]
+---@param name "pivot"|"frame"
+---@param compute fun(): any
+local function cachedFor(objects, name, compute)
+    local key = selectionKey(objects)
+    if targetCache.key ~= key then targetCache = { key = key } end
+    if targetCache[name] == nil then targetCache[name] = compute() end
+    return targetCache[name]
+end
+
 local function objectTarget(objects)
     local T, AtmoLayer = MGE.Transforms, MGE.AtmoLayer
     local hasAtmo = false
     for _, obj in ipairs(objects) do
         if obj.kind == "atmo" then hasAtmo = true break end
     end
-    local function pivot() return { T.getSelectionPivot(objects) } end
-    local function frame() return T.groupFrame(objects) end
+    -- copies of the kept values: callers may change what they get
+    local function pivot()
+        local p = cachedFor(objects, "pivot", function() return { T.getSelectionPivot(objects) } end)
+        return { p[1], p[2], p[3] }
+    end
+    local function frame()
+        local f = cachedFor(objects, "frame", function() return T.groupFrame(objects) end)
+        return { { f[1][1], f[1][2], f[1][3] }, { f[2][1], f[2][2], f[2][3] }, { f[3][1], f[3][2], f[3][3] } }
+    end
     return {
         objects = objects,
         scalable = true,
@@ -118,11 +151,11 @@ local function objectTarget(objects)
             if hasAtmo then AtmoLayer.live = { move = offset } end
         end,
         previewRotate = function(rotation)
-            T.previewRotate(objects, rotation)
+            T.previewRotate(objects, rotation, pivot())
             if hasAtmo then AtmoLayer.live = { rotation = rotation, pivot = pivot() } end
         end,
         previewScale = function(factors, baseSides)
-            T.previewScale(objects, factors, baseSides)
+            T.previewScale(objects, factors, baseSides, pivot(), frame())
             if hasAtmo then AtmoLayer.live = { scale = factors, pivot = pivot(), frame = frame() } end
         end,
         liveSides = function() return T.liveSides(objects) end,
@@ -134,13 +167,14 @@ local function objectTarget(objects)
             AtmoLayer.live = nil
             T.moveBy(objects, offset)
         end,
+        -- the kept pivot / frame: the release doesn't work them out again over the whole selection
         rotateByMatrix = function(rotation)
             AtmoLayer.live = nil
-            T.rotateByMatrix(objects, rotation)
+            T.rotateByMatrix(objects, rotation, pivot())
         end,
         scaleBy = function(factors)
             AtmoLayer.live = nil
-            T.scaleBy(objects, factors)
+            T.scaleBy(objects, factors, pivot(), frame())
         end,
     }
 end
@@ -157,6 +191,7 @@ local function gizmoTarget()
     if MGE.overlayOpen and MGE.overlayOpen() then return nil end
     -- something else has the gizmo (the map placement view, ui/map_place.lua), nil: no gizmo
     if Gizmo.targetOverride then return Gizmo.targetOverride(Gizmo.mode) end
+    if Main.listTab == "misc" then return nil end -- the Misc list is about the whole mod, not a selection
     if Main.listTab == "joints" then
         -- the selected joints' anchors, Move only, on both of the list's tabs
         if Gizmo.mode ~= "move" then return nil end

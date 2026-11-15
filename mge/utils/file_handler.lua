@@ -10,8 +10,11 @@ local DECIMALS = 10
 ---Keeps small values like 0.0001 that a fixed 2 decimal format would round to 0.
 ---@param value number
 ---@return string
+local NUMBER_FORMAT = "%." .. DECIMALS .. "f"
 function FileHandler.formatNumber(value)
-    local s = string.format("%." .. DECIMALS .. "f", value):gsub("0+$", ""):gsub("%.$", "")
+    -- one pass: "%f" always writes the dot, so the trailing zeros and then the dot go (a release on thousands
+    -- of atmo objects formats tens of thousands; two gsubs and a format string built each call were most of it)
+    local s = string.format(NUMBER_FORMAT, value):match("^(.-)%.?0*$")
     if s == "-0" then s = "0" end
     return s
 end

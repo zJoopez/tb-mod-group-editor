@@ -72,6 +72,7 @@ local function setShader(name)
     elseif i then
         table.remove(header, i)
     end
+    MGE.Atmo.headerVersion = MGE.Atmo.headerVersion + 1 -- the footer shows the unsaved change
     Rows.refreshBlocks({ "miscFile" })
 end
 

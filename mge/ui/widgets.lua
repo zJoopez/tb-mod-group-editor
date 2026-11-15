@@ -35,6 +35,8 @@ Widgets.BUTTON_TEXT_SCALE = 0.45 * Widgets.UI_SCALE -- buttons' text (Widgets.bu
 Widgets.TITLE_SCALE = 0.7 * Widgets.UI_SCALE -- the overlays' titles (Settings, Convert Map, the file picker...)
 -- height of an editor row (label, inputs or buttons, "?"), the editor tabs and the reset button
 Widgets.ROW_H = Widgets.px(24)
+-- height of a list row (the object grid's rows, the Players list, the file picker): ScrollList.rowHeight
+Widgets.LIST_ROW_H = Widgets.px(20)
 -- space between the cells of a grid-like row: the number fields' (they sit this far apart), the object grid's
 -- cells, the button rows (Box / Sphere / Pill, the list's buttons, Create / Reset), the editor tabs
 Widgets.GAP = 2
@@ -260,19 +262,6 @@ function Widgets.buttonRow(parent, y, h, buttons, gap, textScale, style)
         x = x + w + gap
     end
     return created
-end
-
--- buttons inside list bars (object list, asset list): 2px top/bottom padding
-local BAR_PADDING = 2
-local BAR_GAP = 4
-
----Buttons filling a list bar with the shared bar padding (e.g. duplicate/delete, import)
----@param bar UIElement
----@param buttons WidgetRowButton[]
----@param style WidgetStyle?
----@return UIElement[]
-function Widgets.barButtons(bar, buttons, style)
-    return Widgets.buttonRow(bar, BAR_PADDING, bar.size.h - BAR_PADDING * 2, buttons, BAR_GAP, nil, style)
 end
 
 ---Removes an element and its descendants from toriui's keyboard handler list (UIKeyboardHandler).

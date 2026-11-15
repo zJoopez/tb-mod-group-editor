@@ -101,6 +101,16 @@ end
 local panels = {}
 ---@type table<string, UIElement> holders of the rebuilt blocks by name
 local blocks = {}
+-- Only the shown panel's blocks are rebuilt (a selection change, a list switch, an edit): the others are
+-- marked dirty and rebuilt when their panel is shown (editor.applyPanel). Rebuilding every panel's blocks
+-- read the whole selection once per block: with thousands of atmo objects selected, switching lists or
+-- selecting froze for a moment over panels nobody could see
+---@type string? the shown panel's id, nil until the first is shown (everything is built then)
+local shownPanel = nil
+---@type table<string, boolean> rebuilt blocks out of date, by name
+local dirty = {}
+---@type fun(names: string[])
+local rebuildBlocks
 ---@type UIElement? reset button, shown under the shown panel
 local inputFooter = nil
 
@@ -114,11 +124,19 @@ end
 function editor.applyPanel(id)
     local panel = PANELS[id]
     if not panel then return end
+    shownPanel = id
     for panelId, element in pairs(panels) do
         if not element.destroyed then
             if panelId == id then element:show(true) else element:hide(true) end
         end
     end
+    -- its blocks that changed while it was hidden (rebuildBlocks calls back here through reapplyTabs: the
+    -- list is empty by then)
+    local stale = {}
+    for _, name in ipairs(BLOCK_ORDER) do
+        if dirty[name] and BLOCKS[name].panel == id then stale[#stale + 1] = name end
+    end
+    if #stale > 0 then rebuildBlocks(stale) end
     applyTransformModes() -- after the panel, rebuilt rows start visible
     if inputFooter and not inputFooter.destroyed then
         if panel.ownButtons then
@@ -192,8 +210,20 @@ end
 ---Rebuilds the named blocks with the current selection, typed text is kept and the field that had
 ---focus gets it back (applying a value with Enter rebuilds the rows, you can keep trying values)
 ---@param names string[]
-local function rebuildBlocks(names)
+rebuildBlocks = function(names)
     if not blocks.measured or blocks.measured.destroyed then return end
+    -- blocks of hidden panels wait until theirs is shown
+    local now = {}
+    for _, name in ipairs(names) do
+        if shownPanel and BLOCKS[name].panel ~= shownPanel then
+            dirty[name] = true
+        else
+            dirty[name] = nil
+            now[#now + 1] = name
+        end
+    end
+    if #now == 0 then return end
+    names = now
     local selected = getEditSelection() -- read once, every row shows values of the same objects
     local typed = saveTypedProperties()
     local focusKey, focusIndex = findFocusedInput()
@@ -320,6 +350,7 @@ end
 
 ---@param parent UIElement editor container from ui/main.lua
 function editor.create(parent)
+    dirty = {} -- every block is built below
     -- all panels start at the top of the editor area
     panels = {}
     for id, panel in pairs(PANELS) do

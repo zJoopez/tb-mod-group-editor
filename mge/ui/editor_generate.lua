@@ -27,7 +27,6 @@ local AMOUNT, JOINTS = 1, 2
 ---@type boolean? the list the Amount row was built for (true: Atmo, no joints field), nil before it's built
 local amountForAtmo = nil
 local keptJoints = "" -- the joints field's text while the Atmo list's row (without it) is shown
-local MAX_GENERATE = 200 -- more than any mod has room for, stops a typo from planning thousands
 
 ---@type GenerateAlign kept while the script runs
 local align = "out"
@@ -35,6 +34,38 @@ local align = "out"
 ---@return boolean the Atmo list is shown: the pieces go to the atmo, without joints
 local function forAtmo()
     return MGE.Main ~= nil and MGE.Main.listTab == "atmo"
+end
+
+---The most pieces Generate can add now, and what limits it. Objects: the free ids, joined pieces (they're
+---dynamic) only as many as fit in ids 1-MAX_NONSTATIC_OBJECTS. Atmo list: the atmo's room (Settings > Most
+---atmo objects): its default 256 keeps a typo from planning thousands, raising it is the player's call. It
+---was a fixed 200, which kept the atmo from getting more at once
+---@param atmo boolean the Atmo list (forAtmo)
+---@param perPair integer joints between two pieces
+---@return integer most
+---@return string limit what limits it, for the note
+local function maxGenerate(atmo, perPair)
+    local ModData = MGE.ModData
+    if atmo then return MGE.AtmoLayer.room(), "room in the atmo" end
+    local free = ModData.freeCount()
+    if perPair > 0 then
+        local dynamicRoom = math.max(0, MGE.MAX_NONSTATIC_OBJECTS - ModData.countDynamic())
+        if dynamicRoom < free then return dynamicRoom, "free dynamic ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS end
+    end
+    return free, "free ids"
+end
+
+---What the limits depend on, for the preview's key: the preview is planned again when they change (an
+---import, a delete, Most atmo objects), so it never shows something Generate wouldn't add
+---@return string
+local limitsCache = {} -- countDynamic scans every object: once per undo state / reload, not every frame
+local function limitsKey()
+    local ModData = MGE.ModData
+    local state = MGE.History.states[MGE.History.index]
+    if limitsCache.parsed ~= ModData.parsed or limitsCache.state ~= state then
+        limitsCache = { parsed = ModData.parsed, state = state, dynamic = ModData.countDynamic() }
+    end
+    return MGE.AtmoLayer.room() .. "," .. ModData.freeCount() .. "," .. limitsCache.dynamic
 end
 
 ---@return number[] sides of the default object (ui/assets.lua), what empty Size fields use
@@ -101,7 +132,8 @@ local function planFromFields(factors)
     local typed, typedAmount = reader(inwuts.generate or {}), reader(inwuts.generateAmount or {})
     local amount = math.floor((typedAmount(AMOUNT) or GENERATE_AMOUNT) + 0.5)
     local perPair = math.floor((typedAmount(JOINTS) or GENERATE_JOINTS) + 0.5)
-    if forAtmo() then perPair = 0 end -- atmos have no joints (the row has no joints field there)
+    local atmo = forAtmo()
+    if atmo then perPair = 0 end -- atmos have no joints (the row has no joints field there)
     local sides, increment = defaultSides(), {}
     for i = 1, 3 do
         local value = typed(FIELD.size + i)
@@ -113,17 +145,27 @@ local function planFromFields(factors)
         end
     end
     local note
-    if amount > MAX_GENERATE then
-        note = "amount must be at most " .. MAX_GENERATE
+    -- joints only between two or more pieces: Amount 1 makes none, its id needn't be a dynamic one
+    local most, limit = maxGenerate(atmo, amount >= 2 and math.max(perPair, 0) or 0)
+    if most == 0 then
+        if atmo then
+            note = "no room in the atmo (Settings > Most atmo objects)"
+        elseif MGE.ModData.freeCount() > 0 then
+            note = "no free dynamic ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. " for joined pieces: Joints 0, or Reindex (Misc)"
+        else
+            note = "no free object ids"
+        end
+    elseif amount > most then
+        note = "amount must be at most " .. most .. " (" .. limit .. ")"
     elseif amount >= 2 and (perPair < 0 or perPair > 2) then
         note = "joints between two pieces must be 0, 1 or 2"
     elseif amount >= 2 then
         local jointCount, free = (amount - 1) * perPair, #MGE.Joints.freeIds()
-        local most = MGE.ShapeGen.maxPieces(sides, increment)
+        local shrinkMost = MGE.ShapeGen.maxPieces(sides, increment)
         if jointCount > free then
             note = jointCount .. " joints needed, " .. free .. " free (max " .. MGE.MAX_ENV_JOINTS .. "), use fewer pieces"
-        elseif most and amount > most then
-            note = "the increment shrinks pieces to nothing after " .. most .. " pieces, use fewer or a smaller increment"
+        elseif shrinkMost and amount > shrinkMost then
+            note = "the increment shrinks pieces to nothing after " .. shrinkMost .. " pieces, use fewer or a smaller increment"
         end
     end
     local single = note ~= nil or amount < 2
@@ -176,7 +218,7 @@ end
 ---@return string everything the plan depends on
 local function fieldsKey()
     ---@type string[]
-    local parts = { align .. "#" .. anchorVersion, table.concat(moved, ",") }
+    local parts = { align .. "#" .. anchorVersion, table.concat(moved, ","), limitsKey() }
     addTexts(inwuts.generateAmount, parts)
     addTexts(inwuts.generate, parts)
     addTexts(inwuts.generatePos, parts)
@@ -221,10 +263,13 @@ local function replan()
     followPreview()
 end
 
----@return boolean the Generate tab is open on the Objects or Atmo list in MGE's shown window, its preview is drawn
+---@return boolean the Generate tab is open on the Objects or Atmo list in MGE's shown window, its preview is drawn.
+---The shown list's own active tab (Main.activeTabs): Main.activeTab is only the Objects list's, the Atmo list's
+---Generate showed no preview unless the Objects list was on Generate too
 local function tabOpen()
     local Main = MGE.Main
-    return Main.activeTab == "generate" and (Main.listTab == "objects" or Main.listTab == "atmo")
+    local list = Main.listTab
+    return (list == "objects" or list == "atmo") and Main.activeTabs[list] == "generate"
         and inwuts.generate ~= nil
         and Main.window ~= nil and Main.window.displayed == true
 end
@@ -364,6 +409,11 @@ end
 ---On the Atmo list the pieces go to the atmo instead (one undo step, no reload)
 local function generate()
     local pieces, note, _, joints = planFromFields()
+    -- no room at all: nothing to add (not even the one default object the preview shows)
+    if maxGenerate(forAtmo(), 0) == 0 then
+        echo("^04[MGE] Generate: " .. tostring(note))
+        return
+    end
     -- what the preview shows is what's added: say why it's one object instead of the shape
     if note then echo("^04[MGE] Generate: " .. note .. ", added one default object instead") end
     if forAtmo() then
@@ -419,7 +469,9 @@ end
 local function buildAmount(holder)
     Rows.begin()
     amountForAtmo = forAtmo()
-    local pieces = "Pieces in the shape, max " .. MAX_GENERATE .. " (1, or values that\ncan't make a shape: one default object)"
+    local pieces = (amountForAtmo and "Pieces in the shape, as many as the atmo has room\nfor (Settings > Most atmo objects)"
+        or "Pieces in the shape, as many as there are free ids\n(joined ones: free dynamic ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. ")") ..
+        ". 1, or values that\ncan't make a shape: one default object"
     if amountForAtmo then
         inwuts.generateAmount = createInputRow("Amount", holder, function() generate() end, { GENERATE_AMOUNT .. " obj" },
             pieces .. ".\nEnter in any field generates.")

@@ -54,6 +54,13 @@ end
 ---@param obj FileParserEnvObj
 ---@return number[]
 local function positionOf(obj)
+    -- an atmo object: its ghost's (AtmoLayer.ghost), parsed once per change of its lines. The pivot, the
+    -- measured rows and camera follow read every selected one on each edit: thousands parsed three times
+    if obj.kind == "atmo" and MGE.AtmoLayer then
+        local g = MGE.AtmoLayer.ghost(obj)
+        if g and g.pos[3] then return { g.pos[1], g.pos[2], g.pos[3] } end
+        if not g then return { 0, 0, 0 } end
+    end
     local x, y, z = (obj.props.pos or ""):match("(%S+)%s+(%S+)%s+(%S+)")
     x, y, z = tonumber(x), tonumber(y), tonumber(z)
     if x and y and z then return { x, y, z } end
@@ -66,6 +73,12 @@ end
 ---@return number, number, number
 local function sidesOf(obj)
     if obj.kind == "atmo" then
+        -- its ghost's (AtmoLayer.ghost), parsed once per change: the size row reads every selected one
+        local g = MGE.AtmoLayer and MGE.AtmoLayer.ghost(obj)
+        if g then
+            local s = g.fileSides
+            return s[1] or 1, s[2] or 1, s[3] or 1
+        end
         local s = {}
         for n in tostring(obj.props.sides or ""):gmatch("%S+") do s[#s + 1] = tonumber(n) end
         return s[1] or 1, s[2] or 1, s[3] or 1
@@ -122,10 +135,22 @@ end
 ---matched in game (it gave the same axes as MGE's rotations)
 ---@param obj FileParserEnvObj
 ---@return number[][]
+-- orientations by rot line: thousands of objects (a converted map's atmo) mostly share a handful of rot
+-- lines, parsing and multiplying each one's was most of a release (Rotate / Scale) and of finding the group
+-- frame. Only read, never changed. Emptied when it grows big: every rotate writes new lines
+---@type table<string, number[][]>
+local orientationByRot, orientationCount = {}, 0
+
 local function orientationOf(obj)
+    local line = obj.props.rot or ""
+    local m = orientationByRot[line]
+    if m then return m end
     local r = rotLine(obj)
     local x, y, z = r[1], r[2], r[3]
-    return Mat3.mul(Mat3.rotX(-x), Mat3.mul(Mat3.rotY(-y), Mat3.rotZ(-z)))
+    m = Mat3.mul(Mat3.rotX(-x), Mat3.mul(Mat3.rotY(-y), Mat3.rotZ(-z)))
+    if orientationCount >= 4096 then orientationByRot, orientationCount = {}, 0 end
+    orientationByRot[line], orientationCount = m, orientationCount + 1
+    return m
 end
 
 ---@param values number[]
@@ -257,22 +282,36 @@ end
 ---Rotates the objects around their center by offsets (radians, applied z, then y, then x)
 ---@param selectedObjects FileParserEnvObj[]
 ---@param offsets number[] x y z
-local function rotBy(selectedObjects, offsets)
-    local pivot = { getSelectionPivot(selectedObjects) }
+---@param pivot number[]? the selection's pivot when the caller has it (a gizmo drag's)
+local function rotBy(selectedObjects, offsets, pivot)
+    pivot = pivot or { getSelectionPivot(selectedObjects) }
+
+    -- SetRotPos turns a point around the pivot, the same turn for every object: its matrix once (the turn of
+    -- each axis), then one product per object instead of its trig. The new rot line depends on the old one
+    -- only: once per distinct line (thousands of atmo objects share a few)
+    local turn = {}
+    for k = 1, 3 do
+        local e = { 0, 0, 0 }
+        e[k] = 1
+        turn[k] = RotatingOld.SetRotPos(e[1], e[2], e[3], 0, 0, 0, offsets[1], offsets[2], offsets[3])
+    end
+    local rotByLine = {}
 
     for _, v in ipairs(selectedObjects) do
-        local rot = rotLine(v)
         local pos = positionOf(v)
-
-        local outPos = RotatingOld.SetRotPos(
-            pos[1], pos[2], pos[3],
-            pivot[1], pivot[2], pivot[3],
-            offsets[1], offsets[2], offsets[3]
-        )
-        local outRot = RotatingOld.SetRotOffset(
-            rot[1], rot[2], rot[3],
-            offsets[1], offsets[2], offsets[3]
-        )
+        local dx, dy, dz = pos[1] - pivot[1], pos[2] - pivot[2], pos[3] - pivot[3]
+        local outPos = {
+            pivot[1] + turn[1][1] * dx + turn[2][1] * dy + turn[3][1] * dz,
+            pivot[2] + turn[1][2] * dx + turn[2][2] * dy + turn[3][2] * dz,
+            pivot[3] + turn[1][3] * dx + turn[2][3] * dy + turn[3][3] * dz,
+        }
+        local line = v.props.rot or ""
+        local outRot = rotByLine[line]
+        if not outRot then
+            local rot = rotLine(v)
+            outRot = RotatingOld.SetRotOffset(rot[1], rot[2], rot[3], offsets[1], offsets[2], offsets[3])
+            rotByLine[line] = outRot
+        end
         if inWorld(v) then
             set_obj_rot(v.id - 1, math.rad(outRot[1]), math.rad(outRot[2]), math.rad(outRot[3]))
             set_obj_pos(v.id - 1, outPos[1], outPos[2], outPos[3])
@@ -304,9 +343,17 @@ end
 ---World directions of an object's local x, y, z axes (columns of its orientation)
 ---@param obj FileParserEnvObj
 ---@return number[][]
+-- local axes by orientation (orientationOf shares one per rot line): built once, not per object. Read only
+local axesByOrientation = setmetatable({}, { __mode = "k" })
+
 local function getLocalAxes(obj)
     local m = orientationOf(obj)
-    return { { m[1][1], m[2][1], m[3][1] }, { m[1][2], m[2][2], m[3][2] }, { m[1][3], m[2][3], m[3][3] } }
+    local axes = axesByOrientation[m]
+    if not axes then
+        axes = { { m[1][1], m[2][1], m[3][1] }, { m[1][2], m[2][2], m[3][2] }, { m[1][3], m[2][3], m[3][3] } }
+        axesByOrientation[m] = axes
+    end
+    return axes
 end
 
 ---Linear map that scales along the group frame axes: G * diag(scale) * G^T
@@ -330,8 +377,29 @@ end
 ---@param shapeName string? "box", "sphere" or "cylinder" (a pill): the shape line's, for objects not in
 ---the world (atmo objects); nil asks the game
 ---@return number[]
+local scaleSidesAlong
+
 local function scaleSides(obj, sides, frame, scale, shapeName)
-    local axes = getLocalAxes(obj)
+    return scaleSidesAlong(getLocalAxes(obj), sides, frame, scale, shapeName or nil, obj)
+end
+
+---scaleSides with the object's local axes given (columns of its orientation): an atmo object's ghost has
+---them in its frame, a gizmo drag's preview scales it without reading its lines (utils/atmo_layer.lua)
+---@param axes number[][] the local x, y, z axes in world space
+---@param sides number[]
+---@param frame number[][] group frame
+---@param scale number[]
+---@param shapeName string? see scaleSides
+---@param obj FileParserEnvObj? for the game's shape when shapeName is nil
+---@return number[]
+---The factor each local axis' side gets (scaleSides' weighted geometric mean): it depends on the axes, the
+---group frame and the factors only, so a drag preview works it out once per shared orientation
+---(AtmoLayer.liveGhost) and applies it with Transforms.applySideFactors
+---@param axes number[][]
+---@param frame number[][]
+---@param scale number[]
+---@return number[] f per local axis
+local function sideFactors(axes, frame, scale)
     local logScale = {}
     for j = 1, 3 do logScale[j] = math.log(math.max(math.abs(scale[j]), 1e-9)) end -- mirroring keeps sizes
     local f = {}
@@ -343,15 +411,17 @@ local function scaleSides(obj, sides, frame, scale, shapeName)
         end
         f[i] = math.exp(sum)
     end
+    return f
+end
 
+---Sides scaled by sideFactors' f, the shape's rule (spheres stay round, pills keep their round section)
+---@param sides number[]
+---@param f number[]
+---@param sphere boolean
+---@param capsule boolean
+---@return number[]
+local function applySideFactors(sides, f, sphere, capsule)
     local out
-    local sphere, capsule
-    if shapeName then
-        sphere, capsule = shapeName == "sphere", shapeName == "cylinder"
-    else
-        local shape = shapeIdOf(obj)
-        sphere, capsule = shape == SHAPE.SPHERE, shape == SHAPE.CAPSULE
-    end
     if sphere then -- x radius, stays round: geometric mean of all axes
         local r = sides[1] * (f[1] * f[2] * f[3]) ^ (1 / 3)
         out = { r, r, r }
@@ -362,6 +432,20 @@ local function scaleSides(obj, sides, frame, scale, shapeName)
     end
     for i = 1, 3 do out[i] = math.max(math.abs(out[i]), MGE.MIN_SIDE) end -- zero sides crash physics
     return out
+end
+Transforms.sideFactors = sideFactors
+Transforms.applySideFactors = applySideFactors
+
+scaleSidesAlong = function(axes, sides, frame, scale, shapeName, obj)
+    local f = sideFactors(axes, frame, scale)
+    local sphere, capsule
+    if shapeName then
+        sphere, capsule = shapeName == "sphere", shapeName == "cylinder"
+    else
+        local shape = obj and shapeIdOf(obj)
+        sphere, capsule = shape == SHAPE.SPHERE, shape == SHAPE.CAPSULE
+    end
+    return applySideFactors(sides, f, sphere, capsule)
 end
 
 ---@param a number[][]
@@ -383,18 +467,41 @@ end
 ---@param objects FileParserEnvObj[]
 ---@return number[][]
 pickGroupFrame = function(objects)
-    local groups = {} -- { frame, weight }
+    -- counted by rot line first (thousands share a few), then the distinct orientations compared
+    local byLine, lines = {}, {}
     for _, obj in ipairs(objects) do
-        local frame = orientationOf(obj)
-        local weight = 1
+        local line = obj.props.rot or ""
+        local entry = byLine[line]
+        if entry then
+            entry.weight = entry.weight + 1
+        else
+            entry = { obj = obj, weight = 1 }
+            byLine[line] = entry
+            lines[#lines + 1] = line
+        end
+    end
+    -- then by orientation: its nine values rounded to 0.001 as a key (sameFrame within that key). Comparing
+    -- every orientation with every group was a pass per pair: a converted map's atmo had 3693 different rot
+    -- lines in 5293 boxes, the Pos / Rot / Scale rows took 1.7 s with them selected (measured in game)
+    local groups, byKey = {}, {} -- groups in the order first seen: ties go to the first
+    for _, line in ipairs(lines) do
+        local entry = byLine[line]
+        local frame = orientationOf(entry.obj)
+        local key = string.format("%d %d %d %d %d %d %d %d %d",
+            math.floor(frame[1][1] * 1000 + 0.5), math.floor(frame[1][2] * 1000 + 0.5), math.floor(frame[1][3] * 1000 + 0.5),
+            math.floor(frame[2][1] * 1000 + 0.5), math.floor(frame[2][2] * 1000 + 0.5), math.floor(frame[2][3] * 1000 + 0.5),
+            math.floor(frame[3][1] * 1000 + 0.5), math.floor(frame[3][2] * 1000 + 0.5), math.floor(frame[3][3] * 1000 + 0.5))
         local group
-        for _, g in ipairs(groups) do
+        for _, g in ipairs(byKey[key] or {}) do
             if sameFrame(g.frame, frame) then group = g break end
         end
         if group then
-            group.weight = group.weight + weight
+            group.weight = group.weight + entry.weight
         else
-            table.insert(groups, { frame = frame, weight = weight })
+            group = { frame = frame, weight = entry.weight }
+            groups[#groups + 1] = group
+            byKey[key] = byKey[key] or {}
+            table.insert(byKey[key], group)
         end
     end
     local best = groups[1]
@@ -421,15 +528,30 @@ end
 ---@param scale number[] x y z factors
 ---@return { obj: FileParserEnvObj, pos: number[], sides: number[] }[] planned
 ---@return fun(x: number, y: number, z: number): number, number, number scalePos
-local function planScale(selectedObjects, scale)
-    local pivot = { getSelectionPivot(selectedObjects) }
+---@param pivot number[]? the selection's pivot when the caller has it (a drag's, kept by the gizmo)
+---@param frame number[][]? the group frame likewise
+local function planScale(selectedObjects, scale, pivot, frame)
+    pivot = pivot or { getSelectionPivot(selectedObjects) }
 
     -- scale along the group's own axes, as if scaled before rotating
-    local frame = pickGroupFrame(selectedObjects)
+    frame = frame or pickGroupFrame(selectedObjects)
     local map = groupScaleMatrix(frame, scale)
     local function scalePos(x, y, z)
         local rel = Mat3.apply(map, { x - pivot[1], y - pivot[2], z - pivot[3] })
         return pivot[1] + rel[1], pivot[2] + rel[2], pivot[3] + rel[3]
+    end
+
+    -- the sides' factors depend on the object's orientation only: once per rot line (Transforms.sideFactors)
+    local factorsByLine = {}
+    local function scaleSidesCached(v, sides)
+        local line = v.props.rot or ""
+        local f = factorsByLine[line]
+        if not f then
+            f = Transforms.sideFactors(getLocalAxes(v), frame, scale)
+            factorsByLine[line] = f
+        end
+        local shape = shapeIdOf(v) -- an atmo object's shape line, else the game's
+        return Transforms.applySideFactors(sides, f, shape == SHAPE.SPHERE, shape == SHAPE.CAPSULE)
     end
 
     local planned = {}
@@ -439,7 +561,7 @@ local function planScale(selectedObjects, scale)
             table.insert(planned, {
                 obj = v,
                 pos = { scalePos(p[1], p[2], p[3]) },
-                sides = scaleSides(v, { sidesOf(v) }, frame, scale),
+                sides = scaleSidesCached(v, { sidesOf(v) }),
             })
         end
     end
@@ -449,8 +571,10 @@ end
 ---Scales the objects (sides and spacing) around their center by factors along the group's axes
 ---@param selectedObjects FileParserEnvObj[]
 ---@param scale number[] x y z factors
-local function scaleBy(selectedObjects, scale)
-    local planned, scalePos = planScale(selectedObjects, scale)
+---@param pivot number[]? the selection's pivot when the caller has it (the gizmo keeps it)
+---@param frame number[][]? its group frame likewise
+local function scaleBy(selectedObjects, scale, pivot, frame)
+    local planned, scalePos = planScale(selectedObjects, scale, pivot, frame)
     for _, p in ipairs(planned) do
         local id = p.obj.id - 1
         if inWorld(p.obj) then
@@ -518,15 +642,20 @@ local function groupBounds(selectedObjects, axes, scale)
         if x then
             local shape = shapeIdOf(v)
             local localAxes = getLocalAxes(v)
+            local l1, l2, l3 = localAxes[1], localAxes[2], localAxes[3]
             for i, a in ipairs(axes) do
-                local function along(k) return math.abs(localAxes[k][1] * a[1] + localAxes[k][2] * a[2] + localAxes[k][3] * a[3]) end
+                -- how much each local axis points along the group axis (no closure per object and axis)
+                local a1, a2, a3 = a[1], a[2], a[3]
+                local along3 = math.abs(l3[1] * a1 + l3[2] * a2 + l3[3] * a3)
                 local half
                 if shape == SHAPE.SPHERE then
                     half = sx
                 elseif shape == SHAPE.CAPSULE then -- x radius, y length along local z
-                    half = sx + along(3) * sy / 2
+                    half = sx + along3 * sy / 2
                 else
-                    half = (along(1) * sx + along(2) * sy + along(3) * sz) / 2
+                    local along1 = math.abs(l1[1] * a1 + l1[2] * a2 + l1[3] * a3)
+                    local along2 = math.abs(l2[1] * a1 + l2[2] * a2 + l2[3] * a3)
+                    half = (along1 * sx + along2 * sy + along3 * sz) / 2
                 end
                 local c = x * a[1] + y * a[2] + z * a[3]
                 min[i] = math.min(min[i], c - half)
@@ -633,13 +762,29 @@ Transforms.positionOf = positionOf
 Transforms.moveBy = moveBy -- gizmo drag commit
 Transforms.groupFrame = function(selectedObjects) return pickGroupFrame(selectedObjects) end
 
+---The ones of the objects in the world: a live preview only moves those (atmo objects are drawn by the
+---highlight from AtmoLayer.live). With thousands of atmo objects selected, planning every one each frame
+---for nothing froze a drag
+---@param objects FileParserEnvObj[]
+---@return FileParserEnvObj[]
+local function inWorldOnly(objects)
+    local out = {}
+    for _, v in ipairs(objects) do
+        if inWorld(v) then out[#out + 1] = v end
+    end
+    return out
+end
+
 ---Live world only, the mod data is untouched: shows the objects turned by a rotation matrix around
 ---their center (gizmo ring drag). rotateByMatrix with the same matrix makes it real
 ---@param selectedObjects FileParserEnvObj[]
 ---@param rotation number[][]
-function Transforms.previewRotate(selectedObjects, rotation)
-    local pivot = { getSelectionPivot(selectedObjects) }
-    for _, v in ipairs(selectedObjects) do
+---@param pivot number[]? the selection's pivot (the gizmo keeps it), else worked out from all of them
+function Transforms.previewRotate(selectedObjects, rotation, pivot)
+    local world = inWorldOnly(selectedObjects)
+    if #world == 0 then return end
+    pivot = pivot or { getSelectionPivot(selectedObjects) }
+    for _, v in ipairs(world) do
         if inWorld(v) then
             local p = positionOf(v)
             local rel = Mat3.apply(rotation, { p[1] - pivot[1], p[2] - pivot[2], p[3] - pivot[3] })
@@ -655,8 +800,9 @@ end
 ---undo step, joints follow)
 ---@param selectedObjects FileParserEnvObj[]
 ---@param rotation number[][]
-function Transforms.rotateByMatrix(selectedObjects, rotation)
-    rotBy(selectedObjects, { Mat3.toEulerXYZ(rotation) }) -- rotBy's offsets: rotX(x) rotY(y) rotZ(z)
+---@param pivot number[]? the selection's pivot when the caller has it (the gizmo keeps it)
+function Transforms.rotateByMatrix(selectedObjects, rotation, pivot)
+    rotBy(selectedObjects, { Mat3.toEulerXYZ(rotation) }, pivot) -- rotBy's offsets: rotX(x) rotY(y) rotZ(z)
 end
 
 ---Live world only, the mod data is untouched: shows the objects scaled by factors along the group's
@@ -665,12 +811,19 @@ end
 ---@param selectedObjects FileParserEnvObj[]
 ---@param scale number[]
 ---@param baseSides table<integer, number[]> Transforms.liveSides at the grab
-function Transforms.previewScale(selectedObjects, scale, baseSides)
-    for _, v in ipairs(selectedObjects) do
+---@param pivot number[]? the selection's pivot (the gizmo keeps it), else worked out from all of them
+---@param frame number[][]? the selection's group frame likewise
+function Transforms.previewScale(selectedObjects, scale, baseSides, pivot, frame)
+    local world = inWorldOnly(selectedObjects)
+    if #world == 0 then return end
+    -- the whole selection's pivot and frame (atmo objects count), planned for the world ones only
+    pivot = pivot or { getSelectionPivot(selectedObjects) }
+    frame = frame or pickGroupFrame(selectedObjects)
+    for _, v in ipairs(world) do
         local s = baseSides[v.id]
-        if s and inWorld(v) then set_obj_sides(v.id - 1, s[1], s[2], s[3]) end
+        if s then set_obj_sides(v.id - 1, s[1], s[2], s[3]) end
     end
-    for _, p in ipairs((planScale(selectedObjects, scale))) do
+    for _, p in ipairs((planScale(world, scale, pivot, frame))) do
         if inWorld(p.obj) then
             local id = p.obj.id - 1
             set_obj_pos(id, p.pos[1], p.pos[2], p.pos[3])
@@ -681,6 +834,7 @@ function Transforms.previewScale(selectedObjects, scale, baseSides)
 end
 Transforms.orientationOf = orientationOf
 Transforms.scaleSidesFor = scaleSides -- atmo objects' scale (utils/atmo_layer.lua) passes their shape
+Transforms.scaleSidesAlong = function(...) return scaleSidesAlong(...) end -- a ghost's axes (AtmoLayer.liveGhost)
 Transforms.groupExtents = groupExtents
 Transforms.rotBy = rotBy
 Transforms.scaleBy = scaleBy

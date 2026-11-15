@@ -153,6 +153,12 @@ function ModData.releaseId(id)
     table.sort(list)
 end
 
+---Free object ids, both pools (static and dynamic): how many objects can still be added
+---@return integer
+function ModData.freeCount()
+    return #ModData.freeIds.static + #ModData.freeIds.nonStatic
+end
+
 ---Objects that should be on ids 1-MAX_NONSTATIC_OBJECTS: dynamic ones and joint-linked ones
 ---@return integer
 function ModData.countDynamic()

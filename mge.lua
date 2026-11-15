@@ -4,6 +4,7 @@ if MGE and MGE.running then
     local Main = MGE.Main
     if Main and Main.window and not Main.window.displayed then
         Main.window:show(false)
+        if MGE.hideGameHud then MGE.hideGameHud(true) end -- like F1 showing it
         Main.updateWindow()
     end
     return

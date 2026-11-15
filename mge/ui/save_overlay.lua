@@ -27,8 +27,11 @@ local function closeOverlay()
     end
 end
 
+-- as tall as its parts (title, name field, buttons, 10px between): they're sized with Widgets.px, a fixed
+-- 180 let the buttons cover the name field at bigger UI sizes
+local boxH = MGE.Widgets.px(50) + 10 + MGE.Widgets.px(40) + 10 + MGE.Widgets.px(40) + 10
 local modSave = ModSaveOverlay:addChild({
-    shift = { WIN_W / 4, WIN_H / 2 - 90 },
+    shift = { WIN_W / 4, (WIN_H - boxH) / 2 },
     bgColor = MGE.Widgets.CONTENT_BG, -- like MGE's lists and editor
     shapeType = ROUNDED,
     rounded = 5,

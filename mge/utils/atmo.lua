@@ -23,6 +23,9 @@ local Atmo = {
     ---@type { name: string?, text: string?, header: string[] } the source's atmo file: its name, its text
     ---as last read or written (Atmo.text: nil when there is none), its own lines (shader, opt...)
     state = { header = {} },
+    ---counts changes to state.header made in place (the Misc list's shader): the footer's file row compares
+    ---it to know the atmo changed
+    headerVersion = 0,
 }
 MGE.Atmo = Atmo
 

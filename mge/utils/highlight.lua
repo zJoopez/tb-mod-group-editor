@@ -19,8 +19,10 @@ local Highlight = {
     -- players, a joint's objects). The Generate preview, the atmo, joint anchors and the white hover of
     -- a pick still draw: they show what isn't there yet or what a click would take
     enabled = true,
-    -- draws a frame MGE has for itself next to the game's 256 objects and the atmo's 256: the Generate
-    -- preview first, then the selection highlights fit in what's left (highlightPlan)
+    -- the highlights' share of the shapes the game draws a frame: 256 objects, 256 atmo objects, 256
+    -- highlights (256 x 3). The Generate preview never needs any of it: it adds at most as many pieces as
+    -- its list has room for (free ids, the atmo's room), so it fits in that list's share. A bigger atmo
+    -- (Settings > Most atmo objects) goes past it on purpose: lower graphics settings draw more a frame
     drawRoom = 256,
     ---@type (fun(): HighlightBox[]?, number[][]?)? set by the Generate tab, boxes and joint anchors to draw this frame
     preview = nil,
@@ -91,9 +93,15 @@ end
 ---@param obj FileParserEnvObj
 ---@return number[]
 local function colorOf(obj)
+    -- parsed once per color line (like AtmoLayer.ghost's shape): the Atmo list draws every atmo object every
+    -- frame, thousands parsed their color text each frame. Callers only read it
+    local line = obj.props.color or "1 1 1 1"
+    local cached = obj.colorCache
+    if cached and cached.line == line then return cached.color end
     local c = {}
-    for n in tostring(obj.props.color or "1 1 1 1"):gmatch("%S+") do c[#c + 1] = tonumber(n) or 1 end
+    for n in tostring(line):gmatch("%S+") do c[#c + 1] = tonumber(n) or 1 end
     for k = 1, 4 do c[k] = math.min(math.max(c[k] or 1, 0), 1) end
+    obj.colorCache = { line = line, color = c }
     return c
 end
 
@@ -170,14 +178,40 @@ local function drawAtmoHighlight(g, fillOnly)
     drawShapeHighlight(shape, p[1], p[2], p[3], s[1], s[2], s[3], rot, Highlight.color, fillOnly)
 end
 
+---@type CameraProjection? this frame's view (WorldSelect.measureProjection), set at the start of draw3d
+local view = nil
+
+---Whether an atmo object can show on screen this frame: in front of the camera and its sphere (g.radius)
+---overlapping the screen, with a margin. Off-screen ones cost a draw each frame for nothing: with a map's
+---thousands of atmo boxes most are outside the view. Without a measured view: true (draw everything)
+---@param g AtmoGhost
+---@return boolean
+local function onScreen(g)
+    local v = view
+    if not v then return true end
+    local e, f = v.eye, v.forward
+    local rx, ry, rz = g.pos[1] - e[1], g.pos[2] - e[2], g.pos[3] - e[3]
+    local r = g.radius or 0
+    local depth = rx * f[1] + ry * f[2] + rz * f[3]
+    if depth < -r then return false end -- behind the camera
+    if depth <= r then return true end -- around the camera: some of it can be in view
+    local a = (rx * v.right[1] + ry * v.right[2] + rz * v.right[3]) / depth
+    local b = (rx * v.up[1] + ry * v.up[2] + rz * v.up[3]) / depth
+    local x, y = v.cx + v.m11 * a + v.m12 * b, v.cy + v.m21 * a + v.m22 * b
+    -- its size on screen, generous (a sphere near the screen's edge shows bigger), and a few pixels more
+    local sr = r / depth * math.sqrt(v.m11 * v.m11 + v.m21 * v.m21) * 1.5 + 8
+    return x + sr >= 0 and x - sr <= WIN_W and y + sr >= 0 and y - sr <= WIN_H
+end
+
 ---Atmo objects (utils/atmo_layer.lua): not in the game, MGE draws them, every one. The atmo's size
 ---(AtmoLayer.maxAtmo, 256) has its own share of the shapes the game draws a frame: 256 objects, 256
----atmo objects and 256 for the rest (Highlight.drawRoom: the Generate preview first, highlights)
+---atmo objects and 256 for the highlights (Highlight.drawRoom)
 --- full false (Objects list): translucent ghosts in AtmoLayer.color
 --- full true (the Atmo list): in their own color, the selected ones where a gizmo drag has them
----   (AtmoLayer.liveCopies)
+---   (AtmoLayer.liveGhost)
+--- Only the ones that can show on screen (onScreen)
 ---@param full boolean
----@return AtmoGhost[] selected the Atmo list's selected ones, for their highlights (drawn after)
+---@return AtmoGhost[] selected the Atmo list's selected ones on screen, for their highlights (drawn after)
 local function drawAtmo(full)
     local AtmoLayer = MGE.AtmoLayer
     local list = ModData.parsed.atmo or {}
@@ -185,18 +219,20 @@ local function drawAtmo(full)
     if not full then
         for _, obj in ipairs(list) do
             local g = AtmoLayer.ghost(obj)
-            if g then drawGhost(g, AtmoLayer.color, AtmoLayer.alpha, false) end
+            if g and onScreen(g) then drawGhost(g, AtmoLayer.color, AtmoLayer.alpha, false) end
         end
         return selected
     end
-    local copies = AtmoLayer.liveCopies()
+    -- a gizmo drag: the selected ones' ghosts as it leaves them (AtmoLayer.liveGhost: matrices on the cached
+    -- ghost; copying and re-parsing every selected object's lines each frame stuttered with thousands)
+    local live = AtmoLayer.live
     for _, atmoObj in ipairs(list) do
-        local obj = copies and copies[atmoObj] or atmoObj
-        local g = AtmoLayer.ghost(obj)
-        if g then
-            local c = colorOf(obj)
+        local g = AtmoLayer.ghost(atmoObj)
+        if g and live and atmoObj.selected then g = AtmoLayer.liveGhost(g, live) end
+        if g and onScreen(g) then
+            local c = colorOf(atmoObj) -- the object's color: copies don't change it
             drawGhost(g, c, c[4], false)
-            if obj.selected then selected[#selected + 1] = g end
+            if atmoObj.selected then selected[#selected + 1] = g end
         end
     end
     return selected
@@ -217,10 +253,11 @@ local function drawObjectHighlight(id, color, fillOnly)
     drawShapeHighlight(name, x, y, z, sx, sy, sz, getObjRotTB(id), color or Highlight.color, fillOnly)
 end
 
----How the selection highlights fit in what's left of the frame's draws: full ones (2 draws each)
----when all of them fit, else the fill alone (1 draw) on as many as fit
+---How the selection highlights fit in their share (Highlight.drawRoom): full ones (2 draws each) when all
+---of them fit, else the fill alone (1 draw) on as many as fit. The share is theirs alone, nothing else is
+---taken off it first
 ---@param count integer selected shapes
----@param room integer draws left
+---@param room integer draws they have
 ---@return boolean fillOnly
 ---@return integer drawn how many get one
 local function highlightPlan(count, room)
@@ -357,6 +394,9 @@ add_hook("draw3d", MGE.hookname, function()
     local Main = MGE.Main -- created after this module loads
     if not Main or not Main.window then return end
     local ok, err = pcall(function()
+        -- this frame's view, for skipping atmo objects off screen (onScreen). Measured here, in draw3d: it
+        -- uses get_screen_pos
+        view = MGE.WorldSelect and MGE.WorldSelect.measureProjection() or nil
         -- asked every frame, also when it isn't drawn (another list, window hidden): that's how it sees
         -- the Generate tab being left, coming back looks at the shape again
         local boxes, anchors
@@ -368,7 +408,9 @@ add_hook("draw3d", MGE.hookname, function()
             -- During a scale drag the scaled players instead
             local Players = MGE.Players
             local scale = Players and Players.scalePreview
-            if not Highlight.enabled then return end
+            -- Highlights off: no selection highlights, but a scale drag's preview still draws (bodies can't
+            -- be resized live, it's the only thing showing the result before the release)
+            if not Highlight.enabled and not scale then return end
             for _, player in ipairs(scale and scale.players or Main.selectedPlayerList()) do
                 if Players and Players.exists(player) then drawPlayerHighlight(player, scale) end
             end
@@ -381,31 +423,28 @@ add_hook("draw3d", MGE.hookname, function()
             if slot then drawLinkHighlights(slot) else drawJointHighlights(Main.selectedJointList()) end
             return
         end
-        -- the game draws only so many shapes a frame: the Generate preview first, then the atmo (its own
-        -- share), then the selection highlights in what's left of Highlight.drawRoom. Selecting every
-        -- object then thins the highlights to fills instead of pushing the atmo out
-        local room = Highlight.drawRoom
+        -- the game draws only so many shapes a frame: the Generate preview in its list's share (objects or
+        -- atmo), the atmo in its own, the selection highlights in theirs (Highlight.drawRoom). Selecting
+        -- more than fit full thins them to fills
         for _, box in ipairs(boxes or {}) do drawPreviewBox(box) end
         for _, p in ipairs(anchors or {}) do drawAnchor(p[1], p[2], p[3]) end -- Generate's joints
-        room = room - #(boxes or {}) * 2 - #(anchors or {}) * 2
         local atmo = Main.listTab == "atmo"
         local selectedGhosts = drawAtmo(atmo)
         -- a pick in progress (the Core tab's color picker): the object a click would take, in white
         local WorldSelect = MGE.WorldSelect
         if WorldSelect and WorldSelect.picking and WorldSelect.hover then
             drawObjectHighlight(WorldSelect.hover.id - 1, HOVER_COLOR)
-            room = room - 2
         end
         if not Highlight.enabled then return end
         if atmo then -- the Atmo list shows the atmo selection, not the objects'
-            local fillOnly, drawn = highlightPlan(#selectedGhosts, room)
+            local fillOnly, drawn = highlightPlan(#selectedGhosts, Highlight.drawRoom)
             for i = 1, drawn do drawAtmoHighlight(selectedGhosts[i], fillOnly) end
         else
             local ids = {}
             for _, obj in ipairs(ModData.parsed.env_obj) do
                 if obj.selected then ids[#ids + 1] = obj.id - 1 end
             end
-            local fillOnly, drawn = highlightPlan(#ids, room)
+            local fillOnly, drawn = highlightPlan(#ids, Highlight.drawRoom)
             for i = 1, drawn do drawObjectHighlight(ids[i], nil, fillOnly) end
         end
     end)

@@ -37,8 +37,12 @@ MGE.AtmoLayer = AtmoLayer
 ---@param value string?
 ---@return number[]
 local function numbers(value)
+    -- the usual three numbers (pos, rot, sides) in one match: re-reading thousands of ghosts after an edit
+    local text = tostring(value or "")
+    local a, b, c, rest = text:match("^%s*(%S+)%s+(%S+)%s+(%S+)%s*(.*)$")
+    if a and rest == "" then return { tonumber(a) or 0, tonumber(b) or 0, tonumber(c) or 0 } end
     local out = {}
-    for n in tostring(value or ""):gmatch("%S+") do out[#out + 1] = tonumber(n) or 0 end
+    for n in text:gmatch("%S+") do out[#out + 1] = tonumber(n) or 0 end
     return out
 end
 
@@ -69,6 +73,15 @@ end
 ---@field pos number[]
 ---@field frame number[][]
 ---@field sides number[] box sides, sphere: radius first, pill: radius, length
+---@field radius number a sphere around it from pos (Highlight's view culling)
+---@field fileSides number[] the sides line's numbers as written (sides are made positive and at least 0.01 for
+---drawing): what the transforms read (Transforms' sidesOf)
+
+-- frames by rot line: ghosts with the same rotation share one frame table (a map's boxes mostly have a
+-- handful of rotations). A rotate drag then turns each once a frame (liveGhost), the highlight converts each
+-- once (its rotCache is by frame). Frames are only read, never changed
+---@type table<string, number[][]>
+local frameByRot = {}
 
 ---What an atmo object looks like, for drawing. Worked out again only when its lines change
 ---@param obj FileParserEnvObj
@@ -76,13 +89,27 @@ end
 function AtmoLayer.ghost(obj)
     local p = obj.props
     if not p.pos then return nil end
-    local key = table.concat({ p.pos, p.rot or "", p.sides or "", p.shape or "" }, "|")
+    -- the four lines compared as they are (Lua compares equal strings at once): joining them into one key
+    -- for every atmo object every frame was most of looking a ghost up
     local cached = obj.ghostCache
-    if cached and cached.key == key then return cached.ghost end
-    local sides = numbers(p.sides)
-    for k = 1, 3 do sides[k] = math.max(math.abs(sides[k] or 0), 0.01) end
-    local ghost = { shape = shapeOf(obj), pos = numbers(p.pos), frame = AtmoLayer.frameOf(numbers(p.rot)), sides = sides }
-    obj.ghostCache = { key = key, ghost = ghost }
+    if cached and cached.pos == p.pos and cached.rot == p.rot and cached.sides == p.sides and cached.shape == p.shape then
+        return cached.ghost
+    end
+    local fileSides = numbers(p.sides)
+    local sides = {}
+    for k = 1, 3 do sides[k] = math.max(math.abs(fileSides[k] or 0), 0.01) end
+    local shape = shapeOf(obj)
+    local radius = shape == "sphere" and sides[1] or shape == "cylinder" and sides[2] / 2 + sides[1]
+        or math.sqrt(sides[1] ^ 2 + sides[2] ^ 2 + sides[3] ^ 2) / 2
+    local rotLine = p.rot or ""
+    local frame = frameByRot[rotLine]
+    if not frame then
+        frame = AtmoLayer.frameOf(numbers(p.rot))
+        frameByRot[rotLine] = frame
+    end
+    local ghost = { shape = shape, pos = numbers(p.pos), frame = frame, sides = sides, radius = radius,
+        fileSides = fileSides }
+    obj.ghostCache = { pos = p.pos, rot = p.rot, sides = p.sides, shape = p.shape, ghost = ghost }
     return ghost
 end
 
@@ -148,7 +175,7 @@ function AtmoLayer.moveOut()
         echo("^04[MGE] select atmo objects (the Atmo list) to move back first")
         return
     end
-    local free = #ModData.freeIds.static + #ModData.freeIds.nonStatic
+    local free = ModData.freeCount()
     local count = math.min(#list, free)
     if count == 0 then
         echo("^04[MGE] no free object ids (" .. MGE.MAX_ENV_OBJECTS .. " in the game): move or delete objects first")
@@ -324,6 +351,68 @@ function AtmoLayer.scaleBy(list, factors, pivot, frame, props)
         T.writeVector(target, "pos", { pivot[1] + rel[1], pivot[2] + rel[2], pivot[3] + rel[3] })
         T.writeVector(target, "sides", sides)
     end
+end
+
+---A selected atmo object's ghost as the gizmo drag in progress (AtmoLayer.live) leaves it, worked out from
+---the ghost alone: the same math as moveBy / rotateBy / scaleBy (the Rotate / Scale tools' final edit), as
+---matrices on its cached pos, frame and sides. liveCopies copied every selected object's lines, wrote and
+---parsed them again each frame: with thousands selected the drag stuttered. Rotate: pos around the pivot,
+---frame turned (rotateBy's Euler steps are this rotation). Scale: pos through the group scale, sides by
+---Transforms.scaleSidesAlong with the ghost's axes (its frame's columns, rotateBy's orientationOf)
+---@param g AtmoGhost
+---@param live table AtmoLayer.live
+---@return AtmoGhost
+function AtmoLayer.liveGhost(g, live)
+    -- plain numbers for the position (no table per step): this runs for every selected object each frame
+    local x, y, z = g.pos[1], g.pos[2], g.pos[3]
+    local frame, sides, radius = g.frame, g.sides, g.radius
+    if live.move then
+        local m = live.move
+        x, y, z = x + m[1], y + m[2], z + m[3]
+    end
+    if live.rotation then
+        local c, r = live.pivot, live.rotation
+        local dx, dy, dz = x - c[1], y - c[2], z - c[3]
+        x = c[1] + r[1][1] * dx + r[1][2] * dy + r[1][3] * dz
+        y = c[2] + r[2][1] * dx + r[2][2] * dy + r[2][3] * dz
+        z = c[3] + r[3][1] * dx + r[3][2] * dy + r[3][3] * dz
+        -- each shared frame turned once for this drag step (AtmoLayer.live is new every step)
+        live.turned = live.turned or {}
+        local turned = live.turned[frame]
+        if not turned then
+            turned = Mat3.mul(r, frame)
+            live.turned[frame] = turned
+        end
+        frame = turned
+    end
+    if live.scale then
+        local c, gf = live.pivot, live.frame
+        -- once per drag step (AtmoLayer.live is new every step): the group scale and, per shared frame, the
+        -- sides' factors (Transforms.sideFactors: logs and exps). Per object it was most of a scale drag's frame
+        local map = live.map
+        if not map then
+            map = Mat3.mul(Mat3.mul(gf, { { live.scale[1], 0, 0 }, { 0, live.scale[2], 0 }, { 0, 0, live.scale[3] } }),
+                Mat3.transpose(gf))
+            live.map = map
+        end
+        local dx, dy, dz = x - c[1], y - c[2], z - c[3]
+        x = c[1] + map[1][1] * dx + map[1][2] * dy + map[1][3] * dz
+        y = c[2] + map[2][1] * dx + map[2][2] * dy + map[2][3] * dz
+        z = c[3] + map[3][1] * dx + map[3][2] * dy + map[3][3] * dz
+        live.factorsBy = live.factorsBy or {}
+        local f = live.factorsBy[frame]
+        if not f then
+            local axes = { { frame[1][1], frame[2][1], frame[3][1] }, { frame[1][2], frame[2][2], frame[3][2] },
+                { frame[1][3], frame[2][3], frame[3][3] } }
+            f = MGE.Transforms.sideFactors(axes, gf, live.scale)
+            live.factorsBy[frame] = f
+        end
+        sides = MGE.Transforms.applySideFactors(sides, f, g.shape == "sphere", g.shape == "cylinder")
+        radius = g.shape == "sphere" and sides[1] or g.shape == "cylinder" and sides[2] / 2 + sides[1]
+            or math.sqrt(sides[1] ^ 2 + sides[2] ^ 2 + sides[3] ^ 2) / 2
+    end
+    -- move and rotate keep the sides, so the radius too
+    return { shape = g.shape, pos = { x, y, z }, frame = frame, sides = sides, radius = radius }
 end
 
 ---The selected atmo objects as a gizmo drag in progress would leave them: copies with changed lines

@@ -289,6 +289,50 @@ T.test("a drag's preview leaves the atmo objects as they are", function()
     T.nearList(AtmoLayer.center({ a, b }), { 3, 3, 3 }, 1e-9, "center of the pos lines")
 end)
 
+-- the drag preview works on the ghost (AtmoLayer.liveGhost) instead of copying and rewriting every selected
+-- object's lines (moveBy / rotateBy / scaleBy, what the final edit writes): it must end where they do
+T.test("a drag's preview ghost matches the edit's lines", function()
+    local function frameNear(a, b, eps, message)
+        local fa, fb = {}, {}
+        for i = 1, 3 do for j = 1, 3 do fa[#fa + 1], fb[#fb + 1] = a[i][j], b[i][j] end end
+        T.nearList(fa, fb, eps, message)
+    end
+    local cases = {
+        { shape = "box", pos = "1 2 3", rot = "0 0 0", sides = "1 2 0.5" },
+        { shape = "box", pos = "-2 0.5 4", rot = "30 -45 60", sides = "0.5 1.5 2" },
+        { shape = "sphere", pos = "3 -1 2", rot = "10 20 30", sides = "0.7 0.7 0.7" },
+        { shape = "capsule", pos = "0 4 1", rot = "-60 15 90", sides = "0.3 2 0" },
+    }
+    local rotation = Mat3.mul(Mat3.rotZ(math.rad(35)), Mat3.mul(Mat3.rotY(math.rad(-20)), Mat3.rotX(math.rad(50))))
+    local pivot = { 0.5, -1, 2 }
+    local groupFrame = Mat3.mul(Mat3.rotZ(math.rad(25)), Mat3.rotX(math.rad(-15)))
+    local factors = { 2, 0.5, 1.5 }
+    for i, case in ipairs(cases) do
+        local obj = { kind = "atmo", id = i, lines = {},
+            props = { pos = case.pos, rot = case.rot, sides = case.sides, shape = case.shape } }
+        local g = AtmoLayer.ghost(obj)
+
+        local moved = AtmoLayer.liveGhost(g, { move = { 1, -2, 0.25 } })
+        local copy = { kind = "atmo", id = i, lines = {}, props = ModData.copy(obj.props) }
+        AtmoLayer.moveBy({ copy }, { 1, -2, 0.25 })
+        T.nearList(moved.pos, AtmoLayer.ghost(copy).pos, 1e-4, case.shape .. " " .. i .. ": move pos")
+
+        local turned = AtmoLayer.liveGhost(g, { rotation = rotation, pivot = pivot })
+        copy = { kind = "atmo", id = i, lines = {}, props = ModData.copy(obj.props) }
+        AtmoLayer.rotateBy({ copy }, rotation, pivot)
+        local want = AtmoLayer.ghost(copy)
+        T.nearList(turned.pos, want.pos, 1e-3, case.shape .. " " .. i .. ": rotate pos")
+        frameNear(turned.frame, want.frame, 1e-3, case.shape .. " " .. i .. ": rotate frame")
+
+        local scaled = AtmoLayer.liveGhost(g, { scale = factors, pivot = pivot, frame = groupFrame })
+        copy = { kind = "atmo", id = i, lines = {}, props = ModData.copy(obj.props) }
+        AtmoLayer.scaleBy({ copy }, factors, pivot, groupFrame)
+        want = AtmoLayer.ghost(copy)
+        T.nearList(scaled.pos, want.pos, 1e-3, case.shape .. " " .. i .. ": scale pos")
+        T.nearList(scaled.sides, want.sides, 1e-3, case.shape .. " " .. i .. ": scale sides")
+    end
+end)
+
 T.test("unloading the game's loaded atmo (MGE's start)", function()
     local unloads = 0
     local savedManager, savedAtmo = rawget(_G, "Atmospheres"), rawget(_G, "_ATMO")

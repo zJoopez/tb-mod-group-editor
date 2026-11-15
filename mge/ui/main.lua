@@ -53,9 +53,8 @@ local TAB_PADDING = px(6) -- space between a tab panel's edge and its content
 -- the editor area: fits the panels (8 rows each, PANELS in ui/editor.lua), a gap and the reset button
 local EDITOR_H = 8 * Widgets.ROW_H + px(4) + Widgets.ROW_H
 local FOOTER_H = Widgets.INFO_HEIGHT + px(4) -- the footer row along the screen's bottom
-local LIST_ROWS = 6 -- the list's height, it scrolls
-Main.LIST_ROWS = LIST_ROWS -- the Link tab's object grid is as tall (ui/editor_link.lua)
-local rowH = px(20) -- ScrollList.rowHeight (loaded below, the same size)
+local LIST_ROWS = 6 -- the list's height, it scrolls; fewer when the panel wouldn't fit the screen (below)
+local rowH = Widgets.LIST_ROW_H -- ScrollList.rowHeight (loaded below) is the same
 local screenW = WIN_W or 1280 -- the top bar starts this wide, Main.fitScreen keeps it fitted
 local listH = LIST_ROWS * rowH
 -- the list's buttons, a bar under it on the list's own dark background (Main.setListActions), lined up
@@ -64,6 +63,13 @@ local listH = LIST_ROWS * rowH
 local ACTIONS_H = px(18)
 local ACTIONS_GAP = Widgets.INSET + Widgets.GAP -- the bar's height beyond its buttons
 local panelH = BAR_H + listH + ACTIONS_GAP + ACTIONS_H + TAB_PADDING * 2 + EDITOR_TABS_H + EDITOR_H + TAB_PADDING * 2
+-- a big UI size at a big GUI scale made the panel taller than the screen: the list gives up rows (down to
+-- 3) so the panel ends above the footer
+local fitH = (WIN_H or 720) - FOOTER_H
+while panelH > fitH and LIST_ROWS > 3 do
+    LIST_ROWS, listH, panelH = LIST_ROWS - 1, listH - rowH, panelH - rowH
+end
+Main.LIST_ROWS = LIST_ROWS -- the Link tab's object grid is as tall (ui/editor_link.lua)
 
 -- the bar's and the content areas' colors (ui/widgets.lua, shared with the overlays)
 local BAR_COLOR = Widgets.BAR_COLOR
@@ -376,7 +382,7 @@ local FOOTER_COLOR = { 0, 0, 0, 1 } -- black: the footer is over the game's (lig
 Widgets.addDrawBefore(fileRow, function()
     local parsed, state, source, saved = ModData.parsed, History.states[History.index], MGE.sourcePath, MGE.savedText
     -- the atmo file's saved text too: Export atmo writes it without saving the mod (utils/atmo.lua)
-    local atmo = MGE.Atmo.state.text
+    local atmo = tostring(MGE.Atmo.state.text) .. "#" .. MGE.Atmo.headerVersion -- a shader picked counts too
     if shown.parsed == parsed and shown.state == state and shown.source == source and shown.saved == saved
         and shown.atmo == atmo and shown.done then return end
     shown = { parsed = parsed, state = state, source = source, saved = saved, atmo = atmo, done = true }

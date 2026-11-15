@@ -5,7 +5,7 @@
 ---@field scrollBarWidth number
 local ScrollList = {
     -- MGE's overall size (Widgets.px); the offline tests load this without ui/widgets.lua
-    rowHeight = MGE.Widgets and MGE.Widgets.px(20) or 20,
+    rowHeight = MGE.Widgets and MGE.Widgets.LIST_ROW_H or 20,
     scrollBarWidth = MGE.Widgets and MGE.Widgets.px(18) or 18,
     ---@type number[] behind the rows (ui/main.lua sets a darker one)
     bgColor = TB_MENU_DEFAULT_DARKER_COLOR,

@@ -443,6 +443,7 @@ local KEY_DELETE = 127 -- SDLK_DELETE (toriui's text fields use the same code)
 ---@param action "new"|"duplicate"|"delete"
 local function listAction(action)
     local tab, actions = MGE.Main.listTab, nil
+    if tab == "misc" then return end -- nothing to pick there: the hidden objects stay as they are
     if tab == "players" then
         local L = MGE.PlayerList
         actions = { new = L.newPlayer, duplicate = L.duplicate, delete = L.deleteSelected }
@@ -574,7 +575,7 @@ add_hook("key_down", MGE.hookname, function(key)
             MGE.Main.toggleSelectAllJoints()
         elseif tab == "atmo" then
             MGE.Main.toggleSelectAllAtmo()
-        else
+        elseif tab ~= "misc" then -- the Misc list has nothing to select
             MGE.Main.toggleSelectAll()
         end
         return 1
@@ -594,6 +595,9 @@ table.insert(MGE.onQuit, function()
     MGE.hideGameHud(false)
     MGE_HUD_BEFORE = nil
 end)
+-- another script loaded (/ls) ends MGE without its quit: the HUD comes back then too. (A game closed with
+-- MGE open keeps it off: the option is saved by the game, Settings > HUD or /opt hud 1 brings it back)
+add_hook("unload", MGE.hookname, function() MGE.hideGameHud(false) end)
 MGE.hideGameHud(true)
 
 add_hook("key_up", MGE.hookname, function(key)
