@@ -199,7 +199,7 @@ end
 return {
     blocks = {
         { name = "jointLinkGrid", build = buildGrid, panel = "jointLink", row = 0, rows = 6 },
-        { name = "jointLinkHead", build = buildHeading, panel = "jointLink", row = 6, rows = 1 }, -- under the grid
-        { name = "jointLinkButtons", build = buildButtons, panel = "jointLink", row = 7, rows = 1 },
+        { name = "jointLinkButtons", build = buildButtons, panel = "jointLink", row = 6, rows = 1 },
+        { name = "jointLinkHead", build = buildHeading, panel = "jointLink", row = 7, rows = 1 }, -- under the buttons
     },
 }

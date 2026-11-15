@@ -134,11 +134,12 @@ function ScrollList.create(parent, rect, items, buildRow, toReload, emptyText, p
     local rows = {}
     if #items == 0 then
         if emptyText then
-            local empty = scrollableListHolder:addChild({
+            -- centered in the whole list, like the Misc list's note
+            local empty = listMainView:addChild({
                 pos = { 5, 0 },
-                size = { scrollableListHolder.size.w - 5, rowHeight },
+                size = { listMainView.size.w - 10, listMainView.size.h },
             })
-            empty:addAdaptedText(emptyText, nil, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
+            empty:addAdaptedText(emptyText, nil, nil, MGE.Widgets.FONT, CENTERMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
         end
         return listMainView, rows
     end

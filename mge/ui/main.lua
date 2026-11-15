@@ -7,7 +7,7 @@ require("toriui.uielement")
 ---@field toggleAll boolean
 ---@field activeTab "core"|"advanced"|"thrust"|"generate" the objects' editor tab, kept while another list is shown
 ---@field activeTabs table<string, string> each list's active editor tab (panel id), by list
----@field listTab "objects"|"atmo"|"joints"|"players" what the list area shows
+---@field listTab "objects"|"atmo"|"joints"|"players"|"misc" what the list area shows (misc: the whole mod's things)
 ---@field selectedPlayer integer last picked player: the players panel shows it (also when none is selected)
 ---@field selectedPlayers table<integer, boolean> selected players (Shift adds), the gizmo moves them together
 ---@field selectPlayer fun(id: integer, additive: boolean?) picks a player (list row, world click)
@@ -15,7 +15,7 @@ require("toriui.uielement")
 ---@field jointSlot integer the current joint slot (last clicked), always selected: the Link tab edits it
 local Main = { page = 1, pageSize = 64, toggleAll = false, activeTab = "core", listTab = "objects", selectedPlayer = 0,
     selectedPlayers = { [0] = true }, selectedJoints = { [1] = true }, jointSlot = 1,
-    activeTabs = { objects = "core", atmo = "core", players = "player", joints = "jointLink" } }
+    activeTabs = { objects = "core", atmo = "core", players = "player", joints = "jointLink", misc = "misc" } }
 MGE.Main = Main -- registered before UI modules load so they can alias it
 
 local ModData = MGE.ModData
@@ -193,6 +193,7 @@ local listTabNames = {
     { id = "atmo", label = "Atmo" }, -- atmo objects: drawn only, the mod's .atmo file (utils/atmo.lua)
     { id = "joints", label = "Joints" },
     { id = "players", label = "Players" },
+    { id = "misc", label = "Misc" }, -- the whole mod: message, shader, reindex, convert map (ui/editor_misc.lua)
 }
 local listTabItems = {}
 for i, tab in ipairs(listTabNames) do
@@ -272,6 +273,7 @@ local TAB_SETS = {
         { id = "generate", label = "Generate" },
     },
     players = { { id = "player", label = "Core" } },
+    misc = { { id = "misc", label = "Misc" } },
     joints = { { id = "jointLink", label = "Link" }, { id = "joint", label = "Properties" } },
 }
 -- every tab is as wide as an object tab, so a list with fewer tabs lines up with the objects' row
@@ -643,6 +645,15 @@ local function createObjSelector()
         joint_list.create(obj_selector_container)
     elseif Main.listTab == "atmo" then
         obj_selector.create(obj_selector_container, ModData.parsed.atmo, "atmo")
+    elseif Main.listTab == "misc" then
+        -- nothing to pick: the panel's rows are about the whole mod
+        Main.setListActions({})
+        obj_selector_container:addChild({
+            pos = { Widgets.px(8), 0 },
+            size = { obj_selector_container.size.w - Widgets.px(16), obj_selector_container.size.h },
+        }):addAdaptedText("Things about the whole mod, not the selected objects:\n" ..
+            "its message, the atmo's shader, ids and converting a map", nil, nil, Widgets.FONT, CENTERMID,
+            Widgets.TEXT_SCALE_SMALL, nil, nil)
     else
         obj_selector.create(obj_selector_container, ModData.parsed.env_obj)
     end

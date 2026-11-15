@@ -279,20 +279,20 @@ local function takeControl()
     end)
 end
 
----Points the camera at the objects from the current viewing direction
+---Points the camera at the objects from the current viewing direction, keeping the zoom (Camera.focusOn)
 ---@param objects FileParserEnvObj[]
----@param keepDistance boolean? keep the current distance when it's already far enough (used while editing)
-function Camera.focus(objects, keepDistance)
+function Camera.focus(objects)
     local center, radius = Camera.bounds(objects)
     if not center then return end
-    Camera.focusOn(center, radius, keepDistance)
+    Camera.focusOn(center, radius)
 end
 
----Points MGE's camera at a sphere from the current viewing direction, far enough that it fits
+---Points MGE's camera at a sphere from the current viewing direction. The zoom stays as it is, unless the
+---sphere wouldn't fit: then the camera moves out just far enough (Camera.fitDistance). Selecting used to
+---zoom to fit every time, in and out, which threw away the zoom picked with the wheel
 ---@param center number[]
 ---@param radius number
----@param keepDistance boolean? see Camera.focus
-function Camera.focusOn(center, radius, keepDistance)
+function Camera.focusOn(center, radius)
     local c = get_camera_info()
     if not Camera.isControlling() then
         -- start from the game's current view direction
@@ -304,8 +304,7 @@ function Camera.focusOn(center, radius, keepDistance)
         Camera.distance = len
     end
 
-    local distance = Camera.fitDistance(radius)
-    if keepDistance then distance = math.max(distance, Camera.distance) end
+    local distance = math.max(Camera.fitDistance(radius), Camera.distance)
 
     set_camera_mode(4)
     MGE.cameraChanged = true -- reset on quit
@@ -359,7 +358,7 @@ function Camera.followPlayer(players, after)
         radius = radius * after.factor
     end
     -- after an edit, like moving objects: back off only when they no longer fit on screen
-    Camera.focusOn(center, math.min(radius + 0.5, Camera.maxObjectRadius), after ~= nil)
+    Camera.focusOn(center, math.min(radius + 0.5, Camera.maxObjectRadius))
 end
 
 table.insert(MGE.onQuit, Camera.release)

@@ -1,5 +1,5 @@
--- Advanced tab: Friction, Bounce, Hardness, Flags, Model, Ids (Reindex), Map (Convert map overlay),
--- Atmo (To atmo, utils/atmo_layer.lua)
+-- Advanced tab: Friction, Bounce, Hardness, Flags, Model, Atmo (To atmo, utils/atmo_layer.lua). Ids (Reindex)
+-- and Map (Convert map) are on the Misc list (ui/editor_misc.lua): they're about the whole mod
 local Rows = MGE.EditorRows
 local Widgets = MGE.Widgets
 local ModData = MGE.ModData
@@ -168,52 +168,6 @@ local function buildModel(holder, selected)
     TBMenu:displayPopup(none, "No model (remove)")
 end
 
----Dynamic objects can end up above id 48 (the footer warns), this moves them down and static
----objects up, as far as ids allow. Acts on all objects, not the selection
-local function reindex()
-    local moved, left = ModData.reindex()
-    if left > 0 then
-        print("reindex: " .. left .. " dynamic objects still above id " .. MGE.MAX_NONSTATIC_OBJECTS ..
-            ", make some static")
-    end
-    if moved == 0 then
-        print("reindex: nothing to move")
-        return
-    end
-    History.commit()
-    MGE.apply()
-    print("reindex moved " .. moved .. " objects")
-end
-
----Ids row (advanced panel), built once: its buttons act on all objects, nothing to refresh
----@param holder UIElement
-local function buildIdRows(holder)
-    Rows.begin()
-    createToggleButtonRow("Ids", holder, {
-        { label = "Reindex", active = false, onClick = reindex },
-    }, "Moves dynamic objects to ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. ", static above.\n" ..
-        "Acts on all objects, joints follow.")
-end
-
----Map row (advanced panel), built once: opens the Convert Map overlay (ui/map_overlay.lua)
----@param holder UIElement
-local function buildMapRow(holder)
-    Rows.begin()
-    createToggleButtonRow("Map", holder, {
-        { label = "Convert map", active = false, onClick = function()
-            if MGE.overlayOpen() then return end
-            -- loaded on first use (MGE.loadMapConv): a broken converter says so and the editor keeps working
-            local ok, err = pcall(MGE.loadMapConv)
-            if not ok then
-                echo("^04[MGE] the map converter didn't load: " .. tostring(err))
-                return
-            end
-            dofile(MGE.scriptPath .. "ui/map_overlay.lua")
-        end },
-    }, "Turns a .vmf (Hammer) or Source .bsp map (CS:S,\n" ..
-        "CS:GO, TF2...) into static boxes, added where\nthe map puts them. Maps go in assets/maps.")
-end
-
 ---Atmo row (advanced panel), built once: the selected objects to the atmo (utils/atmo_layer.lua). The Atmo list
 ---has the rest (its Atmo tab: To objects, ui/editor_atmo.lua)
 ---@param holder UIElement
@@ -231,9 +185,7 @@ end
 ---@type EditorPanelModule
 return {
     fixed = {
-        { build = buildIdRows, panel = "advanced", row = 5, rows = 1 },
-        { build = buildMapRow, panel = "advanced", row = 6, rows = 1 },
-        { build = buildAtmoRow, panel = "advanced", row = 7, rows = 1 },
+        { build = buildAtmoRow, panel = "advanced", row = 5, rows = 1 },
     },
     blocks = {
         { name = "advancedProps", build = buildAdvancedProps, panel = "advanced", row = 0, rows = 3 },

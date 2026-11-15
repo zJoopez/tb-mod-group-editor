@@ -173,6 +173,17 @@ function Atmo.saveAction(text, count, target, saved, exists)
     return "write"
 end
 
+---What the atmo file would hold: its objects, and its shader line counts as one (an atmo with just a
+---shader, set on the Misc list, is still worth a file)
+---@return integer
+function Atmo.contentCount()
+    local count = #(ModData.parsed.atmo or {})
+    for _, line in ipairs(Atmo.state.header) do
+        if line:match("^%s*shader%s+%S") then return count + 1 end
+    end
+    return count
+end
+
 ---The layer's text as Save would write it now
 ---@return string
 function Atmo.currentText()
@@ -182,8 +193,7 @@ end
 ---The atmo layer differs from its file (or has objects and no file)
 ---@return boolean
 function Atmo.hasChanges()
-    local atmoObjs = ModData.parsed.atmo or {}
-    if Atmo.state.text == nil then return #atmoObjs > 0 end
+    if Atmo.state.text == nil then return Atmo.contentCount() > 0 end
     return Atmo.currentText() ~= Atmo.state.text
 end
 
@@ -243,7 +253,7 @@ function Atmo.saveFor(modPath)
     if not name then return end
     local atmoObjs = ModData.parsed.atmo or {}
     local text = Atmo.currentText()
-    local action = Atmo.saveAction(text, #atmoObjs, name, Atmo.state, exists(name))
+    local action = Atmo.saveAction(text, Atmo.contentCount(), name, Atmo.state, exists(name))
     if action == "write" then
         if write(name, text) then
             Atmo.state.name, Atmo.state.text = name, text

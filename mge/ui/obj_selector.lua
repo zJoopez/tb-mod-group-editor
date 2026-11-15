@@ -38,6 +38,7 @@ end
 ---@field popup (fun(item: any): string?)? hover text of a cell
 ---@field isDimmed (fun(item: any): boolean?)? drawn faint while not selected
 ---@field columns integer? cells per row, default GRID_COLUMNS
+---@field emptyText string? shown when there are no items
 
 ---Grid list: one button per item, GRID_COLUMNS per row, selected ones pale (the object list, the joint
 ---list). A click calls onClick with Shift as additive, then restyles the cells in place: rebuilding the
@@ -91,7 +92,7 @@ function obj_selector.grid(view, rect, items, opts, toReload)
                 restyleAll()
             end)
         end
-    end, toReload, nil, true) -- plain rows: the cells are the buttons
+    end, toReload, opts.emptyText, true) -- plain rows: the cells are the buttons
     return restyleAll
 end
 
@@ -130,6 +131,9 @@ local function create(view, fullList, mode)
         h = view.size.h - pagerH
     }, list, {
         label = function(obj) return (atmo and "A" or "") .. tostring(obj.id) end,
+        -- an empty mod / atmo: what adds some (the buttons under the list)
+        emptyText = atmo and "No atmo objects: New, Import, or To atmo (Advanced tab)"
+            or "No objects: New, Import or Generate",
         isSelected = function(obj) return obj.selected end,
         onClick = function(obj, additive)
             local selected = ModData.clickSelect(obj, additive)

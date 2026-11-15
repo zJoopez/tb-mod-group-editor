@@ -183,7 +183,7 @@ local function moveBy(selectedObjects, offsets)
 
     -- camera follows the selection, backing off only if it no longer fits on screen
     -- (can be turned off with the camera button in the top menu)
-    if MGE.Camera.followMoves then MGE.Camera.focus(selectedObjects, true) end
+    if MGE.Camera.followMoves then MGE.Camera.focus(selectedObjects) end
     finishTransform(selectedObjects, move)
     Transforms.onChanged()
 end
@@ -462,7 +462,7 @@ local function scaleBy(selectedObjects, scale)
         writeVectorProperty(p.obj, "sides", p.sides)
     end
     -- same as moving: the camera follows, backing off only if the group no longer fits on screen
-    if MGE.Camera.followMoves then MGE.Camera.focus(selectedObjects, true) end
+    if MGE.Camera.followMoves then MGE.Camera.focus(selectedObjects) end
     finishTransform(selectedObjects, scalePos)
     Transforms.onChanged()
 end

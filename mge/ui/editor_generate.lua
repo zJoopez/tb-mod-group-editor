@@ -196,7 +196,7 @@ local function followPreview()
         end
         radius = math.max(radius, math.sqrt(d) + math.sqrt(half) / 2)
     end
-    MGE.Camera.focusOn(center, math.min(radius, MGE.Camera.maxObjectRadius), true)
+    MGE.Camera.focusOn(center, math.min(radius, MGE.Camera.maxObjectRadius))
 end
 
 ---Position row placeholders follow the planned shape (rebuilt block, typed text is kept over it)
