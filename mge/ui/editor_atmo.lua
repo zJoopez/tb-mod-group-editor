@@ -1,11 +1,11 @@
--- Atmo tab of the Atmo list (the atmo objects, utils/atmo_layer.lua and utils/atmo.lua): the lines atmos have
--- and objects don't, the lines MGE keeps without editing them, and the buttons:
+-- Advanced tab of the Atmo list (the atmo objects, utils/atmo_layer.lua and utils/atmo.lua; panel id "atmo"):
+-- the lines atmos have and objects don't, and the lines MGE keeps without editing them:
 --   Depth:    drawn over everything (no_depth 1), or normally
 --   Graphics: the game's graphics levels it's drawn at, min and max (0 lowest - 2 highest)
 --   Kept:     how many other lines the selected ones keep (count, randompos, rotate, parent...): written
 --             back as they are, MGE draws such objects as their plain shape
---   To objects: the selected ones back into the game, ids allowing. Save atmo: writes the mod's .atmo now
--- The Atmo list's Core tab is the objects' Core (ui/editor_core.lua), on the selected atmo objects.
+-- The Atmo list's Core tab is the objects' Core (ui/editor_core.lua), on the selected atmo objects, with To objects
+-- and Save atmo in its last row.
 -- Atmo objects aren't in the .tbm: changes here are an undo step, no reload.
 local Rows = MGE.EditorRows
 local ModData = MGE.ModData
@@ -94,20 +94,8 @@ local function buildAtmoProps(holder, selected)
         "object lines atmos skip (flag, mass...). Written back\nas they are; MGE draws such objects as their shape.")
 end
 
----To objects and Save atmo, built once
----@param holder UIElement
-local function buildButtons(holder)
-    Rows.begin()
-    Rows.createToggleButtonRow("", holder, {
-        { label = "To objects", active = false, onClick = function() MGE.AtmoLayer.toObjects() end },
-        { label = "Save atmo", active = false, onClick = function() MGE.AtmoLayer.exportAtmo() end },
-    }, "To objects: the selected ones back into the game as\nobjects, as many as there are free ids.\n" ..
-        "Save atmo: writes data/atmospheres/MGE - <mod>.atmo\nnow, without saving the mod (Save does both).")
-end
-
 ---@type EditorPanelModule
 return {
-    fixed = { { build = buildButtons, panel = "atmo", row = 4, rows = 1 } },
     blocks = { { name = "atmoProps", build = buildAtmoProps, panel = "atmo", row = 0, rows = 3 } },
     inputs = { rebuilt = { "atmoLevels" } },
 }

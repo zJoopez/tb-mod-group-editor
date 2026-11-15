@@ -1,5 +1,5 @@
--- Advanced tab: Friction, Bounce, Hardness, Flags, Model, Atmo (To atmo, utils/atmo_layer.lua). Ids (Reindex)
--- and Map (Convert map) are on the Misc list (ui/editor_misc.lua): they're about the whole mod
+-- Advanced tab: Friction, Bounce, Hardness, Flags, Model. To atmo is on the Core tab (ui/editor_core.lua), Ids
+-- (Reindex) and Map (Convert map) on the Misc list (ui/editor_misc.lua): they're about the whole mod
 local Rows = MGE.EditorRows
 local Widgets = MGE.Widgets
 local ModData = MGE.ModData
@@ -168,24 +168,9 @@ local function buildModel(holder, selected)
     TBMenu:displayPopup(none, "No model (remove)")
 end
 
----Atmo row (advanced panel), built once: the selected objects to the atmo (utils/atmo_layer.lua). The Atmo list
----has the rest (its Atmo tab: To objects, ui/editor_atmo.lua)
----@param holder UIElement
-local function buildAtmoRow(holder)
-    Rows.begin()
-    createToggleButtonRow("Atmo", holder, {
-        { label = "To atmo", active = false, onClick = function() MGE.AtmoLayer.toAtmo() end },
-    }, "The selected objects leave the game (ids freed) and\n" ..
-        "join the atmo (the Atmo list): drawn only, no collisions.\n" ..
-        "Save keeps them in data/atmospheres/MGE - <mod>.atmo,\n" ..
-        "players load it in Shaders & Atmos > Atmos.\n" ..
-        "Objects joined by joints stay.")
-end
-
 ---@type EditorPanelModule
 return {
     fixed = {
-        { build = buildAtmoRow, panel = "advanced", row = 5, rows = 1 },
     },
     blocks = {
         { name = "advancedProps", build = buildAdvancedProps, panel = "advanced", row = 0, rows = 3 },

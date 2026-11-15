@@ -17,13 +17,15 @@ starting a second one.
 
 ## What it does
 
-The window has three lists, each with its own tabs.
+The window has five lists, each with its own tabs.
 
 | List | Tabs |
 |---|---|
-| **Objects** | **Core**: position, rotation, scale, color, mass, shape, visibility. **Advanced**: friction, bounce, flags, model, reindexing ids, map import, To atmo. **Thrust**: frames, direction, axes. **Generate**: rows, rings and grids of new objects. |
+| **Objects** | **Core**: position, rotation, scale, color, mass, shape, visibility, To atmo. **Advanced**: friction, bounce, flags, model. **Thrust**: frames, direction, axes. **Generate**: rows, rings and grids of new objects. |
+| **Atmo** | **Core**: position, rotation, scale, color, shape, To objects, Save atmo. **Advanced**: depth, graphics levels, kept lines. **Generate**: as on Objects. |
 | **Joints** | **Link**: the two objects a joint connects. **Properties**: position, axis, range, strength, velocity, type. |
 | **Players** | Start position, rotation, scale and body parts of each player. |
+| **Misc** | The mod's message, the atmo's shader, reindexing ids, map import. |
 
 - Click objects in the world to select them. Shift + click adds to the selection.
 - The gizmo (Move, Rotate, Scale) works on everything selected. Hold Ctrl while dragging to snap. The
@@ -36,7 +38,7 @@ The window has three lists, each with its own tabs.
 
 ### Map import (experimental)
 
-Advanced tab → **Convert map** turns a Hammer `.vmf` or a compiled Source `.bsp` (CS:S, CS:GO, TF2,
+Misc list → **Convert map** turns a Hammer `.vmf` or a compiled Source `.bsp` (CS:S, CS:GO, TF2,
 HL2, Garry's Mod) into static boxes. Put maps in `mge/mge/assets/maps`. You pick the part of the map
 to convert and where it goes in the world, then Convert adds the boxes. A mod holds 256 objects, so
 pick a region (one bombsite, not a whole map).
@@ -61,11 +63,11 @@ the mod.
     and adds its objects where the file has them. **Export** writes the selected ones to `assets/atmo`.
   - On this list the atmo objects are drawn in their own color and the mod's objects turn see-through.
 - **Editing:** the **Core** tab is the objects' Core tab (Pos, Rot, Scale, Color, Shape), on the selected
-  atmo objects. The gizmo, clicks and Shift + drag work the same. The **Atmo** tab has what only atmos have:
-  **Depth** (drawn on top), **Graphics** (the graphics levels it shows at), the lines MGE keeps without
-  editing them, **To objects** and **Save atmo**. The **Generate** tab works as on Objects, and its pieces
+  atmo objects. The gizmo, clicks and Shift + drag work the same. Its last row has **To objects** and **Save atmo**.
+  The **Advanced** tab has what only atmos have: **Depth** (drawn on top), **Graphics** (the graphics levels
+  it shows at) and the lines MGE keeps without editing them. The **Generate** tab works as on Objects, and its pieces
   go to the atmo (no joints field there: atmos have none).
-- **To atmo** (Objects → Advanced) moves the selected objects into the atmo and frees their ids. **To
+- **To atmo** (Objects → Core) moves the selected objects into the atmo and frees their ids. **To
   objects** moves atmo objects back while there are free ids. Objects joined by a joint stay.
 - **Saving:** Save keeps the atmo in `data/atmospheres/MGE - <mod>.atmo`, next to the mod, and opening the
   mod reads it back. Save writes that file only when the atmo changed. If you remove every atmo object,

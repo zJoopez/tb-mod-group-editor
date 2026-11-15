@@ -275,7 +275,7 @@ local TAB_SETS = {
     -- pieces go to the atmo, without joints: ui/editor_generate.lua)
     atmo = {
         { id = "core", label = "Core" },
-        { id = "atmo", label = "Atmo" },
+        { id = "atmo", label = "Advanced" }, -- the atmo lines (ui/editor_atmo.lua, panel id "atmo")
         { id = "generate", label = "Generate" },
     },
     players = { { id = "player", label = "Core" } },

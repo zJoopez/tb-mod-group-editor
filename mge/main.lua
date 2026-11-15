@@ -629,7 +629,6 @@ end)
 ---start
 MGE.updateSource()
 MGE.snapshotGamerules()
-History.reset()
 -- source: the loaded mod. Started on a working copy (script restarted after editing): the source from
 -- before the restart, compared with its text
 if MGE.modPath and not isSaveOutput(MGE.modPath) then
@@ -645,6 +644,8 @@ else
         if okState and type(state) == "table" then Atmo.state = state end
     end
 end
+-- the first undo state: after the atmo is read, or undoing back to it would empty the atmo
+History.reset()
 MGE_ATMO = {
     objects = function() return ModData.parsed.atmo end,
     state = function() return Atmo.state end,

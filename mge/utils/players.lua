@@ -740,6 +740,14 @@ local function addPlayers(sources, shift, spawnPoint, done)
                 targets[id] = { c[1] + d[1], c[2] + d[2], c[3] + d[3] }
             end
             if done then done(ids) end -- the mod has them now (numplayers loaded)
+            -- camera follow on the new ones where the correction puts them: the group center (average of
+            -- centers) moves by the average of each one's shift to its target
+            local now, offset = Players.groupCenter(ids), { 0, 0, 0 }
+            for _, id in ipairs(ids) do
+                for k = 1, 3 do offset[k] = offset[k] + targets[id][k] / #ids end
+            end
+            for k = 1, 3 do offset[k] = offset[k] - now[k] end
+            MGE.Camera.followPlayer(ids, { offset = offset })
             commit(correctedPositions(targets), readList(ROT) or {}) -- one undo step for all of it
         end)
     end)

@@ -1,4 +1,5 @@
--- Core tab: Pos/Move, Rot/Rotate, Scale/Resize (math in utils/transforms.lua), Color, Mass, Shape, Visible.
+-- Core tab: Pos/Move, Rot/Rotate, Scale/Resize (math in utils/transforms.lua), Color, Mass, Shape, Visible, and
+-- Atmo: To atmo (Objects list) / To objects and Save atmo (Atmo list).
 -- Also the Atmo list's Core tab: the same rows on the selected atmo objects (ModData.getEditSelection),
 -- through their lines only (an atmo object's id isn't an object's). Mass and Visible aren't there: the
 -- game's atmos have neither
@@ -296,7 +297,6 @@ end
 ---@param holder UIElement
 ---@param selected FileParserEnvObj[]
 local function buildLooks(holder, selected)
-    Rows.begin()
     createChoiceRow("Shape", holder, {
         { label = "Box", value = "box" },
         { label = "Sphere", value = "sphere" },
@@ -312,13 +312,44 @@ local function buildLooks(holder, selected)
 end
 
 
+---Atmo row (the Core tab's last): moving between the lists. On the Objects list To atmo (the selected objects
+---into the atmo), on the Atmo list To objects and Save atmo (the mod's .atmo now, without saving the mod).
+---Rebuilt with the list it's on (utils/atmo_layer.lua)
+---@param holder UIElement
+local function buildLayerRow(holder)
+    if atmoShown() then
+        Rows.createToggleButtonRow("Atmo", holder, {
+            { label = "To objects", active = false, onClick = function() MGE.AtmoLayer.toObjects() end },
+            { label = "Save atmo", active = false, onClick = function() MGE.AtmoLayer.exportAtmo() end },
+        }, "To objects: the selected ones back into the game as\nobjects, as many as there are free ids.\n" ..
+            "Save atmo: writes data/atmospheres/MGE - <mod>.atmo\nnow, without saving the mod (Save does both).")
+    else
+        Rows.createToggleButtonRow("Atmo", holder, {
+            { label = "To atmo", active = false, onClick = function() MGE.AtmoLayer.toAtmo() end },
+        }, "The selected objects leave the game (ids freed) and\n" ..
+            "join the atmo (the Atmo list): drawn only, no collisions.\n" ..
+            "Save keeps them in data/atmospheres/MGE - <mod>.atmo,\n" ..
+            "players load it in Shaders & Atmos > Atmos.\n" ..
+            "Objects joined by joints stay.")
+    end
+end
+
+---Color, Mass, Shape, Visible and the Atmo row as one block: rows stack, so the ones atmos don't have
+---(Mass, Visible) leave no gap on the Atmo list
+---@param holder UIElement
+---@param selected FileParserEnvObj[]
+local function buildCoreRest(holder, selected)
+    buildCoreProps(holder, selected) -- starts the rows (Rows.begin)
+    buildLooks(holder, selected)
+    buildLayerRow(holder)
+end
+
 ---@type EditorPanelModule
 return {
     fixed = { { build = buildTransformRows, panel = "core", row = 0, rows = 3 } },
     blocks = {
         { name = "measured", build = buildMeasuredRows, panel = "core", row = 0, rows = 3 },
-        { name = "coreProps", build = buildCoreProps, panel = "core", row = 3, rows = 2 },
-        { name = "looks", build = buildLooks, panel = "core", row = 5, rows = 2 },
+        { name = "coreProps", build = buildCoreRest, panel = "core", row = 3, rows = 5 },
     },
     inputs = { fixed = { "pos", "rot", "scale" }, rebuilt = { "position", "angle", "size", "color", "coreProps" } },
     applyTransformModes = applyTransformModes,
