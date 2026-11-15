@@ -54,10 +54,11 @@ end
 -- Highlight colors, between the window color and the game's lighter ones (those were far brighter than the
 -- rest of the scheme). Mixed from the game's menu colors, so they follow its theme
 Widgets.HOVER_COLOR = Widgets.mix(TB_MENU_DEFAULT_BG_COLOR, TB_MENU_DEFAULT_LIGHTER_COLOR, 0.4)
--- a toggle that's on (Box, Shown, a row label's mode), the current gizmo tool, a lit Select all
-Widgets.ACTIVE_COLOR = Widgets.mix(TB_MENU_DEFAULT_BG_COLOR, TB_MENU_DEFAULT_LIGHTER_COLOR, 0.55)
 -- a selected cell in the object / joint grid, a selected list row: lighter, still with white text
 Widgets.SELECTED_COLOR = Widgets.mix(TB_MENU_DEFAULT_BG_COLOR, TB_MENU_DEFAULT_LIGHTEST_COLOR, 0.5)
+-- a toggle that's on (Box, Shown, a row label's mode), the current gizmo tool, a lit Select all: the same as a
+-- selected cell, so everything chosen reads the same (a darker one was hard to tell from the buttons)
+Widgets.ACTIVE_COLOR = Widgets.SELECTED_COLOR
 
 ---The menu's darkest color at a share of its brightness
 ---@param share number

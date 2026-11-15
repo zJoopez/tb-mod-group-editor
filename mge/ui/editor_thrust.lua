@@ -17,26 +17,40 @@ local createChoiceRow = Rows.createChoiceRow
 ---@field dir number[] x y z
 ---@field space integer see THRUST_SPACES
 
--- values of <space>
+-- values of <space>: 0 world axes, 1 the object's (turns with it). It was the other way round, World
+-- pushed along the object's axes in game (the user's test, 2026-11-15). Most of the game's mods leave
+-- <space> out (3565 of 3617 thrust lines): 0, world, like a line without it
 local THRUST_SPACES = {
-    { label = "World", value = 1 },
-    { label = "Object", value = 0 }, -- turns with the object
+    { label = "World", value = 0 },
+    { label = "Object", value = 1 }, -- turns with the object
 }
--- used for the parts of a thrust that an object doesn't have yet (turning it on, typing one field)
+-- used for the parts of a thrust that an object doesn't have yet (turning it on, typing one field): World
 local THRUST_DEFAULT = { frames = 1, dir = { 0, 0, 0 }, space = 0 }
 
----@param obj FileParserEnvObj
----@return Thrust? nil when the object has no thrust
-local function getThrust(obj)
-    if not obj.props.thrust then return nil end
+---@param line string? a thrust line's value
+---@return Thrust? nil without one
+local function parseThrust(line)
+    if not line then return nil end
     local n = {}
-    for v in obj.props.thrust:gmatch("%S+") do table.insert(n, tonumber(v) or 0) end
+    for v in line:gmatch("%S+") do table.insert(n, tonumber(v) or 0) end
     return {
         frames = math.floor(n[1] or THRUST_DEFAULT.frames),
         dir = { n[2] or 0, n[3] or 0, n[4] or 0 },
         space = (n[5] or THRUST_DEFAULT.space) ~= 0 and 1 or 0,
     }
 end
+
+---@param obj FileParserEnvObj
+---@return Thrust? nil when the object has no thrust
+local function getThrust(obj)
+    return parseThrust(obj.props.thrust)
+end
+
+-- the thrust line an object had before Off, by object id: picking World / Object after Off brings it back
+-- (it brought back a thrust with no direction, it pushed nothing). By id: every save reloads the mod and
+-- re-reads the objects as new tables, the ids stay. Kept while MGE runs, not saved
+---@type table<integer, string>
+local thrustBeforeOff = {}
 
 ---@param thrust Thrust
 ---@return string
@@ -51,12 +65,14 @@ local function editThrust(edit)
     local changed = false
     for _, v in ipairs(getSelected()) do
         local had = getThrust(v)
-        local current = had or THRUST_DEFAULT
+        -- an object turned Off starts from the thrust it had (thrustBeforeOff), not from nothing
+        local current = had or parseThrust(thrustBeforeOff[v.id]) or THRUST_DEFAULT
         local thrust = edit({ frames = current.frames, dir = { current.dir[1], current.dir[2], current.dir[3] },
             space = current.space })
         local value = thrust and formatThrust(thrust) or nil
         -- compared as values, the file may write the same thrust differently ("1.00" / "1")
         if value ~= (had and formatThrust(had) or nil) then
+            if not value and had then thrustBeforeOff[v.id] = formatThrust(had) end
             v.props.thrust = value
             changed = true
         end
