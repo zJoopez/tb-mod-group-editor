@@ -21,13 +21,17 @@ local atan2 = math.atan2 or math.atan -- the game's Lua has atan2, newer Lua tak
 local Camera = {
     fitFactor = 2.5,     -- camera distance per unit of selection radius (covers the game's field of view)
     margin = 1,          -- extra distance so objects don't touch the screen edges
-    minDistance = 2.5,   -- closest framing distance
+    -- closest framing distance (selecting, and spawning in view through fitDistance). The game cuts off what's
+    -- closer to the camera than about 5: a box framed at 2.5 was cut open, it looked like the camera was inside
+    -- it, though the camera was where MGE put it. Measured in game 2026-11-15 with a zoom log: whole down to
+    -- 5.03 at 100 from the dojo center (cut at 4.37), 5.78 at 2000 (cut at 5.03), cut already at y 5
+    minDistance = 6,
     -- largest radius an object counts with when framing. Many mods use a huge object as the ground,
     -- framing all of it put the camera thousands of units away. Bigger objects are framed like one this
     -- size at their center, so a selection with a ground object still shows the other objects
     maxObjectRadius = 10,
     zoomStep = 1.15,     -- distance factor per mouse wheel step
-    zoomMin = 1,
+    zoomMin = 6,         -- closest zoom, the same cut-off as minDistance
     zoomMax = 200,       -- also the furthest framing distance (objects spread very far apart)
     orbitSpeed = 0.008,  -- radians per dragged pixel
     maxPitch = math.rad(85),
@@ -130,7 +134,8 @@ end
 -- Spawning in view (Generate tab, imports, New): new things go on screen, about as far from the camera
 -- as framing them would put it, not at the dojo center
 Camera.GROUND_Z = 0          -- the floor, things are put on it when the view meets it close enough
-Camera.GROUND_NEAR = 0.6     -- the view meeting the floor between these shares of the framing distance
+Camera.GROUND_NEAR = 1       -- the view meeting the floor between these shares of the framing distance
+                             -- (not nearer than framing: the game cuts off what's close, see minDistance)
 Camera.GROUND_FAR = 1.6      -- counts as close enough,
 Camera.GROUND_MAX = 25       -- and so does any distance up to this: small things frame close, but on the
                              -- floor a usual editing view away they're still easy to see
