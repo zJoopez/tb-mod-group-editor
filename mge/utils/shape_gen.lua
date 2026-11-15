@@ -94,8 +94,12 @@ local function planGenerate(amount, gap, angle, sides, center, options)
         local turn = rotationAbout(axis, step * (i + 0.5))
         local dir, up = Mat3.apply(turn, { 1, 0, 0 }), Mat3.apply(turn, { 0, 0, 1 })
         local lift = liftHalves * s[3] / 2 -- out: the piece sits on the line, in: hangs under it
+        -- each piece has a stretch of the line as long as itself and the gap, turned to the stretch's
+        -- direction: it sits in the stretch's middle, half the gap before and after it. At its start (the
+        -- whole gap after it) every piece was shifted along the bend from where its turn belongs: a 360
+        -- loop with a gap had its pieces turned wrong for where they were
         local pos = {}
-        for k = 1, 3 do pos[k] = vertex[k] + dir[k] * s[1] / 2 + up[k] * lift end
+        for k = 1, 3 do pos[k] = vertex[k] + dir[k] * (s[1] + gap) / 2 + up[k] * lift end
         for k = 1, 3 do vertex[k] = vertex[k] + dir[k] * (s[1] + gap) end
         -- box corners, for the shape's bounds
         for cx = -1, 1, 2 do
