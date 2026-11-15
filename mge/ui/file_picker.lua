@@ -205,11 +205,11 @@ function FilePicker.open(options)
             if item.folder then
                 -- folder icon in front of the name, file rows keep their text at the same spot
                 local iconSize = row.size.h - 8
-                row:addChild({
+                MGE.Widgets.trackImage(row:addChild({
                     pos = { 5, (row.size.h - iconSize) / 2 },
                     size = { iconSize, iconSize },
                     bgImage = FOLDER_ICON,
-                })
+                }), FOLDER_ICON)
                 row:addChild({
                     pos = { iconSize + 11, 0 },
                     size = { row.size.w - iconSize - 16, row.size.h },

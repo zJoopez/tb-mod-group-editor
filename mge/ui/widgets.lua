@@ -83,13 +83,44 @@ end
 function Widgets.iconButton(parent, rect, image, onClick, style)
     local btn = Widgets.button(parent, rect, "", onClick, nil, style)
     local size = math.min(rect.w, rect.h) - 6
-    btn:addChild({
+    Widgets.trackImage(btn:addChild({
         pos = { (rect.w - size) / 2, (rect.h - size) / 2 },
         size = { size, size },
         bgImage = image,
-    })
+    }), image)
     return btn
 end
+
+-- Changing the game's graphics settings reloads its graphics (reload_graphics, the resolution_changed
+-- hook): the texture ids loaded before don't show the right images any more, icons came out garbled.
+-- Elements built after it were fine (a tab change), so every image element MGE makes is kept here with
+-- its path and loads its image again then, like a rebuilt one. Weak keys: killed elements drop out
+---@type table<UIElement, string>
+local trackedImages = setmetatable({}, { __mode = "k" })
+
+---Keeps an element showing an image so it loads it again after the game reloads its graphics
+---@param element UIElement made with bgImage = image
+---@param image string the same path
+---@return UIElement element
+function Widgets.trackImage(element, image)
+    trackedImages[element] = image
+    return element
+end
+
+---Loads every tracked image again (after reload_graphics). The old ids aren't unloaded: after the
+---reload they're not the images they were
+function Widgets.reloadImages()
+    for element, image in pairs(trackedImages) do
+        if element.destroyed then
+            trackedImages[element] = nil
+        else
+            element.bgImage = nil
+            element:updateImage(image, nil, true)
+        end
+    end
+end
+
+add_hook("resolution_changed", MGE.hookname, function() Widgets.reloadImages() end)
 
 ---@class WidgetRowButton
 ---@field label string|fun(): string text, for icon buttons the name shown when hovering (string labels)
