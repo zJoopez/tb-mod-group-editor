@@ -31,7 +31,7 @@ local function addLine(holder, text, row)
         pos = { 8, row * (holder.size.h / ROWS) },
         size = { holder.size.w - 16, holder.size.h / ROWS },
     })
-    line:addAdaptedText(text, nil, nil, nil, LEFTMID, 0.7, nil, nil)
+    line:addAdaptedText(text, nil, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE, nil, nil)
 end
 
 -- a joint's value when its line is missing: what the game's modmaker writes for a new joint, the values

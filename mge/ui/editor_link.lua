@@ -20,8 +20,7 @@ local Widgets = MGE.Widgets
 local Joints = MGE.Joints
 local ModData = MGE.ModData
 
-local ROW_H = 30
-local GRID_COLUMNS = 8
+local ROW_H = MGE.Widgets.ROW_H
 
 ---@type fun()? restyles the grid's cells from the current draft (ObjSelector.grid), set by its build
 local restyleGrid = nil
@@ -101,12 +100,13 @@ local function buildHeading(holder)
         text = joint and "Pick 2 objects" or "Empty: pick 2 objects, or Create 2 new ones"
     end
     local textHolder = row:addChild({ pos = { x + 4, 0 }, size = { w - 8, row.size.h } })
-    textHolder:addAdaptedText(text, nil, nil, nil, LEFTMID, 0.65, nil, nil)
+    textHolder:addAdaptedText(text, nil, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
 end
 
 ---Every object, a click picks or unpicks one. Picked ones read from the draft on every restyle (the
----draft is replaced when it's first edited, see Joints.editDraft). As many rows as fit the block
----(7: 56 objects), more objects go on pages with a pager under them, picks are kept across pages
+---draft is replaced when it's first edited, see Joints.editDraft). The same list as the Objects list
+---(ui/obj_selector.lua): its columns, Main.pageSize objects a page with the pager above only when there's
+---more than one page, it scrolls. Picks are kept across pages
 ---@param holder UIElement
 local function buildGrid(holder)
     restyleGrid = nil
@@ -117,26 +117,27 @@ local function buildGrid(holder)
     local rect = { x = 0, y = 0, w = holder.size.w, h = holder.size.h }
     if #objects == 0 then
         local empty = holder:addChild({ pos = { rect.x, rect.y }, size = { rect.w, rect.h } })
-        empty:addAdaptedText("No objects: Create 2 new ones", nil, nil, nil, CENTERMID, 0.65, nil, nil)
+        empty:addAdaptedText("No objects: Create 2 new ones", nil, nil, MGE.Widgets.FONT, CENTERMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
         return
     end
     local ScrollList = MGE.ScrollList
     local rowH = ScrollList.rowHeight
-    local rows = math.floor(holder.size.h / rowH)
-    if #objects > rows * GRID_COLUMNS then
-        rows = math.floor((holder.size.h - rowH) / rowH) -- one row for the pager
-        local pageCount
-        objects, gridPage, pageCount = ScrollList.paginate(objects, gridPage, rows * GRID_COLUMNS)
-        ScrollList.createPager(holder, { x = 0, y = rows * rowH, w = holder.size.w, h = rowH }, gridPage, pageCount,
+    local pageCount
+    objects, gridPage, pageCount = ScrollList.paginate(objects, gridPage, MGE.Main.pageSize)
+    if pageCount > 1 then
+        local pagerRow = holder:addChild({ pos = { 0, 0 }, size = { holder.size.w, rowH } })
+        ScrollList.createPager(pagerRow, { x = 0, y = 0, w = holder.size.w, h = rowH }, gridPage, pageCount,
             function(page)
                 gridPage = page
                 Rows.refreshBlocks({ "jointLinkGrid" })
             end)
+        rect.y = rowH
     end
-    rect.h = rows * rowH -- whole rows only: nothing scrolls, nothing shows outside the block
+    -- as tall as the Objects list (Main.LIST_ROWS rows, the pager's one of them), within the block
+    local listH = math.min(MGE.Main.LIST_ROWS * rowH, math.floor(holder.size.h / rowH) * rowH)
+    rect.h = listH - rect.y
     local max = MGE.MAX_NONSTATIC_OBJECTS
     restyleGrid = MGE.ObjSelector.grid(holder, rect, objects, {
-        columns = GRID_COLUMNS,
         label = function(obj) return tostring(obj.id) end,
         isSelected = function(obj) return Joints.draftHas(Joints.draftFor(slot), obj.id) end,
         isDimmed = function(obj) return ModData.isStatic(obj, true) end,
@@ -145,7 +146,7 @@ local function buildGrid(holder)
             return "Object " .. obj.id .. (ModData.isStatic(obj, true) and " (static)" or "") ..
                 (obj.id > max and "\nAbove id " .. max .. ": linking it reindexes it down" or "")
         end,
-    }, holder)
+    })
 end
 
 ---Create / Update: every selected slot gets the draft's link (Joints.commitDraft), or with nothing
@@ -179,14 +180,15 @@ local function buildButtons(holder)
     Rows.begin()
     local slot, slots = MGE.Main.selectedSlot(), selectedSlots()
     local draft, state = Joints.draftFor(slot), Joints.draftState(slot, slots)
-    local row = holder:addChild({ pos = { 0, 2 }, size = { holder.size.w, ROW_H - 4 } })
+    local row = holder:addChild({ pos = { Widgets.INSET, Widgets.INSET }, -- like the number fields
+        size = { holder.size.w - Widgets.INSET * 2, ROW_H - Widgets.INSET * 2 } })
     local buttons = Widgets.buttonRow(row, 0, row.size.h, {
         { label = anyJoint(slots) and "Update" or "Create", onClick = function() commit(slot) end },
         { label = "Reset", onClick = function()
             Joints.resetDraft()
             Joints.onDraftChanged()
         end },
-    }, 4, nil, Widgets.PANEL_STYLE)
+    }, Widgets.GAP, nil, Widgets.PANEL_STYLE)
     Rows.setHighlighted(buttons[1], state == "new" or state == "changed" or makesPair(slot, draft))
     if makesPair(slot, draft) then
         TBMenu:displayPopup(buttons[1], "Nothing picked: two new default objects side\nby side, joined, in front of the camera")
@@ -196,8 +198,8 @@ end
 ---@type EditorPanelModule
 return {
     blocks = {
-        { name = "jointLinkHead", build = buildHeading, panel = "jointLink", row = 0, rows = 1 },
-        { name = "jointLinkGrid", build = buildGrid, panel = "jointLink", row = 1, rows = 6 },
+        { name = "jointLinkGrid", build = buildGrid, panel = "jointLink", row = 0, rows = 6 },
+        { name = "jointLinkHead", build = buildHeading, panel = "jointLink", row = 6, rows = 1 }, -- under the grid
         { name = "jointLinkButtons", build = buildButtons, panel = "jointLink", row = 7, rows = 1 },
     },
 }

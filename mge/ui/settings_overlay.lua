@@ -7,6 +7,8 @@
 --   Atmo objects:   the atmo's size (AtmoLayer.maxAtmo), every one is drawn: the game's graphics
 --                   settings set how many shapes it draws a frame. Typed like the steps
 --   Shortcuts:      heading with a "?", hovering it lists the keyboard and mouse shortcuts
+-- Every row explains itself on the "?" at its end, like the editor rows
+--   UI size:        MGE's overall size (Widgets.UI_SCALE), restarts MGE to apply it
 -- Kept while the script runs, not saved. Clicking outside the panel, Close or Esc closes it, MGE.quit
 -- closes it too (MGE.settingsOverlay).
 if MGE.settingsOverlay and not MGE.settingsOverlay.destroyed then return end
@@ -18,7 +20,6 @@ local Gizmo = MGE.Gizmo
 
 ---@class MgeSetting
 ---@field label string
----@field info string small line under the row
 ---@field get fun(): boolean
 ---@field set fun(on: boolean)
 
@@ -26,13 +27,13 @@ local Gizmo = MGE.Gizmo
 local SETTINGS = {
     {
         label = "Camera follow",
-        info = "Camera looks at the selection, or the picked player",
+        -- the camera looks at the selection, or the picked player
         get = function() return Camera.followMoves end,
         set = function(on) Camera.followMoves = on end,
     },
     {
         label = "Highlights",
-        info = "Selection highlights. Preview, atmo and anchors still draw",
+        -- the selection highlights; the preview, atmo and anchors still draw
         get = function() return MGE.Highlight.enabled end,
         set = function(on) MGE.Highlight.enabled = on end,
     },
@@ -69,8 +70,7 @@ local ATMO_FIELDS = {
     { label = "Most atmo objects", min = 0, minInclusive = true, max = 100000, whole = true,
         get = function() return AtmoLayer.maxAtmo end, set = function(v) AtmoLayer.maxAtmo = v end },
 }
-local ATMO_INFO = "All are drawn: above 256, lower graphics\nsettings may be needed to see them all"
-local ATMO_INFO_LINES = 2
+-- (all are drawn: above 256, lower graphics settings may be needed to see them all)
 
 -- shortcut list, shown by the "?" next to the Shortcuts heading (the toolbar used to have it)
 local SHORTCUTS = table.concat({
@@ -89,19 +89,20 @@ local SHORTCUTS = table.concat({
     "Drag (off the gizmo) / wheel: orbit / zoom camera",
 }, "\n")
 
-local PANEL_W = 340
-local PAD = 12
-local TITLE_H = 44
-local ROW_H = 28
-local ROW_GAP = 4
-local SETTING_H = ROW_H + Widgets.INFO_HEIGHT + 8 -- row, info line, gap
-local SECTION_H = 26 -- section heading
-local SNAP_H = SECTION_H + #SNAP_STEPS * (ROW_H + ROW_GAP) + Widgets.INFO_HEIGHT + 8
-local ATMO_H = SECTION_H + #ATMO_FIELDS * (ROW_H + ROW_GAP) + Widgets.INFO_HEIGHT * ATMO_INFO_LINES + 8
-local SHORTCUTS_H = SECTION_H + 4
-local CLOSE_H = 28
-local LABEL_W = 150
-local panelH = TITLE_H + #SETTINGS * SETTING_H + SNAP_H + ATMO_H + SHORTCUTS_H + CLOSE_H + PAD * 2
+local px = Widgets.px -- MGE's overall size (Widgets.UI_SCALE)
+local PANEL_W = px(340)
+local PAD = px(12)
+local TITLE_H = px(44)
+local ROW_H = Widgets.ROW_H
+local ROW_GAP = px(4)
+local SETTING_H = ROW_H + ROW_GAP -- a row, its explanation is its "?" (like the editor rows)
+local SECTION_H = px(26) -- section heading
+local SNAP_H = SECTION_H + #SNAP_STEPS * SETTING_H
+local ATMO_H = SECTION_H + #ATMO_FIELDS * SETTING_H
+local SHORTCUTS_H = SECTION_H + px(4)
+local CLOSE_H = Widgets.ROW_H
+local LABEL_W = px(150)
+local panelH = TITLE_H + (#SETTINGS + 1) * SETTING_H + SNAP_H + ATMO_H + SHORTCUTS_H + CLOSE_H + PAD * 2 -- + UI size
 
 local overlay = TBMenu:spawnWindowOverlay(true) -- true: a click on the dark background closes it
 MGE.settingsOverlay = overlay
@@ -143,7 +144,7 @@ end
 local panel = overlay:addChild({
     pos = { (WIN_W - PANEL_W) / 2, (WIN_H - panelH) / 2 },
     size = { PANEL_W, panelH },
-    bgColor = TB_MENU_DEFAULT_BG_COLOR,
+    bgColor = Widgets.CONTENT_BG, -- like MGE's lists and editor
     shapeType = ROUNDED,
     rounded = 5,
     interactive = true, -- clicks on the panel don't reach the background's close handler
@@ -153,22 +154,31 @@ local title = panel:addChild({
     pos = { PAD, 0 },
     size = { PANEL_W - PAD * 2, TITLE_H },
 })
-title:addAdaptedText(true, "Settings", nil, nil, FONTS.BIG, nil, 0.65)
+title:addAdaptedText(true, "Settings", nil, nil, Widgets.FONT, nil, Widgets.TITLE_SCALE)
 
----Row inside the panel: label on the left, returns the space right of it for buttons or a field
+-- the "?" at a row's end, the same size and place as the editor rows' (ui/editor_rows.lua)
+local HELP_SIZE = ROW_H - px(6)
+local HELP_GAP = px(6) -- between the "?" and what's next to it
+
+---Row inside the panel: label on the left with its "?" at the end of the label column (rows with and
+---without one line up), returns the space right of it for buttons or a field
 ---@param y number
 ---@param label string
+---@param help string? shown when hovering the "?", none without
 ---@return UIElement content
-local function addRow(y, label)
+local function addRow(y, label, help)
     local row = panel:addChild({
         pos = { PAD, y },
         size = { PANEL_W - PAD * 2, ROW_H },
     })
     local labelElement = row:addChild({
         pos = { 0, 0 },
-        size = { LABEL_W, ROW_H },
+        size = { LABEL_W - (help and HELP_SIZE + HELP_GAP or 0), ROW_H },
     })
-    labelElement:addAdaptedText(label, nil, nil, nil, LEFTMID, Widgets.TEXT_SCALE)
+    labelElement:addAdaptedText(label, nil, nil, Widgets.FONT, LEFTMID, Widgets.TEXT_SCALE)
+    if help then
+        Widgets.helpIcon(row, LABEL_W - HELP_GAP - HELP_SIZE, (ROW_H - HELP_SIZE) / 2, HELP_SIZE, help)
+    end
     return row:addChild({
         pos = { LABEL_W, 0 },
         size = { row.size.w - LABEL_W, ROW_H },
@@ -176,15 +186,24 @@ local function addRow(y, label)
     })
 end
 
----Small centered line (row explanations)
+---Centered heading with a "?" right after its text (hovering it shows help). Heading and icon are
+---centered together: the text is measured the way the game's help popups measure theirs. The heading
+---area is one icon (and gap) narrower than the row, so its centered text sits half that left of the
+---panel's center and the icon fits after it. Not moved left with moveTo: a negative x counts from the
+---parent's right edge in toriui
 ---@param y number
 ---@param text string
-local function addInfo(y, text)
-    local info = panel:addChild({
+---@param help string
+local function addHelpHeading(y, text, help)
+    local heading = panel:addChild({
         pos = { PAD, y },
-        size = { PANEL_W - PAD * 2, Widgets.INFO_HEIGHT },
+        size = { PANEL_W - PAD * 2 - (HELP_SIZE + HELP_GAP), SECTION_H },
     })
-    Widgets.infoText(info, text)
+    heading:addAdaptedText(text, nil, nil, Widgets.FONT, CENTERMID, Widgets.TEXT_SCALE)
+    local textW = get_string_length(heading.dispstr and heading.dispstr[1] or text, heading.textFont)
+        * (heading.textScale or 1)
+    Widgets.helpIcon(panel, (PANEL_W + textW - HELP_SIZE - HELP_GAP) / 2 + HELP_GAP, y + (SECTION_H - HELP_SIZE) / 2,
+        HELP_SIZE, help)
 end
 
 ---@type { setting: MgeSetting, on: UIElement, off: UIElement }[]
@@ -196,35 +215,66 @@ local function refresh()
         local on = t.setting.get()
         for btn, value in pairs({ [t.on] = true, [t.off] = false }) do
             if not btn.destroyed then
-                btn.bgColor = on == value and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
+                btn.bgColor = on == value and Widgets.ACTIVE_COLOR or Widgets.STYLE.bg
             end
         end
     end
 end
 
 local y = TITLE_H
+
+-- UI size: MGE's overall size (Widgets.UI_SCALE). Every size is worked out when the window is built, so a
+-- new one restarts MGE: the mod stays as it is (the working copy and the atmo are kept over a restart,
+-- like any /ls of MGE), the undo history starts over
+do
+    local content = addRow(y, "UI size") -- picking one restarts MGE: the mod stays, the undo history starts over
+    local items = {}
+    for i, scale in ipairs(Widgets.UI_SCALES) do
+        items[i] = { label = math.floor(scale * 100 + 0.5) .. "%", onClick = function()
+            if scale == Widgets.UI_SCALE then return end
+            MGE_UI_SCALE = scale
+            local entry = MGE.scriptPath:gsub("mge/$", "") .. "mge.lua" -- the script /ls loads
+            echo("^04[MGE] UI size " .. items[i].label .. ", restarting MGE")
+            pcall(MGE.quit)
+            -- started again on the next frame, out of this click (the window it's in is gone)
+            add_hook("draw2d", "mge_restart", function()
+                remove_hooks("mge_restart")
+                dofile(entry)
+            end)
+        end }
+    end
+    local buttons = Widgets.buttonRow(content, 0, ROW_H, items, Widgets.GAP)
+    for i, scale in ipairs(Widgets.UI_SCALES) do
+        if scale == Widgets.UI_SCALE then buttons[i].bgColor = Widgets.ACTIVE_COLOR end
+    end
+    y = y + SETTING_H
+end
+
 for _, setting in ipairs(SETTINGS) do
     local content = addRow(y, setting.label)
     local created = Widgets.buttonRow(content, 0, ROW_H, {
         { label = "On", onClick = function() setting.set(true) refresh() end },
         { label = "Off", onClick = function() setting.set(false) refresh() end },
-    }, 4)
+    }, Widgets.GAP)
     table.insert(toggles, { setting = setting, on = created[1], off = created[2] })
-    addInfo(y + ROW_H + 2, setting.info)
     y = y + SETTING_H
 end
 
----A heading and one number field per setting, filled with the current values, and an info line
+---A heading and one number field per setting, filled with the current values. With infoText the heading
+---has a "?" explaining the section
 ---@param name string the heading
 ---@param fields MgeNumberSetting[]
----@param infoText string
----@param infoLines integer
-local function addNumberSection(name, fields, infoText, infoLines)
-    local heading = panel:addChild({
-        pos = { PAD, y },
-        size = { PANEL_W - PAD * 2, SECTION_H },
-    })
-    heading:addAdaptedText(name, nil, nil, nil, CENTERMID, Widgets.TEXT_SCALE)
+---@param infoText string?
+local function addNumberSection(name, fields, infoText)
+    if infoText then
+        addHelpHeading(y, name, infoText)
+    else
+        local heading = panel:addChild({
+            pos = { PAD, y },
+            size = { PANEL_W - PAD * 2, SECTION_H },
+        })
+        heading:addAdaptedText(name, nil, nil, Widgets.FONT, CENTERMID, Widgets.TEXT_SCALE)
+    end
     y = y + SECTION_H
     for _, step in ipairs(fields) do
         local content = addRow(y, step.label)
@@ -233,35 +283,15 @@ local function addNumberSection(name, fields, infoText, infoLines)
         Widgets.closeOnEscape(entry.input) -- Esc while typing closes too (applies it, like Close)
         table.insert(numberInputs, entry)
         applySnap(entry) -- fills the field with the current value
-        y = y + ROW_H + ROW_GAP
+        y = y + SETTING_H
     end
-    local info = panel:addChild({
-        pos = { PAD, y },
-        size = { PANEL_W - PAD * 2, Widgets.INFO_HEIGHT * infoLines },
-    })
-    Widgets.infoText(info, infoText)
-    y = y + Widgets.INFO_HEIGHT * infoLines + 8
 end
 
-addNumberSection("Gizmo snapping", SNAP_STEPS, SNAP_INFO, 1)
-addNumberSection("Atmo objects", ATMO_FIELDS, ATMO_INFO, ATMO_INFO_LINES)
+addNumberSection("Gizmo snapping", SNAP_STEPS, SNAP_INFO) -- three steps, one explanation: on the heading
+addNumberSection("Atmo objects", ATMO_FIELDS) -- the label says enough
 
--- Shortcuts heading with the "?" right after the text, hovering it lists them. Heading and icon are
--- centered together: the text is measured the way the game's help popups measure theirs
-local HELP_SIZE = 22 -- same as the editor rows' "?" (ui/editor_rows.lua)
-local HELP_GAP = 6
--- the heading area is one icon (and gap) narrower than the row, so its centered text sits half that
--- left of the panel's center and the icon fits after it. Not moved left with moveTo: a negative x
--- counts from the parent's right edge in toriui
-local shortcutsHeading = panel:addChild({
-    pos = { PAD, y },
-    size = { PANEL_W - PAD * 2 - (HELP_SIZE + HELP_GAP), SECTION_H },
-})
-shortcutsHeading:addAdaptedText("Shortcuts", nil, nil, nil, CENTERMID, Widgets.TEXT_SCALE)
-local headingW = get_string_length(shortcutsHeading.dispstr and shortcutsHeading.dispstr[1] or "Shortcuts",
-    shortcutsHeading.textFont) * (shortcutsHeading.textScale or 1)
-Widgets.helpIcon(panel, (PANEL_W + headingW - HELP_SIZE - HELP_GAP) / 2 + HELP_GAP, y + (SECTION_H - HELP_SIZE) / 2,
-    HELP_SIZE, SHORTCUTS)
+-- Shortcuts heading with the "?" right after the text, hovering it lists them
+addHelpHeading(y, "Shortcuts", SHORTCUTS)
 y = y + SECTION_H
 
 Widgets.button(panel, { x = PAD, y = panelH - PAD - CLOSE_H, w = PANEL_W - PAD * 2, h = CLOSE_H }, "Close",

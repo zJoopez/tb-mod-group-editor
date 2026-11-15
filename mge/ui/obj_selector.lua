@@ -7,11 +7,11 @@ local ScrollList = MGE.ScrollList
 local Widgets = MGE.Widgets
 
 local GRID_COLUMNS = 6
-local GRID_GAP = 3
+local GRID_GAP = MGE.Widgets.GAP -- the number fields' gap
 
--- cell colors: selected cells are pale with dark text so the state reads at a glance
+-- cell colors: selected cells are lighter (Widgets.SELECTED_COLOR), the text stays white
 local CELL_TEXT = { 1, 1, 1, 1 }
-local CELL_SELECTED_TEXT = { 0.35, 0.05, 0.05, 1 }
+local CELL_SELECTED_TEXT = CELL_TEXT
 local CELL_DIMMED_TEXT = { 1, 1, 1, 0.35 } -- e.g. an empty joint slot
 local CELL_DIMMED_BG = { 0, 0, 0, 0.15 }
 
@@ -20,12 +20,12 @@ local CELL_DIMMED_BG = { 0, 0, 0, 0.15 }
 ---@param dimmed boolean?
 local function styleCell(cell, selected, dimmed)
     if selected then
-        cell.bgColor = TB_MENU_DEFAULT_LIGHTEST_COLOR
-        cell.hoverColor = TB_MENU_DEFAULT_LIGHTEST_COLOR
+        cell.bgColor = Widgets.SELECTED_COLOR
+        cell.hoverColor = Widgets.SELECTED_COLOR
         cell.uiColor = CELL_SELECTED_TEXT
     else
         cell.bgColor = dimmed and CELL_DIMMED_BG or TB_MENU_DEFAULT_BG_COLOR
-        cell.hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR
+        cell.hoverColor = Widgets.HOVER_COLOR
         cell.uiColor = dimmed and CELL_DIMMED_TEXT or CELL_TEXT
     end
     cell.pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
@@ -46,7 +46,7 @@ end
 ---@param rect { x: number, y: number, w: number, h: number }
 ---@param items any[]
 ---@param opts GridListOptions
----@param toReload UIElement
+---@param toReload UIElement? see ScrollList.create
 ---@return fun() restyle the cells from opts.isSelected / isDimmed again, for selections changed elsewhere
 ---(the Link tab's grid after a world click), keeps the scroll position a rebuild would reset
 function obj_selector.grid(view, rect, items, opts, toReload)
@@ -72,17 +72,18 @@ function obj_selector.grid(view, rect, items, opts, toReload)
         local cellW = (rowElement.size.w - GRID_GAP * (columns + 1)) / columns
         for c, item in ipairs(rowItems) do
             local cell = rowElement:addChild({
-                pos = { GRID_GAP + (c - 1) * (cellW + GRID_GAP), 2 },
-                size = { cellW, rowElement.size.h - 4 },
+                -- GRID_GAP between cells and between rows (half of it above and under each cell)
+                pos = { GRID_GAP + (c - 1) * (cellW + GRID_GAP), GRID_GAP / 2 },
+                size = { cellW, rowElement.size.h - GRID_GAP },
                 interactive = true,
                 -- colors given on creation too, toriui sets up the hover animation from them
                 bgColor = TB_MENU_DEFAULT_BG_COLOR,
-                hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
+                hoverColor = Widgets.HOVER_COLOR,
                 pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
             }, true)
             cells[item] = cell
             restyle(item, cell)
-            cell:addAdaptedText(opts.label(item), nil, nil, nil, CENTERMID, 0.7, nil, nil)
+            cell:addAdaptedText(opts.label(item), nil, nil, MGE.Widgets.FONT, CENTERMID, MGE.Widgets.TEXT_SCALE, nil, nil)
             local text = opts.popup and opts.popup(item)
             if text then TBMenu:displayPopup(cell, text) end
             cell:addMouseUpHandler(function()
@@ -90,7 +91,7 @@ function obj_selector.grid(view, rect, items, opts, toReload)
                 restyleAll()
             end)
         end
-    end, toReload)
+    end, toReload, nil, true) -- plain rows: the cells are the buttons
     return restyleAll
 end
 
@@ -106,37 +107,27 @@ local function create(view, fullList, mode)
     Main.page = page -- clamped, e.g. after deleting objects on last page
     local listElementHeight = ScrollList.rowHeight
 
-    -- Spawning a parent element for any object that needs to be reloaded every frame
-    local toReload = UIElement:new({
-        parent = view,
-        pos = { 0, 0 },
-        size = { view.size.w, view.size.h }
-    })
+    -- pages (Main.pageSize objects each) only when there's more than one: a row above the grid
+    local pagerH = pageCount > 1 and listElementHeight or 0
+    if pageCount > 1 then
+        local pagerRow = view:addChild({
+            pos = { 0, 0 },
+            size = { view.size.w, pagerH }, -- no color of its own: the list's, the grid goes on under it
+        })
+        ScrollList.createPager(pagerRow, { x = 0, y = 0, w = pagerRow.size.w, h = pagerRow.size.h }, page, pageCount,
+            function(newPage)
+                Main.page = newPage
+                Main.updateWindow()
+            end)
+    end
 
-    -- pages, Select All is an icon in the bottom bar
-    local topBar = UIElement:new({
-        parent = toReload,
-        pos = { 0, 0 },
-        size = { view.size.w, listElementHeight },
-        bgColor = Widgets.TAB_PANEL_SOLID, -- list bars match the tab panel they sit in
-        interactive = true
-    })
-
-    local botBar = UIElement:new({
-        parent = toReload,
-        pos = { 0, -listElementHeight },
-        size = { view.size.w, listElementHeight },
-        bgColor = Widgets.TAB_PANEL_SOLID, -- list bars match the tab panel they sit in
-        interactive = true
-    })
-
-    -- grid between top and bottom bars, one cell per object. Click selects only that object, Shift +
-    -- click adds / removes it (ModData.clickSelect, same as clicking objects in the world)
+    -- the grid, one cell per object, the whole list area (its buttons are in the bar under it). Click selects only
+    -- that object, Shift + click adds / removes it (ModData.clickSelect, same as clicking objects in the world)
     obj_selector.grid(view, {
         x = 0,
-        y = topBar.size.h,
+        y = pagerH,
         w = view.size.w,
-        h = view.size.h - topBar.size.h - botBar.size.h
+        h = view.size.h - pagerH
     }, list, {
         label = function(obj) return (atmo and "A" or "") .. tostring(obj.id) end,
         isSelected = function(obj) return obj.selected end,
@@ -146,13 +137,7 @@ local function create(view, fullList, mode)
             if selected then MGE.Camera.followSelection() end
             Main.onSelectionChanged()
         end,
-    }, toReload)
-
-    ScrollList.createPager(topBar, { x = 0, y = 0, w = topBar.size.w, h = topBar.size.h }, page, pageCount,
-        function(newPage)
-            Main.page = newPage
-            Main.updateWindow()
-        end)
+    })
 
     -- lit while everything the list shows is selected
     local function allSelected()
@@ -164,11 +149,11 @@ local function create(view, fullList, mode)
     end
 
     -- New adds the default object, Duplicate/Delete/Export act on selected objects, Import opens the
-    -- asset list (ui/assets.lua), Select All is Ctrl + A. In the list's bar so they're there on every tab
-    -- (Reindex is in the editor's Advanced panel). Icons share the width, their names show on hover.
+    -- asset list (ui/assets.lua), Select All is Ctrl + A. In the bar under the list (Main.setListActions) so they're
+    -- there on every tab (Reindex is in the editor's Advanced panel), their names show on hover.
     -- On the Atmo list they're the atmo objects': New adds a default box to the atmo, Import / Export read
     -- and write .atmo files. MGE.Editor loads after this module, so it's looked up on click
-    local barIcons = Widgets.barButtons(botBar, {
+    local barIcons = Main.setListActions({
         -- selects all, or deselects all when everything is selected
         { label = "Select / deselect all (Ctrl + A)", icon = MGE.scriptPath .. "textures/selectall.tga", wide = true,
             onClick = function() if atmo then Main.toggleSelectAllAtmo() else Main.toggleSelectAll() end end },
@@ -189,7 +174,7 @@ local function create(view, fullList, mode)
     -- button's hover popup, which uses the same per-frame slot
     local selectAllButton = barIcons[1] --[[@as UIElement]]
     Widgets.addDrawBefore(selectAllButton, function()
-        selectAllButton.bgColor = allSelected() and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
+        selectAllButton.bgColor = allSelected() and MGE.Widgets.ACTIVE_COLOR or Main.ACTIONS_BG
     end)
 end
 

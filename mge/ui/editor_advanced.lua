@@ -146,11 +146,11 @@ local function buildModel(holder, selected)
         "the shape still collides. Trash icon: no model.")
     local labels = { [false] = "Pick model", mixed = "Mixed" }
     local label = current == nil and "-" or labels[current] or tostring(current)
-    local gap = 4
-    local h = row.size.h - 4
+    local gap, inset = Widgets.GAP, Widgets.INSET -- like the number fields
+    local h = row.size.h - inset * 2
     local noneW = h -- square icon button, the model name gets the rest
-    local modelW = contentW - 4 - gap - noneW
-    Widgets.button(row, { x = contentX + 2, y = 2, w = modelW, h = h }, label, function()
+    local modelW = contentW - inset * 2 - gap - noneW
+    Widgets.button(row, { x = contentX + inset, y = inset, w = modelW, h = h }, label, function()
         if #getSelected() == 0 then return end
         MGE.FilePicker.open({
             title = "Pick Model",
@@ -163,7 +163,7 @@ local function buildModel(holder, selected)
         })
     end, nil, Widgets.PANEL_STYLE)
     -- game's trash icon, like the object list's Delete
-    local none = Widgets.iconButton(row, { x = contentX + 2 + modelW + gap, y = 2, w = noneW, h = h },
+    local none = Widgets.iconButton(row, { x = contentX + inset + modelW + gap, y = inset, w = noneW, h = h },
         "../textures/menu/general/buttons/trash.tga", function() setModel(nil) end, Widgets.PANEL_STYLE)
     TBMenu:displayPopup(none, "No model (remove)")
 end

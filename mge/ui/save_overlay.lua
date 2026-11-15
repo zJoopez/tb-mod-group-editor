@@ -29,7 +29,7 @@ end
 
 local modSave = ModSaveOverlay:addChild({
     shift = { WIN_W / 4, WIN_H / 2 - 90 },
-    bgColor = TB_MENU_DEFAULT_BG_COLOR,
+    bgColor = MGE.Widgets.CONTENT_BG, -- like MGE's lists and editor
     shapeType = ROUNDED,
     rounded = 5,
     interactive = true
@@ -37,44 +37,26 @@ local modSave = ModSaveOverlay:addChild({
 
 local modSaveTitle = modSave:addChild({
     pos = { 10, 0 },
-    size = { modSave.size.w - 20, 50 }
+    size = { modSave.size.w - 20, MGE.Widgets.px(50) }
 })
-modSaveTitle:addAdaptedText(true, saveContext.title or "Mod Name", nil, nil, FONTS.BIG, nil, 0.65)
+modSaveTitle:addAdaptedText(true, saveContext.title or "Mod Name", nil, nil, MGE.Widgets.FONT, nil, MGE.Widgets.TITLE_SCALE)
 
-local modSaveButton = modSave:addChild({
-    pos = { modSave.size.w / 2 + 5, -50 },
-    size = { modSave.size.w / 2 - 15, 40 },
-    interactive = true,
-    bgColor = { 0, 0, 0, 0.1 },
-    hoverColor = { 0, 0, 0, 0.3 },
-    pressedColor = { 1, 1, 1, 0.2 },
-    rounded = 4
-}, true)
-modSaveButton:addAdaptedText(false, TB_MENU_LOCALIZED.BUTTONSAVE)
-
-local modCancelButton = modSave:addChild({
-    pos = { 10, -50 },
-    size = { modSave.size.w / 2 - 15, 40 },
-    interactive = true,
-    bgColor = { 0, 0, 0, 0.1 },
-    hoverColor = { 0, 0, 0, 0.3 },
-    pressedColor = { 1, 1, 1, 0.2 },
-    rounded = 4
-}, true)
-modCancelButton:addAdaptedText(false, TB_MENU_LOCALIZED.BUTTONCANCEL)
-modCancelButton:addMouseHandlers(nil, function()
-    closeOverlay()
-end)
+-- MGE's buttons (Widgets.button): the menu's colors, font and shape. Save's click is added below
+local buttonH = MGE.Widgets.px(40)
+local modSaveButton = MGE.Widgets.button(modSave, { x = modSave.size.w / 2 + 5, y = -MGE.Widgets.px(50),
+    w = modSave.size.w / 2 - 15, h = buttonH }, TB_MENU_LOCALIZED.BUTTONSAVE)
+MGE.Widgets.button(modSave, { x = 10, y = -MGE.Widgets.px(50), w = modSave.size.w / 2 - 15, h = buttonH },
+    TB_MENU_LOCALIZED.BUTTONCANCEL, closeOverlay)
 
 local replayNameBackground = modSave:addChild({
     pos = { 10, modSaveTitle.size.h + modSaveTitle.shift.y + 10 },
-    size = { modSave.size.w - 20, 40 },
-    bgColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+    size = { modSave.size.w - 20, MGE.Widgets.px(40) },
+    bgColor = MGE.Widgets.BAR_COLOR, -- the name field, darker than the panel
     rounded = 4
 }, true)
 local replayNameInput = TBMenu:spawnTextField2(replayNameBackground, {}, nil, saveContext.placeholder or "Enter Mod Name", {
-    fontId = 4,
-    textScale = 0.7,
+    fontId = MGE.Widgets.FONT,
+    textScale = MGE.Widgets.TEXT_SCALE,
     textAlign = CENTERMID,
     darkerMode = true
 })

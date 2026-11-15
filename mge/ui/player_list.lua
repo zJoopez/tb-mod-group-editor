@@ -98,21 +98,10 @@ end
 
 ---@param view UIElement list area, emptied by the caller
 function player_list.create(view)
-    local toReload = view:addChild({
-        pos = { 0, 0 },
-        size = { view.size.w, view.size.h },
-    })
-    -- same bottom bar as the object list, same order: Select all, New, Duplicate, Import (gives every
+    -- the object list's buttons under the list, same order: Select all, New, Duplicate, Import (gives every
     -- selected player the picked model), Export (one model: the first selected player's), Delete.
     -- New / Duplicate change numplayers (at most Players.MAX), Delete keeps one player
-    local barH = ScrollList.rowHeight
-    local botBar = toReload:addChild({
-        pos = { 0, -barH },
-        size = { view.size.w, barH },
-        bgColor = MGE.Widgets.TAB_PANEL_SOLID, -- list bars match the tab panel they sit in
-        interactive = true,
-    })
-    local barIcons = MGE.Widgets.barButtons(botBar, {
+    local barIcons = Main.setListActions({
         { label = "Select / deselect all players (Ctrl + A)", icon = MGE.scriptPath .. "textures/selectall.tga", wide = true,
             onClick = function() Main.toggleSelectAllPlayers() end },
         { label = "New player (Ctrl + N), at most " .. MGE.Players.MAX, icon = "../textures/menu/general/buttons/addsign.tga", wide = true,
@@ -129,23 +118,23 @@ function player_list.create(view)
     -- lit while every player is selected, like the object list's (after the hover popup, same slot)
     local selectAllButton = barIcons[1] --[[@as UIElement]]
     MGE.Widgets.addDrawBefore(selectAllButton, function()
-        selectAllButton.bgColor = allSelected() and TB_MENU_DEFAULT_LIGHTER_COLOR or MGE.Widgets.STYLE.bg
+        selectAllButton.bgColor = allSelected() and MGE.Widgets.ACTIVE_COLOR or Main.ACTIONS_BG
     end)
 
     local ids = {}
     for i = 0, Main.getPlayerCount() - 1 do table.insert(ids, i) end
 
-    ScrollList.create(view, { x = 0, y = 0, w = view.size.w, h = view.size.h - barH }, ids, function(row, id)
-        row:addAdaptedText("Player " .. id, 8, nil, nil, LEFTMID, 0.7, nil, nil)
+    ScrollList.create(view, { x = 0, y = 0, w = view.size.w, h = view.size.h }, ids, function(row, id)
+        row:addAdaptedText("Player " .. id, 8, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE, nil, nil)
         local info = row:addChild({
             pos = { row.size.w / 2, 0 },
             size = { row.size.w / 2 - 8, row.size.h },
         })
-        info:addAdaptedText(describeModel(id), nil, nil, nil, RIGHTMID, 0.6, nil, nil)
+        info:addAdaptedText(describeModel(id), nil, nil, MGE.Widgets.FONT, RIGHTMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
         if Main.selectedPlayers[id] then row.bgColor = ScrollList.selectedColor end
         -- click picks the player, Shift + click adds / removes it (Main.selectPlayer rebuilds the list)
         row:addMouseUpHandler(function() Main.selectPlayer(id, get_keyboard_shift() ~= 0) end)
-    end, toReload)
+    end)
 end
 
 return player_list

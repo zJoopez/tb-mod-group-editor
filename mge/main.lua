@@ -581,14 +581,31 @@ add_hook("key_down", MGE.hookname, function(key)
     end
 end)
 
+-- The game's HUD is hidden while MGE's window shows (the top bar and panel cover where it is), back as it
+-- was when F1 hides the window or MGE closes. The setting from before MGE is kept in a global, so a
+-- script restart while the HUD is hidden doesn't take "hidden" for the player's own setting
+MGE_HUD_BEFORE = MGE_HUD_BEFORE or get_option("hud")
+
+---@param hidden boolean
+function MGE.hideGameHud(hidden)
+    set_option("hud", hidden and 0 or (MGE_HUD_BEFORE or 1))
+end
+table.insert(MGE.onQuit, function()
+    MGE.hideGameHud(false)
+    MGE_HUD_BEFORE = nil
+end)
+MGE.hideGameHud(true)
+
 add_hook("key_up", MGE.hookname, function(key)
     if key ~= 282 then return end --F1
     if MGE.isPlacing() then return end -- the placement view shows it again when it ends
     local Main = MGE.Main
     if Main.window.displayed then
         Main.window:hide(false)
+        MGE.hideGameHud(false)
     else
         Main.window:show(false)
+        MGE.hideGameHud(true)
         Main.updateWindow()
     end
 end)

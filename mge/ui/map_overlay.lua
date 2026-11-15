@@ -68,14 +68,15 @@ local FIELDS = {
         info = "Simplify: how much thicker joined floor tiles and\nstrips may get (bumps, tilt), map units." },
 }
 
-local PANEL_W = 420
-local PAD = 12
-local TITLE_H = 44
-local ROW_H = 28
-local ROW_GAP = 4
-local LABEL_W = 110
-local HELP_SIZE = 22
-local BUTTON_H = 32
+local px = Widgets.px -- MGE's overall size (Widgets.UI_SCALE)
+local PANEL_W = px(420)
+local PAD = px(12)
+local TITLE_H = px(44)
+local ROW_H = Widgets.ROW_H
+local ROW_GAP = px(4)
+local LABEL_W = px(110)
+local HELP_SIZE = ROW_H - px(6)
+local BUTTON_H = px(32)
 local ROWS = 1 + #FIELDS + 2 -- Map, fields, Terrain and Clips
 local panelH = TITLE_H + ROWS * (ROW_H + ROW_GAP) + Widgets.INFO_HEIGHT * 2 + 8 + BUTTON_H + PAD * 2
 
@@ -101,7 +102,7 @@ end
 local panel = overlay:addChild({
     pos = { (WIN_W - PANEL_W) / 2, (WIN_H - panelH) / 2 },
     size = { PANEL_W, panelH },
-    bgColor = TB_MENU_DEFAULT_BG_COLOR,
+    bgColor = Widgets.CONTENT_BG, -- like MGE's lists and editor
     shapeType = ROUNDED,
     rounded = 5,
     interactive = true, -- clicks on the panel don't reach the background's close handler
@@ -111,7 +112,7 @@ local title = panel:addChild({
     pos = { PAD, 0 },
     size = { PANEL_W - PAD * 2, TITLE_H },
 })
-title:addAdaptedText(true, "Convert Map", nil, nil, FONTS.BIG, nil, 0.65)
+title:addAdaptedText(true, "Convert Map", nil, nil, Widgets.FONT, nil, Widgets.TITLE_SCALE)
 
 ---Row inside the panel: label on the left, "?" on the right when there's help, returns the space
 ---between them
@@ -128,7 +129,7 @@ local function addRow(y, label, help)
         pos = { 0, 0 },
         size = { LABEL_W, ROW_H },
     })
-    labelElement:addAdaptedText(label, nil, nil, nil, LEFTMID, Widgets.TEXT_SCALE)
+    labelElement:addAdaptedText(label, nil, nil, Widgets.FONT, LEFTMID, Widgets.TEXT_SCALE)
     local helpW = help and HELP_SIZE + 6 or 0
     if help then Widgets.helpIcon(row, row.size.w - HELP_SIZE, (ROW_H - HELP_SIZE) / 2, HELP_SIZE, help) end
     return row:addChild({
@@ -190,14 +191,14 @@ local function addToggle(label, key, help)
     local function refresh()
         for i, btn in ipairs(buttons) do
             if not btn.destroyed then
-                btn.bgColor = (state[key] == (i == 1)) and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.PANEL_STYLE.bg
+                btn.bgColor = (state[key] == (i == 1)) and Widgets.ACTIVE_COLOR or Widgets.PANEL_STYLE.bg
             end
         end
     end
     buttons = Widgets.buttonRow(content, 0, ROW_H, {
         { label = "On", onClick = function() state[key] = true refresh() end },
         { label = "Off", onClick = function() state[key] = false refresh() end },
-    }, 4, nil, Widgets.PANEL_STYLE)
+    }, Widgets.GAP, nil, Widgets.PANEL_STYLE)
     refresh()
     y = y + ROW_H + ROW_GAP
 end

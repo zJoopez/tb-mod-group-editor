@@ -81,21 +81,10 @@ end
 
 ---@param view UIElement list area, emptied by the caller
 function joint_list.create(view)
-    local toReload = view:addChild({
-        pos = { 0, 0 },
-        size = { view.size.w, view.size.h },
-    })
-    -- the object list's bottom bar, same icons: Select all and Delete only. A new joint is an empty slot
+    -- the object list's buttons under the list, Select all and Delete only. A new joint is an empty slot
     -- picked in the grid (Create on the Link tab), Ctrl + N / D still pick the lowest empty slot /
     -- duplicate; no Import / Export: joints come with the objects they link
-    local barH = ScrollList.rowHeight
-    local botBar = toReload:addChild({
-        pos = { 0, -barH },
-        size = { view.size.w, barH },
-        bgColor = Widgets.TAB_PANEL_SOLID, -- list bars match the tab panel they sit in
-        interactive = true,
-    })
-    local barIcons = Widgets.barButtons(botBar, {
+    local barIcons = Main.setListActions({
         { label = "Select all joints, or only the current slot (Ctrl + A)", icon = MGE.scriptPath .. "textures/selectall.tga", wide = true,
             onClick = function() Main.toggleSelectAllJoints() end },
         -- last, away from Select all
@@ -105,10 +94,10 @@ function joint_list.create(view)
     -- lit while every joint is selected, like the object list's (after the hover popup, same slot)
     local selectAllButton = barIcons[1] --[[@as UIElement]]
     Widgets.addDrawBefore(selectAllButton, function()
-        selectAllButton.bgColor = allSelected() and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
+        selectAllButton.bgColor = allSelected() and MGE.Widgets.ACTIVE_COLOR or Main.ACTIONS_BG
     end)
 
-    MGE.ObjSelector.grid(view, { x = 0, y = 0, w = view.size.w, h = view.size.h - barH }, slots(), {
+    MGE.ObjSelector.grid(view, { x = 0, y = 0, w = view.size.w, h = view.size.h }, slots(), {
         label = function(slot) return tostring(slot.id) end,
         isSelected = function(slot) return Main.selectedJoints[slot.id] end,
         isDimmed = function(slot) return slot.joint == nil end,
@@ -117,7 +106,7 @@ function joint_list.create(view)
             if not slot.joint then return "Joint " .. slot.id .. ": empty, link 2 objects on the Link tab" end
             return "Joint " .. slot.id .. ": objects " .. tostring(slot.joint.obj1) .. " and " .. tostring(slot.joint.obj2)
         end,
-    }, toReload)
+    })
 end
 
 return joint_list

@@ -436,7 +436,7 @@ end
 ---@param button UIElement
 ---@param on boolean
 local function light(button, on)
-    if not button.destroyed then button.bgColor = on and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg end
+    if not button.destroyed then button.bgColor = on and Widgets.ACTIVE_COLOR or Widgets.STYLE.bg end
 end
 
 ---Bar at the top, MGE's window is hidden meanwhile:
@@ -445,15 +445,16 @@ end
 ---  Floors first | Center first (the budget's order, MapConv.priority)
 ---  counts
 local function buildBar()
-    local w, pad, gap = 720, 6, 24
-    local rowH, toggleH = 30, 26
+    local px = Widgets.px -- MGE's overall size (Widgets.UI_SCALE)
+    local w, pad, gap = px(720), px(6), px(24)
+    local rowH, toggleH = px(30), px(26)
     local h = pad + rowH + 4 + toggleH + 4 + Widgets.INFO_HEIGHT + 4 + pad
     local window = MGE.Main.window
     bar = UIElement:new({
         globalid = window.globalid, -- drawn with MGE's window
         pos = { (WIN_W - w) / 2, 10 },
         size = { w, h },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+        bgColor = Widgets.CONTENT_BG, -- like MGE's lists and editor
         shapeType = ROUNDED,
         rounded = 5,
         interactive = true, -- clicks on it don't reach the world
@@ -510,7 +511,7 @@ local function buildBar()
             refresh()
         end },
         { label = "Covered", onClick = function() flip("dropCovered") end },
-    }, 4, 0.6)
+    }, 4, Widgets.TEXT_SCALE_SMALL)
     TBMenu:displayPopup(toggles[1], "Over the budget, what can be stood on goes in\nbefore equally big walls and ceilings")
     TBMenu:displayPopup(toggles[2], "Over the budget, the middle of the region goes in\nfirst, its edges are left out first")
     TBMenu:displayPopup(toggles[3], "Joins nearly flat neighbouring slabs (terrain floors,\nfloor tiles) into bigger ones: far fewer boxes")

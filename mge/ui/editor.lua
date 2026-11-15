@@ -55,9 +55,9 @@ local MODULES = {
     dofile(MGE.scriptPath .. "ui/editor_atmo.lua"), -- the Atmo list's Atmo tab
 }
 
-local ROW_H = 30
-local FOOTER_GAP = 4
-local FOOTER_H = 24 -- reset button
+local ROW_H = MGE.Widgets.ROW_H
+local FOOTER_GAP = MGE.Widgets.px(4)
+local FOOTER_H = ROW_H -- reset button
 -- panel heights, all as tall as the tallest (Generate, 8 rows) so the reset button stays in place
 -- between tabs. The editor area in ui/main.lua fits them with the reset button under them
 local PANEL_H = 8 * ROW_H
@@ -344,8 +344,10 @@ function editor.create(parent)
         pos = { 0, 0 },
         size = { parent.size.w, FOOTER_H },
     })
-    Widgets.buttonRow(inputFooter, 0, FOOTER_H, { { label = "Reset inputs", onClick = clearInputs } }, 0, nil, Widgets.PANEL_STYLE)
-    -- Duplicate/Delete are in the object list's bottom bar (ui/obj_selector.lua), Save in the toolbar
+    local inset = Widgets.INSET -- lines up with the number fields above
+    Widgets.button(inputFooter, { x = inset, y = inset, w = inputFooter.size.w - inset * 2, h = FOOTER_H - inset * 2 },
+        "Reset inputs", clearInputs, nil, Widgets.PANEL_STYLE)
+    -- Duplicate/Delete are in the list's button bar (Main.setListActions), Save in the toolbar
     -- (ui/main.lua). Positions and visibility are applied by Main.applyTab after create
 end
 

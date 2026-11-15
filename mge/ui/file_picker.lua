@@ -23,11 +23,12 @@ MGE.FilePicker = FilePicker
 
 local ScrollList = MGE.ScrollList
 
-local OVERLAY_W = 420
-local OVERLAY_H = 460
-local PADDING = 10
-local TITLE_H = 44
-local BUTTON_H = 40
+local px = MGE.Widgets.px -- MGE's overall size (Widgets.UI_SCALE)
+local OVERLAY_W = px(420)
+local OVERLAY_H = px(460)
+local PADDING = px(10)
+local TITLE_H = px(44)
+local BUTTON_H = px(40)
 local DOUBLE_CLICK_TIME = 0.35
 local FOLDER_ICON = "../textures/menu/general/folder.tga" -- the game's own, shown in front of folder rows
 
@@ -93,7 +94,7 @@ function FilePicker.open(options)
     local box = overlay:addChild({
         pos = { (WIN_W - w) / 2, (WIN_H - h) / 2 },
         size = { w, h },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+        bgColor = MGE.Widgets.CONTENT_BG, -- like MGE's lists and editor
         shapeType = ROUNDED,
         rounded = 5,
         interactive = true,
@@ -118,21 +119,21 @@ function FilePicker.open(options)
     local header = toReload:addChild({
         pos = { 0, 0 },
         size = { w, listY },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+        bgColor = MGE.Widgets.CONTENT_BG, -- like MGE's lists and editor
     })
     header:addChild({
         pos = { PADDING, 0 },
         size = { innerW, TITLE_H },
-    }):addAdaptedText(true, options.title, nil, nil, FONTS.BIG, nil, 0.6)
+    }):addAdaptedText(true, options.title, nil, nil, MGE.Widgets.FONT, nil, MGE.Widgets.TITLE_SCALE)
     local folderBar = header:addChild({
         pos = { PADDING, TITLE_H },
         size = { innerW, barH },
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
+        bgColor = MGE.Widgets.BAR_COLOR, -- the folder bar, darker than the panel
     })
     local footer = toReload:addChild({
         pos = { 0, listY + listH },
         size = { w, h - listY - listH },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
+        bgColor = MGE.Widgets.CONTENT_BG, -- like MGE's lists and editor
     })
     local rowsHolder = box:addChild({
         pos = { PADDING, listY },
@@ -178,14 +179,14 @@ function FilePicker.open(options)
                     rootIndex, selectedPath = i, nil
                     openFolder("")
                 end, nil, MGE.Widgets.PANEL_STYLE)
-            if i == rootIndex then btn.bgColor = TB_MENU_DEFAULT_LIGHTER_COLOR end
+            if i == rootIndex then btn.bgColor = MGE.Widgets.ACTIVE_COLOR end
         end
         local switchesW = #roots > 1 and #roots * switchW or 0
         folderBar:addChild({
             pos = { backW + 5, 0 },
             size = { innerW - backW - 10 - switchesW, barH },
         }):addAdaptedText((#roots > 1 and "" or roots[rootIndex].label .. (folder ~= "" and "/" or "")) .. folder,
-            nil, nil, nil, LEFTMID, 0.6, nil, nil)
+            nil, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
 
         local dir = folder == "" and root() or root() .. "/" .. folder
         local prefix = folder == "" and "" or folder .. "/"
@@ -213,11 +214,11 @@ function FilePicker.open(options)
                 row:addChild({
                     pos = { iconSize + 11, 0 },
                     size = { row.size.w - iconSize - 16, row.size.h },
-                }):addAdaptedText(item.label, nil, nil, nil, LEFTMID, 0.6, nil, nil)
+                }):addAdaptedText(item.label, nil, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
                 row:addMouseUpHandler(function() openFolder(item.folder) end)
                 return
             end
-            row:addAdaptedText(item.label, 5, nil, nil, LEFTMID, 0.6, nil, nil)
+            row:addAdaptedText(item.label, 5, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
             local function select()
                 if selectedRow then
                     selectedRow.row.bgColor = ScrollList.getRowColor(selectedRow.index)
@@ -242,18 +243,9 @@ function FilePicker.open(options)
         { label = TB_MENU_LOCALIZED.BUTTONCANCEL, onClick = close },
         { label = options.confirmLabel or "OK", onClick = confirm },
     }) do
-        local btn = footer:addChild({
-            pos = { PADDING + (i - 1) * (buttonW + PADDING), PADDING },
-            size = { buttonW, BUTTON_H },
-            interactive = true,
-            bgColor = { 0, 0, 0, 0.1 },
-            hoverColor = { 0, 0, 0, 0.3 },
-            pressedColor = { 1, 1, 1, 0.2 },
-            shapeType = ROUNDED,
-            rounded = 4,
-        }, true)
-        btn:addAdaptedText(false, info.label)
-        btn:addMouseHandlers(nil, info.onClick)
+        -- MGE's buttons (Widgets.button): the menu's colors, font and shape
+        MGE.Widgets.button(footer, { x = PADDING + (i - 1) * (buttonW + PADDING), y = PADDING, w = buttonW,
+            h = BUTTON_H }, info.label, info.onClick)
     end
 
     rebuild()

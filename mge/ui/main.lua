@@ -13,7 +13,7 @@ require("toriui.uielement")
 ---@field selectPlayer fun(id: integer, additive: boolean?) picks a player (list row, world click)
 ---@field selectedJoints table<integer, boolean> selected joint slots (Shift adds), never empty, empty slots too
 ---@field jointSlot integer the current joint slot (last clicked), always selected: the Link tab edits it
-local Main = { page = 1, pageSize = 120, toggleAll = false, activeTab = "core", listTab = "objects", selectedPlayer = 0,
+local Main = { page = 1, pageSize = 64, toggleAll = false, activeTab = "core", listTab = "objects", selectedPlayer = 0,
     selectedPlayers = { [0] = true }, selectedJoints = { [1] = true }, jointSlot = 1,
     activeTabs = { objects = "core", atmo = "core", players = "player", joints = "jointLink" } }
 MGE.Main = Main -- registered before UI modules load so they can alias it
@@ -23,7 +23,7 @@ local History = MGE.History
 local Widgets = dofile(MGE.scriptPath .. "ui/widgets.lua") -- MGE.Widgets, shared button helpers
 
 local defaultPos = { 0, 0 }
-local margin = 10
+local PAD = 0 -- the panel's edge to its content: none, the sections reach its edges
 local SECTION_GAP = 6 -- space between window sections
 ---Moves the next section's position under one that is height tall
 ---@param height number?
@@ -32,36 +32,102 @@ local function updateContentHeight(height, gap)
     defaultPos[2] = defaultPos[2] + (height or 0) + (gap or SECTION_GAP)
 end
 
-local windowContainer
-Main.window, windowContainer = TBMenu:spawnMoveableWindow({
-    x = margin,
-    y = 100,
-    w = 400,
-    h = 710
-})
-local content = windowContainer:addChild({
-    pos = { margin, margin },
-    size = { windowContainer.size.w - margin * 2, windowContainer.size.h - margin * 2 },
-}, true)
+-- Layout: a thin bar across the whole top of the screen, a static panel under it on the left edge, as tall
+-- as its sections, and a footer row along the screen's bottom. The screen is the game's UI size: window
+-- size / GUI scale, 1920x1080 at 1.6x is 675 tall.
+--   bar, left:   the list tabs (over the panel, the active one joins the list under it), Mods, Rules
+--   bar, right:  the tools, close (the list's buttons are under the list: Main.setListActions)
+--   panel:       the list (LIST_ROWS rows, no bars of its own), the editor tabs and panel
+--   footer:      counters, credits, the mod name
+-- The game's view stays free under the panel. It was a movable window, 710 tall with a drag bar, margins
+-- and its own tab / list bars: at 1.6x it didn't fit and the list kept 2 rows
+-- sizes in layout units, Widgets.px scales them by MGE's overall size (Widgets.UI_SCALE)
+local px = Widgets.px
+local PANEL_W = px(300)
+local BAR_H = px(30) -- the top bar
+local BAR_ICON = BAR_H - px(6) -- its icon buttons, 3 units above and under
+local BAR_GAP = Widgets.GAP -- between the bar's buttons, the same gap as everywhere (Widgets.GAP)
+local BAR_SEP = px(14) -- between its groups
+local EDITOR_TABS_H = px(20)
+local TAB_PADDING = px(6) -- space between a tab panel's edge and its content
+-- the editor area: fits the panels (8 rows each, PANELS in ui/editor.lua), a gap and the reset button
+local EDITOR_H = 8 * Widgets.ROW_H + px(4) + Widgets.ROW_H
+local FOOTER_H = Widgets.INFO_HEIGHT + px(4) -- the footer row along the screen's bottom
+local LIST_ROWS = 6 -- the list's height, it scrolls
+Main.LIST_ROWS = LIST_ROWS -- the Link tab's object grid is as tall (ui/editor_link.lua)
+local rowH = px(20) -- ScrollList.rowHeight (loaded below, the same size)
+local screenW = WIN_W or 1280 -- the top bar starts this wide, Main.fitScreen keeps it fitted
+local listH = LIST_ROWS * rowH
+-- the list's buttons, a bar under it on the list's own dark background (Main.setListActions), lined up
+-- with the grid's cells: GAP from the list's sides and its bottom, INSET under the last row (whose cells keep
+-- INSET free too, so GAP between them)
+local ACTIONS_H = px(18)
+local ACTIONS_GAP = Widgets.INSET + Widgets.GAP -- the bar's height beyond its buttons
+local panelH = BAR_H + listH + ACTIONS_GAP + ACTIONS_H + TAB_PADDING * 2 + EDITOR_TABS_H + EDITOR_H + TAB_PADDING * 2
 
--- top menu, same bar style as the list bars:
---   left:  shortcuts to the game's own mod list and gamerules menus
---   right: gizmo tool toggles, undo / redo, settings (Save is in the row above the footer)
-local menuH = 25
-local iconSize = menuH - 4 -- bar buttons have 2px padding top and bottom
-local iconGap = 4
-local menuBar = content:addChild({
-    pos = defaultPos,
-    size = { content.size.w, menuH },
+-- the bar's and the content areas' colors (ui/widgets.lua, shared with the overlays)
+local BAR_COLOR = Widgets.BAR_COLOR
+local BAR_STYLE = { bg = BAR_COLOR, hover = Widgets.HOVER_COLOR, pressed = TB_MENU_DEFAULT_DARKEST_COLOR }
+local LIST_BG = Widgets.CONTENT_BG
+
+Main.window = UIElement.new({
+    globalid = TB_MENU_HUB_GLOBALID,
+    pos = { 0, 0 },
+    size = { PANEL_W, panelH },
     bgColor = TB_MENU_DEFAULT_BG_COLOR,
 })
-local ICON_COUNT = 6
-local iconsW = iconSize * ICON_COUNT + iconGap * (ICON_COUNT - 1)
-local iconsX = menuBar.size.w - iconsW
-local iconButtons = menuBar:addChild({
-    pos = { iconsX, 0 },
-    size = { iconsW, menuH },
+local content = Main.window:addChild({
+    pos = { PAD, BAR_H },
+    size = { PANEL_W - PAD * 2, panelH - BAR_H },
+}, true)
+
+-- the top bar: a child of the panel reaching past its right edge, shown, hidden and killed with it.
+-- Interactive so clicks on it don't go through to the world (widgets.lua isMouseOverUI)
+local topBar = Main.window:addChild({
+    pos = { 0, 0 },
+    size = { screenW, BAR_H },
+    interactive = true,
+    bgColor = BAR_COLOR,
+    hoverColor = BAR_COLOR,
+    pressedColor = BAR_COLOR,
 })
+Main.topBar = topBar
+
+-- right end: close (quits MGE, F1 only hides it)
+local closeButton = TBMenu:spawnCloseButton(topBar, { x = -BAR_H, y = 0, w = BAR_H, h = BAR_H }, function()
+    Main.window:kill() -- killAction quits
+end, { default = BAR_COLOR, hover = Widgets.HOVER_COLOR, pressed = TB_MENU_DEFAULT_DARKEST_COLOR,
+    ui = { 1, 1, 1, 1 } }) -- the bar's button colors, its default ones are the panel's red
+Widgets.popupBelowLeft(closeButton, TBMenu:displayPopup(closeButton, "Close MGE (F1 only hides it)"))
+if closeButton.child and closeButton.child[1] then -- its cross loads again after a graphics change
+    Widgets.trackImage(closeButton.child[1], "../textures/menu/general/buttons/crosswhite.tga")
+end
+
+-- the tools, left of close: gizmo tool toggles, undo / redo, save / rename, settings
+local ICON_COUNT = 8 -- move, rotate, scale, undo, redo, save, rename, settings
+local toolsW = BAR_ICON * ICON_COUNT + BAR_GAP * (ICON_COUNT - 1)
+-- negative x: from the bar's right edge, so the groups follow it when the screen size changes (Main.fitScreen)
+local toolsX = -(BAR_H + BAR_SEP + toolsW)
+local iconButtons = topBar:addChild({
+    pos = { toolsX, (BAR_H - BAR_ICON) / 2 },
+    size = { toolsW, BAR_ICON },
+})
+
+---@type UIElement the bar under the list, set with the list panel (below)
+local actionsHolder
+
+---The list's action buttons in the bar under it (Select all, New, Duplicate, Import, Export, Delete, as many
+---as the list has), sharing its width. Called by each list when it's built. They were on the top bar for a
+---while: under the list it's clearer what they act on
+---@param items WidgetRowButton[]
+---@return UIElement[] buttons in the same order
+function Main.setListActions(items)
+    Widgets.clearChildren(actionsHolder)
+    return Widgets.buttonRow(actionsHolder, 0, actionsHolder.size.h, items, Widgets.GAP, nil, Widgets.PANEL_STYLE)
+end
+-- the lists' Select all button, unlit (lit: Widgets.ACTIVE_COLOR)
+Main.ACTIONS_BG = Widgets.PANEL_STYLE.bg
+
 -- gizmo tools: on / off toggles, at most one on (utils/gizmo.lua). Icons in mge/textures/
 local TOOLS = {
     { mode = "move", label = "Move (Shift + Q)" },
@@ -76,56 +142,52 @@ end
 -- game's undo icon, redo is the same icon mirrored (mge/textures/redo.tga)
 table.insert(bar, { label = "Undo (Shift + Z)", icon = "../textures/menu/general/buttons/undo.tga", onClick = function() History.undo() end })
 table.insert(bar, { label = "Redo (Shift + Y)", icon = MGE.scriptPath .. "textures/redo.tga", onClick = function() History.redo() end })
+-- Save and Rename (the game's save and edit icons), the footer's right end names the file they write
+table.insert(bar, { label = "Save (Ctrl + S): the mod into mod/" .. MGE.saveFolder .. ",\na mod from elsewhere is copied there",
+    icon = "../textures/menu/general/buttons/savewhite.tga", onClick = function() MGE.save() end })
+table.insert(bar, { label = "Rename (Ctrl + Shift + S): saves under a new name,\nSave writes there from then on. The old file stays",
+    icon = "../textures/menu/general/buttons/edit.tga", onClick = function() MGE.saveAs() end })
 -- camera follow, gizmo snapping, shortcuts (ui/settings_overlay.lua), game's settings icon
 table.insert(bar, { label = "Settings", icon = "../textures/menu/general/buttons/settingswhite.tga",
     onClick = function() dofile(MGE.scriptPath .. "ui/settings_overlay.lua") end })
-local icons = Widgets.barButtons(iconButtons, bar)
+for _, item in ipairs(bar) do item.popupLeft = true end -- near the screen's right edge
+local icons = Widgets.buttonRow(iconButtons, 0, BAR_ICON, bar, BAR_GAP, nil, BAR_STYLE)
 
 ---The active tool's button is highlighted
 local function updateToolButtons()
     for i, tool in ipairs(TOOLS) do
         local btn = icons[i]
         if btn and not btn.destroyed then
-            btn.bgColor = MGE.Gizmo.mode == tool.mode and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.STYLE.bg
+            btn.bgColor = MGE.Gizmo.mode == tool.mode and Widgets.ACTIVE_COLOR or BAR_COLOR
         end
     end
 end
 table.insert(MGE.Gizmo.modeListeners, updateToolButtons)
 updateToolButtons()
-local menuTextW = 80 -- fixed width, leaves open space between the text and icon groups
-local textButtons = menuBar:addChild({
-    pos = { 0, 0 },
-    size = { menuTextW * 2 + iconGap, menuH },
-})
-Widgets.barButtons(textButtons, {
-    { label = "Mods", onClick = function() dofile("system/mods.lua") end },           -- game's mod list
-    { label = "Rules", onClick = function() dofile("system/gamerules.lua") end },     -- game's gamerules menu
-})
-updateContentHeight(menuH)
 
--- tabs for the list area: objects, joints and players (how full the mod is shows in the footer). The
--- active tab has the list's color and touches it, same idea as the editor tabs
+-- tabs: the active one has the color of the panel under it and touches it, so they read as one shape
 local TAB_PANEL_COLOR = Widgets.TAB_PANEL_COLOR -- darkens the window, buttons inside (DARKER) stay visible
-local TAB_PADDING = 6 -- space between a tab panel's edge and its content
 
 ---Active tabs are part of the panel under them: panel color, no hover/press change.
----Inactive tabs keep the normal button look. Used by the list tabs and the editor tabs
+---Inactive tabs keep the normal button look (on the top bar: the bar's color). Used by the list tabs and
+---the editor tabs
 ---@param btn UIElement
 ---@param active boolean
-local function styleTab(btn, active)
+---@param activeColor number[]? the panel's color as the tab is drawn (default TAB_PANEL_COLOR)
+---@param idleColor number[]? default TB_MENU_DEFAULT_DARKER_COLOR
+local function styleTab(btn, active, activeColor, idleColor)
     if active then
-        btn.bgColor, btn.hoverColor, btn.pressedColor = TAB_PANEL_COLOR, TAB_PANEL_COLOR, TAB_PANEL_COLOR
+        activeColor = activeColor or TAB_PANEL_COLOR
+        btn.bgColor, btn.hoverColor, btn.pressedColor = activeColor, activeColor, activeColor
     else
-        btn.bgColor = TB_MENU_DEFAULT_DARKER_COLOR
-        btn.hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR
+        btn.bgColor = idleColor or TB_MENU_DEFAULT_DARKER_COLOR
+        btn.hoverColor = Widgets.HOVER_COLOR
         btn.pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
     end
 end
-local listHeader = content:addChild({
-    pos = defaultPos,
-    size = { content.size.w, 26 },
-})
-updateContentHeight(listHeader.size.h, 0) -- no gap, the list panel starts right under the tabs
+
+-- the list tabs, on the top bar over the panel (how full the mod is shows in the footer). On the bar the
+-- active one is drawn solid: the see-through panel color would show the bar under it
 local listTabNames = {
     { id = "objects", label = "Objects" },
     { id = "atmo", label = "Atmo" }, -- atmo objects: drawn only, the mod's .atmo file (utils/atmo.lua)
@@ -136,32 +198,58 @@ local listTabItems = {}
 for i, tab in ipairs(listTabNames) do
     listTabItems[i] = { label = tab.label, onClick = function() Main.setListTab(tab.id) end }
 end
+-- the bar's text buttons are all this wide, as wide as their text needs, not stretched over the panel
+local BAR_TEXT_W = px(56)
+local listTabRow = topBar:addChild({
+    pos = { PAD, 0 },
+    size = { BAR_TEXT_W * #listTabItems + BAR_GAP * (#listTabItems - 1), BAR_H },
+})
 local listTabButtons = {}
-for i, btn in ipairs(Widgets.buttonRow(listHeader, 0, listHeader.size.h, listTabItems, 4)) do
+for i, btn in ipairs(Widgets.buttonRow(listTabRow, 0, BAR_H, listTabItems, BAR_GAP, Widgets.TAB_TEXT_SCALE, BAR_STYLE)) do
     listTabButtons[listTabNames[i].id] = btn
 end
 
--- the list sits in a panel like the editor's: panel color, padding, the active list tab touches it
-local listH = 175 -- the list's bars and rows, ScrollList.rowHeight (25) each
+-- the game's own mod list and gamerules menus, right of the tabs
+local gameMenus = topBar:addChild({
+    pos = { PAD + listTabRow.size.w + BAR_GAP, 0 }, -- right after the tabs, the usual gap
+    size = { BAR_TEXT_W * 2 + BAR_GAP, BAR_H },
+})
+Widgets.buttonRow(gameMenus, 0, BAR_H, {
+    { label = "Mods", onClick = function() dofile("system/mods.lua") end },
+    { label = "Rules", onClick = function() dofile("system/gamerules.lua") end },
+}, BAR_GAP, Widgets.TAB_TEXT_SCALE, BAR_STYLE)
+
+-- the list sits in a panel like the editor's: panel color, padding, the active list tab touches it.
+-- listH (above): its rows, ScrollList.rowHeight (25) each
 local listPanel = content:addChild({
     pos = defaultPos,
-    size = { content.size.w, listH + TAB_PADDING * 2 },
+    size = { content.size.w, listH + ACTIONS_GAP + ACTIONS_H + TAB_PADDING * 2 },
     bgColor = TAB_PANEL_COLOR,
 })
-local obj_selector_container = listPanel:addChild({
+-- the list and its buttons share one dark background
+local listArea = listPanel:addChild({
     pos = { TAB_PADDING, TAB_PADDING },
-    size = { listPanel.size.w - TAB_PADDING * 2, listH },
-    bgColor = TB_MENU_DEFAULT_DARKER_COLOR
+    size = { listPanel.size.w - TAB_PADDING * 2, listH + ACTIONS_GAP + ACTIONS_H },
+    bgColor = LIST_BG,
 })
-updateContentHeight(listPanel.size.h)
+local obj_selector_container = listArea:addChild({
+    pos = { 0, 0 },
+    size = { listArea.size.w, listH },
+})
+actionsHolder = listArea:addChild({
+    pos = { Widgets.GAP, listH + Widgets.INSET },
+    size = { listArea.size.w - Widgets.GAP * 2, ACTIONS_H },
+})
+updateContentHeight(listPanel.size.h, 0) -- the editor tabs sit right under the list
 
 -- Tabs, right above the area they switch (title row and object list stay the same on every tab).
 -- The area has its own panel color and the active tab uses the same color and touches the panel,
 -- so it reads as one shape. Inactive tabs keep the normal button look.
-local TAB_GAP = 4
+local TAB_GAP = Widgets.GAP
 local tabRow = content:addChild({
     pos = defaultPos,
-    size = { content.size.w, 30 },
+    size = { content.size.w, EDITOR_TABS_H },
+    bgColor = Widgets.TAB_PANEL_SOLID, -- the gaps between the tabs: the inactive tabs' color
 })
 updateContentHeight(tabRow.size.h, 0) -- no gap, the panel starts right under the tabs
 
@@ -207,7 +295,7 @@ for list, tabs in pairs(TAB_SETS) do
         if not tabList[tab.id] or list == "objects" then tabList[tab.id] = list end
     end
     tabButtons[list] = {}
-    for i, btn in ipairs(Widgets.buttonRow(tabRows[list], 0, tabRow.size.h, items, TAB_GAP)) do
+    for i, btn in ipairs(Widgets.buttonRow(tabRows[list], 0, tabRow.size.h, items, TAB_GAP, Widgets.TAB_TEXT_SCALE)) do
         tabButtons[list][tabs[i].id] = btn
     end
 end
@@ -224,11 +312,11 @@ end
 
 -- the editor area inside the tab panel: fits the panels (8 rows each, see PANELS in ui/editor.lua)
 -- with the reset button under them
-local areaH = 268
+local areaH = EDITOR_H
 local tabPanel = content:addChild({
     pos = defaultPos,
     size = { content.size.w, areaH + TAB_PADDING * 2 },
-    bgColor = TAB_PANEL_COLOR,
+    bgColor = LIST_BG, -- dark like the list, the active editor tab joins it
 })
 local editorContainer = tabPanel:addChild({
     pos = { TAB_PADDING, TAB_PADDING },
@@ -236,46 +324,53 @@ local editorContainer = tabPanel:addChild({
 })
 updateContentHeight(tabPanel.size.h)
 
--- Duplicate/Delete/Import/Export are in the list's bottom bar (ui/obj_selector.lua, ui/player_list.lua),
--- Reindex in the Advanced panel
+-- Duplicate/Delete/Import/Export are the list's buttons on the top bar (Main.setListActions), Save and
+-- Rename are with the tools, Reindex is in the Advanced panel
 
--- Save and Rename, under the editor area, right above the footer line naming the file they write
-local saveRow = content:addChild({
-    pos = defaultPos,
-    size = { content.size.w, 24 },
-})
-local saveButtons = Widgets.buttonRow(saveRow, 0, saveRow.size.h, {
-    { label = "Save", onClick = function() MGE.save() end },     -- Ctrl + S, same as the toolbar icon
-    { label = "Rename", onClick = function() MGE.saveAs() end }, -- Ctrl + Shift + S
-}, margin)
-TBMenu:displayPopup(saveButtons[1], "Saves the mod into mod/" .. MGE.saveFolder .. " (Ctrl + S),\na mod from elsewhere is copied there.")
-TBMenu:displayPopup(saveButtons[2], "Saves under a new name, Save writes there from then on.\nThe old file stays (Ctrl + Shift + S).")
-updateContentHeight(saveRow.size.h)
-
--- footer: small centered info rows stacked without gaps
----@param text string?
+-- footer: one row along the bottom of the screen over the game's view, no background, a child of the panel
+-- reaching past its edges like the top bar. Left: the counters, middle: credits, right: the mod Save writes
+-- Placed by Main.fitScreen, like the top bar's width
+local FOOTER_EDGE = px(8) -- from the screen's sides
+local CREDITS_W = px(260)
 ---@return UIElement
-local function addFooterRow(text)
-    local row = content:addChild({
-        pos = defaultPos,
-        size = { content.size.w, Widgets.INFO_HEIGHT },
-        bgColor = { 0, 0, 0, 0 }
-    })
-    if text then Widgets.infoText(row, text) end
-    updateContentHeight(row.size.h, 0)
-    return row
+local function addFooterPart()
+    return Main.window:addChild({ pos = { 0, 0 }, size = { 1, FOOTER_H } })
 end
-local limitsRow = addFooterRow() -- object, dynamic id and joint usage, set by setDynamicStrings
-local fileRow = addFooterRow() -- the file Save writes and whether there are unsaved changes
-addFooterRow("Project Mod Group Editor by joopez")
+local limitsRow = addFooterPart() -- object, dynamic id and joint usage, set by setDynamicStrings
+local creditsRow = addFooterPart()
+creditsRow.uiColor = { 0, 0, 0, 1 } -- black like the rest of the footer (FOOTER_COLOR, set below)
+local fileRow = addFooterPart() -- the file Save writes, unsaved changes
+local shown = {} -- what the file row shows (below)
 
--- footer text color while something needs attention (dynamic objects, unsaved changes)
-local WARNING_COLOR = { 0.3, 0.02, 0.02, 1 } -- dark red: reads against the window's red, light pink didn't
+---Fits what spans the screen to its size: the top bar's width (its right-hand groups count from its right
+---edge) and the footer along the bottom. At start and when the game's window or GUI scale changes (the
+---resolution_changed hook): those were placed for the size MGE started with
+function Main.fitScreen()
+    local w, h = get_window_size()
+    w, h = w or WIN_W or 1280, h or WIN_H or 720
+    topBar.size.w = w
+    topBar:moveTo(0, 0) -- updates its children's positions
+    local sideW = (w - CREDITS_W) / 2 - FOOTER_EDGE - BAR_SEP
+    for _, part in ipairs({ { limitsRow, FOOTER_EDGE, sideW }, { creditsRow, (w - CREDITS_W) / 2, CREDITS_W },
+        { fileRow, w - FOOTER_EDGE - sideW, sideW } }) do
+        part[1].size.w = part[3]
+        part[1]:moveTo(part[2], h - FOOTER_H)
+    end
+    Widgets.infoText(creditsRow, "Project Mod Group Editor by joopez")
+    shown = {} -- the file row lays its text out again for its new width
+    if Main.refreshCounters then Main.refreshCounters() end
+end
+table.insert(Widgets.onScreenChanged, Main.fitScreen)
+Main.fitScreen()
+
+-- footer text: black over the game's view, dark red while something needs attention (dynamic objects,
+-- unsaved changes)
+local WARNING_COLOR = { 0.6, 0.02, 0.02, 1 }
+local FOOTER_COLOR = { 0, 0, 0, 1 } -- black: the footer is over the game's (light) view
 
 -- File row: checked every frame, the mod text is only built again when the data changed (an edit
 -- commits a new undo state, a reload parses new data) or the source changed (load, save). Lua
 -- strings are interned, comparing savedText is cheap
-local shown = {}
 Widgets.addDrawBefore(fileRow, function()
     local parsed, state, source, saved = ModData.parsed, History.states[History.index], MGE.sourcePath, MGE.savedText
     -- the atmo file's saved text too: Export atmo writes it without saving the mod (utils/atmo.lua)
@@ -288,12 +383,13 @@ Widgets.addDrawBefore(fileRow, function()
     -- where Save writes (a mod from outside modmaker/ is copied there, its original stays as it is)
     local text = target and "Mod: " .. target .. (unsaved and "  (unsaved changes)" or "")
         or "Not saved to a mod yet, Save asks the name"
-    fileRow.uiColor = target and not unsaved and UICOLORWHITE or WARNING_COLOR
-    Widgets.infoText(fileRow, text)
+    fileRow.uiColor = target and not unsaved and FOOTER_COLOR or WARNING_COLOR
+    Widgets.infoText(fileRow, text, RIGHTMID)
 end)
 
 
 dofile(MGE.scriptPath .. "ui/scroll_list.lua") -- MGE.ScrollList, used by the lists and the file picker
+MGE.ScrollList.bgColor = LIST_BG -- every list: the object grid, players, the file picker, assets
 dofile(MGE.scriptPath .. "ui/file_picker.lua") -- MGE.FilePicker, folder browser: asset import, Model row
 dofile(MGE.scriptPath .. "ui/assets.lua") -- MGE.Assets, export / import overlay for the lists' buttons
 local obj_selector = dofile(MGE.scriptPath .. "ui/obj_selector.lua")
@@ -311,7 +407,7 @@ function Main.applyTab()
     local active = Main.activeTabs[Main.listTab]
     editor.applyPanel(active)
     for id, btn in pairs(tabButtons[Main.listTab] or {}) do
-        styleTab(btn, id == active)
+        styleTab(btn, id == active, LIST_BG, Widgets.TAB_PANEL_SOLID) -- active: the editor panel's dark
     end
 end
 
@@ -350,7 +446,7 @@ end
 
 local function applyListTab()
     for id, btn in pairs(listTabButtons) do
-        styleTab(btn, id == Main.listTab)
+        styleTab(btn, id == Main.listTab, Widgets.TAB_PANEL_SOLID, BAR_COLOR)
     end
 end
 
@@ -530,14 +626,15 @@ end
 
 local function setDynamicStrings()
     local warning = Main.dynamicWarning()
-    limitsRow.uiColor = warning and WARNING_COLOR or UICOLORWHITE
+    limitsRow.uiColor = warning and WARNING_COLOR or FOOTER_COLOR
     local atmoCount = #ModData.parsed.atmo
     Widgets.infoText(limitsRow, "Objects " .. #ModData.parsed.env_obj .. "/" .. MGE.MAX_ENV_OBJECTS ..
         (atmoCount > 0 and (" +" .. atmoCount .. " atmo") or "") ..
         "    Dynamic " .. ModData.countDynamic() .. "/" .. MGE.MAX_NONSTATIC_OBJECTS ..
         (warning and " (" .. warning .. ")" or "") ..
-        "    Joints " .. #ModData.parsed.env_obj_joint .. "/" .. MGE.MAX_ENV_JOINTS)
+        "    Joints " .. #ModData.parsed.env_obj_joint .. "/" .. MGE.MAX_ENV_JOINTS, LEFTMID)
 end
+Main.refreshCounters = setDynamicStrings -- also after a screen size change (Main.fitScreen)
 
 local function createObjSelector()
     if Main.listTab == "players" then

@@ -93,9 +93,9 @@ local function createInput(container, onInputFunc, placeholder)
             allowDecimal = true,
             allowNegative = true,
             textAlign = CENTER,
-            fontId = FONTS.LMEDIUM,
+            fontId = MGE.Widgets.FONT, -- the window's font (Widgets.FONT)
             darkerMode = true, -- base window color, matches the panel buttons (Widgets.PANEL_STYLE)
-            textScale = 0.65, -- smaller than the default, matches the labels
+            textScale = MGE.Widgets.TEXT_SCALE_SMALL, -- smaller than the labels
         })
     input:addKeyboardHandlers(nil, function(key)
         if key ~= 13 then return end --enter
@@ -114,23 +114,24 @@ end
 local function createRow(label, parent, help, onLabelClick)
     local row = parent:addChild({
         pos = { 0, totalHeight },
-        size = { parent.size.w, 30 },
+        size = { parent.size.w, MGE.Widgets.ROW_H },
         interactive = true,
     }, true)
 
-    local labelW = 80
-    local helpSize = 22
+    local labelW = MGE.Widgets.px(66)
+    local helpSize = MGE.Widgets.ROW_H - 6
     local helpW = help and helpSize + 8 or 0 -- space reserved at the end of the row for the "?" icon
     local labelButton
     if onLabelClick then
-        labelButton = Widgets.button(row, { x = 2, y = 2, w = labelW - 4, h = row.size.h - 4 }, label, onLabelClick,
-            nil, Widgets.PANEL_STYLE)
+        local inset = Widgets.INSET -- like the number fields
+        labelButton = Widgets.button(row, { x = inset, y = inset, w = labelW - inset * 2, h = row.size.h - inset * 2 }, label, onLabelClick,
+            Widgets.TEXT_SCALE, Widgets.PANEL_STYLE) -- label size, like the plain labels under it
     else
         local labelContainer = row:addChild({
             pos = { 0, 0 },
             size = { labelW, row.size.h },
         }, true)
-        labelContainer:addAdaptedText(label, nil, nil, nil, CENTERMID, 0.7, nil, nil)
+        labelContainer:addAdaptedText(label, nil, nil, MGE.Widgets.FONT, CENTERMID, MGE.Widgets.TEXT_SCALE, nil, nil)
     end
 
     if help then
@@ -170,7 +171,7 @@ end
 ---@param on boolean
 local function setHighlighted(btn, on)
     if btn and not btn.destroyed then
-        btn.bgColor = on and TB_MENU_DEFAULT_LIGHTER_COLOR or Widgets.PANEL_STYLE.bg
+        btn.bgColor = on and Widgets.ACTIVE_COLOR or Widgets.PANEL_STYLE.bg
     end
 end
 
@@ -185,14 +186,14 @@ end
 local function createChoiceRow(label, parent, choices, current, onPick, help)
     local row, contentX, contentW = createRow(label, parent, help)
     local holder = row:addChild({
-        pos = { contentX + 2, 2 },
-        size = { contentW - 4, row.size.h - 4 },
+        pos = { contentX + Widgets.INSET, Widgets.INSET }, -- lines up with the number fields
+        size = { contentW - Widgets.INSET * 2, row.size.h - Widgets.INSET * 2 },
     }, true)
     local items = {}
     for i, choice in ipairs(choices) do
         items[i] = { label = choice.label, onClick = function() onPick(choice.value) end }
     end
-    local buttons = Widgets.buttonRow(holder, 0, holder.size.h, items, 4, nil, Widgets.PANEL_STYLE)
+    local buttons = Widgets.buttonRow(holder, 0, holder.size.h, items, Widgets.GAP, nil, Widgets.PANEL_STYLE)
     for i, btn in ipairs(buttons) do
         if choices[i].value == current then setHighlighted(btn, true) end
     end
@@ -208,11 +209,11 @@ end
 local function createToggleButtonRow(label, parent, toggles, help)
     local row, contentX, contentW = createRow(label, parent, help)
     local holder = row:addChild({
-        pos = { contentX + 2, 2 },
-        size = { contentW - 4, row.size.h - 4 },
+        pos = { contentX + Widgets.INSET, Widgets.INSET }, -- lines up with the number fields
+        size = { contentW - Widgets.INSET * 2, row.size.h - Widgets.INSET * 2 },
     }, true)
-    for i, btn in ipairs(Widgets.buttonRow(holder, 0, holder.size.h, toggles, 4, nil, Widgets.PANEL_STYLE)) do
-        if toggles[i].active then btn.bgColor = TB_MENU_DEFAULT_LIGHTER_COLOR end
+    for i, btn in ipairs(Widgets.buttonRow(holder, 0, holder.size.h, toggles, Widgets.GAP, nil, Widgets.PANEL_STYLE)) do
+        if toggles[i].active then btn.bgColor = Widgets.ACTIVE_COLOR end
     end
 end
 

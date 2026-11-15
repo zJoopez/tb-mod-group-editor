@@ -9,28 +9,84 @@ local Widgets = {}
 ---@field w number
 ---@field h number
 
--- one text size for every button (tabs, bars, editor rows), adapted text only shrinks it to fit
-Widgets.TEXT_SCALE = 0.7
+-- MGE's overall size: every size and text size of the window is multiplied by it (Widgets.px), on top of
+-- the game's GUI scale. The layout's proportions stay the same. 1 was small at the lowest GUI scale.
+-- Settings > UI size picks it (MGE_UI_SCALE, a global: kept over the restart that applies it)
+Widgets.UI_SCALE = tonumber(MGE_UI_SCALE) or 1.3
+Widgets.UI_SCALES = { 1, 1.15, 1.3, 1.5, 1.75 } -- the choices Settings offers
+
+---A size in MGE's layout units as pixels at UI_SCALE, whole pixels
+---@param n number
+---@return number
+function Widgets.px(n)
+    return math.floor(n * Widgets.UI_SCALE + 0.5)
+end
+
+-- the font of every button and label: the plain one the number fields use (FONTS.LMEDIUM) reads better small
+-- than the game's default bold comic font (FONTS.MEDIUM, what MGE used before)
+Widgets.FONT = FONTS.LMEDIUM
+
+-- one text size for every button and label (tabs, bars, editor rows, list cells), adapted text only shrinks
+-- it to fit. TEXT_SCALE_SMALL for secondary text: input fields, hints, a row's second column
+Widgets.TEXT_SCALE = 0.5 * Widgets.UI_SCALE
+Widgets.TEXT_SCALE_SMALL = 0.45 * Widgets.UI_SCALE
+Widgets.TAB_TEXT_SCALE = 0.42 * Widgets.UI_SCALE -- tabs (list tabs, Mods / Rules, editor tabs)
+Widgets.BUTTON_TEXT_SCALE = 0.45 * Widgets.UI_SCALE -- buttons' text (Widgets.button's default), a bit under the labels'
+Widgets.TITLE_SCALE = 0.7 * Widgets.UI_SCALE -- the overlays' titles (Settings, Convert Map, the file picker...)
+-- height of an editor row (label, inputs or buttons, "?"), the editor tabs and the reset button
+Widgets.ROW_H = Widgets.px(24)
+-- space between the cells of a grid-like row: the number fields' (they sit this far apart), the object grid's
+-- cells, the button rows (Box / Sphere / Pill, the list's buttons, Create / Reset), the editor tabs
+Widgets.GAP = 2
+-- what a cell keeps free on each side of its row / column: half the gap. The number fields sit this far in
+-- (TBMenu:spawnTextField2's shift 1), buttons in the editor rows do the same so they line up with them
+Widgets.INSET = Widgets.GAP / 2
+
+---A color between two others (t = 0: a, 1: b), opaque
+---@param a number[]
+---@param b number[]
+---@param t number
+---@return number[]
+function Widgets.mix(a, b, t)
+    return { a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t, 1 }
+end
+
+-- Highlight colors, between the window color and the game's lighter ones (those were far brighter than the
+-- rest of the scheme). Mixed from the game's menu colors, so they follow its theme
+Widgets.HOVER_COLOR = Widgets.mix(TB_MENU_DEFAULT_BG_COLOR, TB_MENU_DEFAULT_LIGHTER_COLOR, 0.4)
+-- a toggle that's on (Box, Shown, a row label's mode), the current gizmo tool, a lit Select all
+Widgets.ACTIVE_COLOR = Widgets.mix(TB_MENU_DEFAULT_BG_COLOR, TB_MENU_DEFAULT_LIGHTER_COLOR, 0.55)
+-- a selected cell in the object / joint grid, a selected list row: lighter, still with white text
+Widgets.SELECTED_COLOR = Widgets.mix(TB_MENU_DEFAULT_BG_COLOR, TB_MENU_DEFAULT_LIGHTEST_COLOR, 0.5)
+
+---The menu's darkest color at a share of its brightness
+---@param share number
+---@return number[]
+local function darkest(share)
+    local c = TB_MENU_DEFAULT_DARKEST_COLOR
+    return { c[1] * share, c[2] * share, c[3] * share, 1 }
+end
+-- the top bar and the overlays' bars: well darker than the panel (0.6 read nearly black next to it)
+Widgets.BAR_COLOR = darkest(0.8)
+-- the content areas: the lists, the editor panel and its active tab, the overlays. Darker than the panel
+-- around them, lighter than the bar
+Widgets.CONTENT_BG = darkest(0.9)
 
 ---@class WidgetStyle
 ---@field bg number[]
 ---@field hover number[]
 ---@field pressed number[]
 
----Button colors on the window background (toolbar, list bars, tabs)
+---MGE's button colors, everywhere: the window's red, standing out on the dark content areas, the overlays
+---and the bars. (It was the darker red, made for the red window background)
 ---@type WidgetStyle
 Widgets.STYLE = {
-    bg = TB_MENU_DEFAULT_DARKER_COLOR,
-    hover = TB_MENU_DEFAULT_LIGHTER_COLOR,
-    pressed = TB_MENU_DEFAULT_DARKEST_COLOR,
-}
----Button colors inside the darker tab panel (ui/main.lua), the default colors blend into it
----@type WidgetStyle
-Widgets.PANEL_STYLE = {
     bg = TB_MENU_DEFAULT_BG_COLOR,
-    hover = TB_MENU_DEFAULT_LIGHTER_COLOR,
-    pressed = TB_MENU_DEFAULT_DARKER_COLOR,
+    hover = Widgets.HOVER_COLOR,
+    pressed = TB_MENU_DEFAULT_DARKEST_COLOR, -- every MGE button presses to the darkest color
 }
+---The same style, the name the editor panels use
+Widgets.PANEL_STYLE = Widgets.STYLE
 
 ---Tab panel color (ui/main.lua): darkens the window, the active tab uses it too so it touches the panel
 Widgets.TAB_PANEL_COLOR = { 0, 0, 0, 0.15 }
@@ -48,11 +104,11 @@ Widgets.TAB_PANEL_SOLID = {
 ---@param rect WidgetRect position relative to parent
 ---@param label string|fun(): string function labels are re-read every frame
 ---@param onClick function?
----@param textScale number? defaults to Widgets.TEXT_SCALE
+---@param textScale number? defaults to Widgets.BUTTON_TEXT_SCALE
 ---@param style WidgetStyle? defaults to Widgets.STYLE
 ---@return UIElement
 function Widgets.button(parent, rect, label, onClick, textScale, style)
-    textScale = textScale or Widgets.TEXT_SCALE
+    textScale = textScale or Widgets.BUTTON_TEXT_SCALE
     style = style or Widgets.STYLE
     local btn = parent:addChild({
         pos = { rect.x, rect.y },
@@ -64,10 +120,10 @@ function Widgets.button(parent, rect, label, onClick, textScale, style)
     }, true)
     if type(label) == "function" then
         btn:addCustomDisplay(false, function()
-            btn:uiText(label(), nil, nil, nil, CENTERMID, textScale, nil, nil, nil)
+            btn:uiText(label(), nil, nil, Widgets.FONT, CENTERMID, textScale, nil, nil, nil)
         end)
     elseif label ~= "" then -- "" for icon buttons
-        btn:addAdaptedText(label, nil, nil, nil, CENTERMID, textScale, nil, nil)
+        btn:addAdaptedText(label, nil, nil, Widgets.FONT, CENTERMID, textScale, nil, nil)
     end
     if onClick then btn:addMouseUpHandler(onClick) end
     return btn
@@ -120,13 +176,30 @@ function Widgets.reloadImages()
     end
 end
 
-add_hook("resolution_changed", MGE.hookname, function() Widgets.reloadImages() end)
+---@type fun()[] called after a graphics reload, window size or GUI scale change, after the images reload
+---(ui/main.lua: Main.fitScreen)
+Widgets.onScreenChanged = {}
+
+add_hook("resolution_changed", MGE.hookname, function()
+    Widgets.reloadImages()
+    for _, callback in ipairs(Widgets.onScreenChanged) do pcall(callback) end
+end)
 
 ---@class WidgetRowButton
 ---@field label string|fun(): string text, for icon buttons the name shown when hovering (string labels)
 ---@field icon string? image shown instead of the label
 ---@field wide boolean? icon buttons are square unless wide, wide ones share the width like text buttons
 ---@field onClick function?
+---@field popupLeft boolean? the hover name goes under the button, its right edge at the button's (Widgets.popupBelowLeft)
+
+---Puts a hover popup (TBMenu:displayPopup's) under its element, right edges lined up, so it opens to the
+---left: for buttons near the screen's right edge (the top bar). The game's own placement moves a popup
+---that would leave the screen before it shrinks to its text: its text and background ended up apart
+---@param element UIElement
+---@param popup UIElement what TBMenu:displayPopup returned
+function Widgets.popupBelowLeft(element, popup)
+    popup:moveTo(-popup.size.w, element.size.h + 4) -- negative x: from the element's right edge
+end
 
 ---Esc in an overlay's text field closes the overlay (MGE.closeTopOverlay). A focused field takes every
 ---key first, MGE's key hook may not see the Esc then. Keeps the field's other key handlers
@@ -177,7 +250,8 @@ function Widgets.buttonRow(parent, y, h, buttons, gap, textScale, style)
             created[i] = Widgets.iconButton(parent, rect, info.icon, info.onClick, style)
             local label = info.label
             if type(label) == "string" and label ~= "" then
-                TBMenu:displayPopup(created[i], label) -- name of the icon on hover
+                local popup = TBMenu:displayPopup(created[i], label) -- name of the icon on hover
+                if info.popupLeft and popup then Widgets.popupBelowLeft(created[i], popup) end
             end
         else
             created[i] = Widgets.button(parent, rect, info.label, info.onClick, textScale, style)
@@ -247,13 +321,13 @@ function Widgets.helpIcon(parent, x, y, size, message, mark, style)
         pos = { x, y },
         size = { size, size },
         bgColor = style.bg,
-        hoverColor = TB_MENU_DEFAULT_DARKEST_COLOR,
-        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+        hoverColor = style.hover, -- like every other button (it used to turn darker on hover)
+        pressedColor = style.pressed,
         interactive = true,
         shapeType = ROUNDED,
         rounded = size,
     })
-    icon:addChild({}):addAdaptedText(true, mark or "?", nil, nil, nil, nil, 0.7)
+    icon:addChild({}):addAdaptedText(true, mark or "?", nil, nil, Widgets.FONT, nil, Widgets.TEXT_SCALE)
     local popup = TBMenu:displayHelpPopup(icon, message, nil, true) -- true: our own mark above
     if popup then
         popup:moveTo(size + 5, (size - popup.size.h) / 2, true)
@@ -284,14 +358,15 @@ function Widgets.isMouseOverUI(x, y)
 end
 
 -- small centered info lines (window footer)
-Widgets.INFO_HEIGHT = 18
-local INFO_MAX_SCALE = 0.7 -- adapted text shrinks below this only if the line doesn't fit
+Widgets.INFO_HEIGHT = Widgets.px(18)
+local INFO_MAX_SCALE = 0.7 * Widgets.UI_SCALE -- adapted text shrinks below this only if the line doesn't fit
 
----Small centered info text, replaces the element's previous text
+---Small info text, centered unless align says otherwise, replaces the element's previous text
 ---@param element UIElement
 ---@param text string
-function Widgets.infoText(element, text)
-    element:addAdaptedText(true, text, nil, nil, FONTS.SMALL, CENTERMID, INFO_MAX_SCALE)
+---@param align UIElementTextAlign? default CENTERMID
+function Widgets.infoText(element, text, align)
+    element:addAdaptedText(true, text, nil, nil, FONTS.SMALL, align or CENTERMID, INFO_MAX_SCALE)
 end
 
 MGE.Widgets = Widgets
