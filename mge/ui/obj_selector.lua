@@ -1,209 +1,184 @@
 local obj_selector = {}
+MGE.ObjSelector = obj_selector
 
-POS_SHIFT = POS_SHIFT or { 0 }
+local Main = MGE.Main
+local ModData = MGE.ModData
+local ScrollList = MGE.ScrollList
+local Widgets = MGE.Widgets
 
-local function slice(arr, start, stop)
-    local result = {}
-    for i = start, stop do
-        table.insert(result, arr[i])
+local GRID_COLUMNS = 6
+local GRID_GAP = MGE.Widgets.GAP
+
+
+local CELL_TEXT = { 1, 1, 1, 1 }
+local CELL_SELECTED_TEXT = CELL_TEXT
+local CELL_DIMMED_TEXT = { 1, 1, 1, 0.35 }
+local CELL_DIMMED_BG = { 0, 0, 0, 0.15 }
+
+
+
+
+local function styleCell(cell, selected, dimmed)
+    if selected then
+        cell.bgColor = Widgets.SELECTED_COLOR
+        cell.hoverColor = Widgets.SELECTED_COLOR
+        cell.uiColor = CELL_SELECTED_TEXT
+    else
+        cell.bgColor = dimmed and CELL_DIMMED_BG or TB_MENU_DEFAULT_BG_COLOR
+        cell.hoverColor = Widgets.HOVER_COLOR
+        cell.uiColor = dimmed and CELL_DIMMED_TEXT or CELL_TEXT
     end
-    return result
+    cell.pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
 end
 
----@param view UIElement
----@param fullList EnvObject[]
-local function create(view, fullList)
-    -- Creating a global posShift table - this will store the last scrollbar position between script runs within one game session
-    POS_SHIFT = POS_SHIFT or { 0 }
-    ---@type EnvObject[]
-    local list = slice(fullList, (Main.page - 1) * Main.pageSize + 1, Main.page * Main.pageSize)
 
-    -- Spawning a parent element for any object that needs to be reloaded every frame
-    local toReload = UIElement:new({
-        parent = view,
-        pos = { 0, 0 },
-        size = { view.size.w, view.size.h }
-    })
 
-    -- Adding toReload children objects which will overlay scrollable list elements on top and bottom.
-    -- In case any of the scrollable list elements are interactive, these should be interactive aswell to prevent accidental clicking.
-    -- Bars' height should be at least same as scrollable list's elements' height.
-    local listElementHeight = 25
-    local toggleRect = { h = listElementHeight - 4, w = listElementHeight - 4, x = 2, y = 2 }
 
-    local topBar_l = UIElement:new({
-        parent = toReload,
-        pos = { 0, 0 },
-        size = { view.size.w / 2, listElementHeight },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
-        interactive = true
-    })
 
-    local topBar_r = UIElement:new({
-        parent = toReload,
-        pos = { view.size.w / 2, 0 },
-        size = { view.size.w / 2, listElementHeight },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
-        interactive = true
-    })
 
-    local botBar = UIElement:new({
-        parent = toReload,
-        pos = { 0, -listElementHeight },
-        size = { view.size.w, listElementHeight },
-        bgColor = TB_MENU_DEFAULT_BG_COLOR,
-        interactive = true
-    })
 
-    -- Spawning main view for the scrollable list.
-    -- Height should be equal to parent element's height minus the sum of bars' height.
-    local listMainView = UIElement:new({
-        parent = view,
-        pos = { 0, topBar_l.size.h },
-        size = { view.size.w, view.size.h - topBar_l.size.h - botBar.size.h }
-    })
 
-    -- Spawning scrollable list holder element.
-    -- Can have same size as its' parent, in this example width is smaller to leave place for a scrollbar.
-    local scrollableListHolder = UIElement:new({
-        parent = listMainView,
-        pos = { 0, 0 },
-        size = { listMainView.size.w - listElementHeight, listMainView.size.h }
-    })
 
-    ---@param obj EnvObject
-    local function highlight(obj)
-        set_camera_mode(4)
-        local pos = { get_obj_pos(obj.id - 1) }
-        set_camera_lookat(pos[1], pos[2], pos[3])
+
+
+
+
+
+
+
+
+
+
+
+function obj_selector.grid(view, rect, items, opts, toReload)
+    local columns = opts.columns or GRID_COLUMNS
+    local gridRows = {}
+    for i, item in ipairs(items) do
+        local r = math.ceil(i / columns)
+        gridRows[r] = gridRows[r] or {}
+        table.insert(gridRows[r], item)
+    end
+    local function restyle(item, cell)
+        styleCell(cell, opts.isSelected(item), opts.isDimmed and opts.isDimmed(item))
     end
 
-    -- Populating the scrollable list with objects
-    -- First, creating a table to store all list elements, then spawning them one-by-one and adding to the table
-    local listElements = {}
-    for i, v in ipairs(list) do
-        local listElement = UIElement:new({
-            parent = scrollableListHolder,
-            pos = { 0, (i - 1) * listElementHeight },
-            size = { scrollableListHolder.size.w, listElementHeight },
-            interactive = true,
-            bgColor = { 0, 0, 0, i % 2 == 0 and 0 or 0.1 },
-            hoverColor = { 0, 0, 0, 0.3 },
-            pressedColor = { 0, 0, 0, 0.4 },
+
+    local cells = {}
+    local function restyleAll()
+        for item, cell in pairs(cells) do
+            if not cell.destroyed then restyle(item, cell) end
+        end
+    end
+    ScrollList.create(view, rect, gridRows, function(rowElement, rowItems)
+        local cellW = (rowElement.size.w - GRID_GAP * (columns + 1)) / columns
+        for c, item in ipairs(rowItems) do
+            local cell = rowElement:addChild({
+
+                pos = { GRID_GAP + (c - 1) * (cellW + GRID_GAP), GRID_GAP / 2 },
+                size = { cellW, rowElement.size.h - GRID_GAP },
+                interactive = true,
+
+                bgColor = TB_MENU_DEFAULT_BG_COLOR,
+                hoverColor = Widgets.HOVER_COLOR,
+                pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR,
+            }, true)
+            cells[item] = cell
+            restyle(item, cell)
+            cell:addAdaptedText(opts.label(item), nil, nil, MGE.Widgets.FONT, CENTERMID, MGE.Widgets.TEXT_SCALE, nil, nil)
+            local text = opts.popup and opts.popup(item)
+            if text then Widgets.popupBelow(cell, text) end
+            cell:addMouseUpHandler(function()
+                opts.onClick(item, get_keyboard_shift() ~= 0)
+                restyleAll()
+            end)
+        end
+    end, toReload, opts.emptyText, true)
+    return restyleAll
+end
+
+
+
+
+
+
+local function create(view, fullList, mode)
+    local atmo = mode == "atmo"
+
+    local list, page, pageCount = ScrollList.paginate(fullList, Main.page, Main.pageSize)
+    Main.page = page
+    local listElementHeight = ScrollList.rowHeight
+
+
+    local pagerH = pageCount > 1 and listElementHeight or 0
+    if pageCount > 1 then
+        local pagerRow = view:addChild({
+            pos = { 0, 0 },
+            size = { view.size.w, pagerH },
         })
-        listElement:addCustomDisplay(false, function()
-            listElement:uiText(v.id, nil, nil, nil, nil, 0.7, nil, nil, nil)
-        end)
-        TBMenu:spawnToggle2(listElement, toggleRect, v.selected or false, function(value)
-            v.selected = value
-            if value then highlight(v) end
-        end)
-        table.insert(listElements, listElement)
+        ScrollList.createPager(pagerRow, { x = 0, y = 0, w = pagerRow.size.w, h = pagerRow.size.h }, page, pageCount,
+            function(newPage)
+                Main.page = newPage
+                Main.updateWindow()
+            end)
     end
 
-    topBar_l:addAdaptedText("Toggle All", topBar_l.size.h + 5, nil, nil, LEFTMID, 0.7, nil, nil, nil)
-    TBMenu:spawnToggle2(topBar_l, toggleRect, Main.toggleAll, function(value)
-        Main.toggleAll = value
+
+
+    obj_selector.grid(view, {
+        x = 0,
+        y = pagerH,
+        w = view.size.w,
+        h = view.size.h - pagerH
+    }, list, {
+        label = function(obj) return (atmo and "A" or "") .. tostring(obj.id) end,
+
+        emptyText = atmo and "Atmo has no objects\nTry adding some"
+            or "Mod has no objects\nTry adding some",
+        isSelected = function(obj) return obj.selected end,
+        onClick = function(obj, additive)
+            local selected = ModData.clickSelect(obj, additive)
+            Main.onSelectionChanged()
+            if selected then Main.selectionMade() end
+        end,
+    })
+
+
+    local function allSelected()
+        if #fullList == 0 then return false end
         for _, obj in ipairs(fullList) do
-            obj.selected = value
+            if not obj.selected then return false end
         end
-        Main.updateWindow()
-    end)
-    local pageBtnNext = topBar_r:addChild({
-        interactive = true,
-        pos = { -topBar_r.size.h, 2 },
-        size = { topBar_r.size.h - 4, topBar_r.size.h - 4 },
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
-    })
-    pageBtnNext:addAdaptedText(">", nil, nil, nil, CENTER, 0.7, nil, nil, nil)
-    pageBtnNext:addMouseUpHandler(function()
-        if Main.page * Main.pageSize < #fullList then
-            Main.page = Main.page + 1
-            Main.updateWindow()
-        end
-    end)
-
-    local txtPage = topBar_r:addChild({
-        pos = { -topBar_r.size.h - topBar_r.size.h * 3 - 2, 3 },
-        size = { topBar_r.size.h * 3, topBar_r.size.h }
-    })
-    txtPage:addAdaptedText(Main.pageStr, nil, nil, nil, CENTER, 0.7, nil, nil)
-
-    local pageBtnPrev = topBar_r:addChild({
-        interactive = true,
-        pos = { topBar_r.size.w - topBar_r.size.h * 5, 2 },
-        size = { topBar_r.size.h - 4, topBar_r.size.h - 4 },
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
-    })
-    pageBtnPrev:addAdaptedText("<", nil, nil, nil, CENTER, 0.7, nil, nil, nil)
-    pageBtnPrev:addMouseUpHandler(function()
-        if Main.page > 1 then
-            Main.page = Main.page - 1
-            Main.updateWindow()
-        end
-    end)
-
-    local function reindexNonDynamic()
-        local taberu = ModData.parsed.env_obj
-        local freeStatic = ModData.freeIds.static
-        local freeNonStatic = ModData.freeIds.nonStatic
-        local jointIds = ModData.jointIds
-
-        for i = #taberu, 1, -1 do
-            local obj = taberu[i]
-            if obj.id < MAX_NONSTATIC_OBJECTS and obj.props.flag ~= "0" and not jointIds[obj.id] then
-                local newId = table.remove(freeStatic, 1)
-                if not newId then break end
-                table.insert(freeNonStatic, obj.id)
-                obj.id = newId
-            end
-        end
-        table.sort(taberu, function(a, b)
-            return a.id < b.id
-        end)
-        MGE.save()
-        print("reindex done")
+        return true
     end
 
-    local reindexBtn = botBar:addChild({
-        interactive = true,
-        pos = { 0, 2 },
-        size = { view.size.w / 2 - 2, listElementHeight - 4 },
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
-    })
-    reindexBtn:addAdaptedText("reindex", nil, nil, nil, CENTERMID, 0.7, nil, nil, nil)
-    reindexBtn:addMouseUpHandler(function()
-        reindexNonDynamic()
-    end)
 
-    local resetUIBtn = botBar:addChild({
-        interactive = true,
-        pos = { view.size.w - view.size.w / 2 + 2, 2 },
-        size = { view.size.w / 2 - 2, listElementHeight - 4 },
-        bgColor = TB_MENU_DEFAULT_DARKER_COLOR,
-        hoverColor = TB_MENU_DEFAULT_LIGHTER_COLOR,
-        pressedColor = TB_MENU_DEFAULT_DARKEST_COLOR
-    })
-    resetUIBtn:addAdaptedText("reset inputs", nil, nil, nil, CENTERMID, 0.7, nil, nil, nil)
-    resetUIBtn:addMouseUpHandler(function()
-        Main.resetEditor()
-    end)
 
-    --Creating scrollbar
-    local scrollBar = TBMenu:spawnScrollBar(scrollableListHolder, #listElements, listElementHeight)
-    if (#listElements * listElementHeight > scrollableListHolder.size.h) then
-        for _, v in pairs(listElements) do
-            v:hide()
-        end
-        scrollableListHolder.scrollBar = scrollBar
-        scrollBar:makeScrollBar(scrollableListHolder, listElements, toReload)
-    end
+
+
+
+    local barIcons = Main.setListActions({
+
+        { label = "Select / deselect all (Ctrl + A)", icon = MGE.scriptPath .. "textures/selectall.tga", wide = true,
+            onClick = function() if atmo then Main.toggleSelectAllAtmo() else Main.toggleSelectAll() end end },
+        { label = atmo and "New atmo box (Ctrl + N)" or "New (Ctrl + N)", icon = "../textures/menu/general/buttons/addsign.tga",
+            wide = true, onClick = function() if atmo then MGE.Assets.newAtmo() else MGE.Assets.newObject() end end },
+        { label = "Duplicate (Ctrl + D)", icon = MGE.scriptPath .. "textures/duplicate.tga", wide = true,
+            onClick = function() MGE.Editor.duplicate() end },
+        { label = atmo and "Import an .atmo" or "Import", icon = MGE.scriptPath .. "textures/import.tga", wide = true,
+            onClick = function() if atmo then MGE.Assets.openAtmoImport() else MGE.Assets.openImport() end end },
+        { label = atmo and "Export the selected as an .atmo" or "Export", icon = MGE.scriptPath .. "textures/export.tga",
+            wide = true, onClick = function() if atmo then MGE.Assets.exportAtmo() else MGE.Assets.export() end end },
+
+        { label = "Delete (Del)", icon = "../textures/menu/general/buttons/trash.tga", wide = true,
+            onClick = function() MGE.Editor.deleteSelected() end },
+    })
+
+
+
+    local selectAllButton = barIcons[1]
+    Widgets.addDrawBefore(selectAllButton, function()
+        selectAllButton.bgColor = allSelected() and MGE.Widgets.ACTIVE_COLOR or Main.ACTIONS_BG
+    end)
 end
 
 obj_selector.create = create

@@ -1,0 +1,176 @@
+env_obj mge_1
+   shape box
+   pos -39.30 46.40 6.00
+   mass 5.0000
+   color 0.92 0.92 0.92 1.00
+   rot 0.00 0.00 0.00
+   size 4.00 4.00 4.00
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj111
+
+env_obj mge_2
+   shape sphere
+   pos -39.30 43.90 6.00
+   mass 5.0000
+   color 0.91 0.91 0.91 1.00
+   rot 0.00 0.00 0.00
+   size 2.00 2.00 2.00
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj112
+
+env_obj mge_3
+   shape box
+   pos -39.30 38.90 6.00
+   mass 5.0000
+   color 0.91 0.91 0.91 1.00
+   rot 0.00 0.00 0.00
+   size 2.50 8.50 2.50
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj113
+
+env_obj mge_4
+   shape sphere
+   pos -39.30 33.40 6.00
+   mass 5.0000
+   color 0.92 0.92 0.92 1.00
+   rot 0.00 0.00 0.00
+   size 3.00 2.00 2.00
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj114
+
+env_obj mge_5
+   shape box
+   pos -44.30 33.40 5.50
+   mass 5.0000
+   color 0.91 0.91 0.91 1.00
+   rot 0.00 5.50 0.00
+   size 9.00 3.00 3.00
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj115
+
+env_obj mge_6
+   shape sphere
+   pos -47.80 33.40 5.00
+   mass 5.0000
+   color 0.92 0.92 0.92 1.00
+   rot 0.00 0.00 0.00
+   size 3.50 2.00 2.00
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj116
+
+env_obj mge_7
+   shape sphere
+   pos -47.80 38.40 4.00
+   mass 5.0000
+   color 0.91 0.91 0.91 1.00
+   rot 0.00 0.00 0.00
+   size 3.20 2.00 2.00
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj117
+
+env_obj mge_8
+   shape sphere
+   pos -47.80 43.90 4.00
+   mass 5.0000
+   color 0.91 0.91 0.91 1.00
+   rot 0.00 0.00 0.00
+   size 3.20 2.00 2.00
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj118
+
+env_obj mge_9
+   shape sphere
+   pos -45.30 40.90 8.20
+   mass 5.0000
+   color 0.91 0.91 0.91 1.00
+   rot 0.00 0.00 0.00
+   size 2.00 2.00 2.00
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj119
+
+env_obj mge_10
+   shape sphere
+   pos -42.80 40.90 11.00
+   mass 5.0000
+   color 0.93 0.93 0.93 1.00
+   rot 0.00 0.00 0.00
+   size 4.20 2.00 2.00
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj120
+
+env_obj mge_11
+   shape box
+   pos -48.00 40.90 5.00
+   mass 5.0000
+   color 0.91 0.91 0.91 1.00
+   rot 0.00 -7.00 0.00
+   size 2.50 5.50 2.50
+   force 0.00 0.00 0.00
+   thrust 1 0.00 0.00 0.00
+   flag 8
+   bounce 0.100000
+   friction 10000.00
+   hardness 0.000000
+   use_model 0
+   model_name env_obj121
+

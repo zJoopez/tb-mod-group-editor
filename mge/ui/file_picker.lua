@@ -1,0 +1,254 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+local FilePicker = {}
+MGE.FilePicker = FilePicker
+
+local ScrollList = MGE.ScrollList
+
+local px = MGE.Widgets.px
+local OVERLAY_W = px(420)
+local OVERLAY_H = px(460)
+local PADDING = px(10)
+local TITLE_H = px(44)
+local BUTTON_H = px(40)
+local DOUBLE_CLICK_TIME = 0.35
+local FOLDER_ICON = "../textures/menu/general/folder.tga"
+
+
+
+local function split(path)
+    local parts = {}
+    for part in tostring(path or ""):gmatch("[^/\\]+") do table.insert(parts, part) end
+    return parts
+end
+
+
+
+
+
+local function listFolder(dir, extension)
+    local folders, files = {}, {}
+    for _, name in ipairs(get_folders(dir) or {}) do
+        if not name:find("^%.") then table.insert(folders, name) end
+    end
+    local suffixes = {}
+    for ext in extension:lower():gmatch("%S+") do table.insert(suffixes, "%." .. ext .. "$") end
+    for _, fileName in ipairs(get_files(dir, "") or {}) do
+        local name = tostring(fileName):gsub("^.*[/\\]", "")
+        local listed = false
+        for _, suffix in ipairs(suffixes) do
+            if name:lower():find(suffix) then listed = true end
+        end
+        if listed and not name:find("^%.") then table.insert(files, name) end
+    end
+    table.sort(folders, function(a, b) return a:lower() < b:lower() end)
+    table.sort(files, function(a, b) return a:lower() < b:lower() end)
+    return folders, files
+end
+
+
+
+function FilePicker.open(options)
+    if MGE.pickerOverlay or MGE.saveOverlay then return end
+    local roots = options.roots or { { root = options.root, label = options.rootLabel or options.root } }
+    local rootIndex = 1
+    local function root() return roots[rootIndex].root end
+    local selectedPath = options.selected
+
+    local startParts = split(selectedPath)
+    table.remove(startParts)
+    local folder = table.concat(startParts, "/")
+    if folder ~= "" and not is_folder(root() .. "/" .. folder) then folder = "" end
+
+    local overlay = TBMenu:spawnWindowOverlay()
+    MGE.pickerOverlay = overlay
+    local defaultKillAction = overlay.killAction
+    overlay.killAction = function()
+        if defaultKillAction then defaultKillAction() end
+        if MGE and MGE.Widgets then MGE.Widgets.releaseKeyboard(overlay) end
+        if MGE then MGE.pickerOverlay = nil end
+        enable_camera_movement()
+    end
+    local function close() overlay:kill() end
+
+    local w = math.min(OVERLAY_W, WIN_W - 20)
+    local h = math.min(OVERLAY_H, WIN_H - 20)
+    local box = overlay:addChild({
+        pos = { (WIN_W - w) / 2, (WIN_H - h) / 2 },
+        size = { w, h },
+        bgColor = MGE.Widgets.CONTENT_BG,
+        shapeType = ROUNDED,
+        rounded = 5,
+        interactive = true,
+    })
+
+
+    box:addCustomDisplay(function()
+        UIScrollbarIgnore = not (MOUSE_X >= box.pos.x and MOUSE_X <= box.pos.x + box.size.w and
+            MOUSE_Y >= box.pos.y and MOUSE_Y <= box.pos.y + box.size.h)
+    end)
+
+    local barH = ScrollList.rowHeight
+    local innerW = w - PADDING * 2
+    local listY = TITLE_H + barH
+    local listH = h - listY - BUTTON_H - PADDING * 2
+
+
+    local toReload = box:addChild({
+        pos = { 0, 0 },
+        size = { w, h },
+    })
+    local header = toReload:addChild({
+        pos = { 0, 0 },
+        size = { w, listY },
+        bgColor = MGE.Widgets.CONTENT_BG,
+    })
+    header:addChild({
+        pos = { PADDING, 0 },
+        size = { innerW, TITLE_H },
+    }):addAdaptedText(true, options.title, nil, nil, MGE.Widgets.FONT, nil, MGE.Widgets.TITLE_SCALE)
+    local folderBar = header:addChild({
+        pos = { PADDING, TITLE_H },
+        size = { innerW, barH },
+        bgColor = MGE.Widgets.BAR_COLOR,
+    })
+    local footer = toReload:addChild({
+        pos = { 0, listY + listH },
+        size = { w, h - listY - listH },
+        bgColor = MGE.Widgets.CONTENT_BG,
+    })
+    local rowsHolder = box:addChild({
+        pos = { PADDING, listY },
+        size = { innerW, listH },
+    })
+
+    local function confirm()
+        if selectedPath == nil then
+            TBMenu:showStatusMessage("Select a file from the list")
+            return
+        end
+        close()
+        options.onConfirm(selectedPath, root())
+    end
+
+    local rebuild
+
+    local lastClick = nil
+
+    local function openFolder(path)
+        folder = path
+        lastClick = nil
+        rebuild()
+    end
+
+    rebuild = function()
+
+        folderBar:kill(true)
+        local backW = folder ~= "" and barH * 2 or 0
+        if folder ~= "" then
+            MGE.Widgets.button(folderBar, { x = 2, y = 2, w = backW - 4, h = barH - 4 }, "< back", function()
+                local parts = split(folder)
+                table.remove(parts)
+                openFolder(table.concat(parts, "/"))
+            end, nil, MGE.Widgets.PANEL_STYLE)
+        end
+        local switchW = #roots > 1 and math.min(110, innerW / 4) or 0
+        for i = #roots > 1 and 1 or 2, #roots do
+            local x = innerW - (#roots - i + 1) * switchW
+            local btn = MGE.Widgets.button(folderBar, { x = x + 2, y = 2, w = switchW - 4, h = barH - 4 }, roots[i].label,
+                function()
+                    if rootIndex == i then return end
+                    rootIndex, selectedPath = i, nil
+                    openFolder("")
+                end, nil, MGE.Widgets.PANEL_STYLE)
+            if i == rootIndex then btn.bgColor = MGE.Widgets.ACTIVE_COLOR end
+        end
+        local switchesW = #roots > 1 and #roots * switchW or 0
+        folderBar:addChild({
+            pos = { backW + 5, 0 },
+            size = { innerW - backW - 10 - switchesW, barH },
+        }):addAdaptedText((#roots > 1 and "" or roots[rootIndex].label .. (folder ~= "" and "/" or "")) .. folder,
+            nil, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
+
+        local dir = folder == "" and root() or root() .. "/" .. folder
+        local prefix = folder == "" and "" or folder .. "/"
+        local folders, files = listFolder(dir, options.extension)
+        local items = {}
+        for _, name in ipairs(folders) do table.insert(items, { label = name, folder = prefix .. name }) end
+        for _, name in ipairs(files) do
+            local shown = options.keepExtension and name or name:gsub("%.[^%.]*$", "")
+            table.insert(items, { label = shown, path = prefix .. shown })
+        end
+
+
+        rowsHolder:kill(true)
+
+        local selectedRow = nil
+        ScrollList.create(rowsHolder, { x = 0, y = 0, w = innerW, h = listH }, items, function(row, item, index)
+            if item.folder then
+
+                local iconSize = row.size.h - 8
+                MGE.Widgets.trackImage(row:addChild({
+                    pos = { 5, (row.size.h - iconSize) / 2 },
+                    size = { iconSize, iconSize },
+                    bgImage = FOLDER_ICON,
+                }), FOLDER_ICON)
+                row:addChild({
+                    pos = { iconSize + 11, 0 },
+                    size = { row.size.w - iconSize - 16, row.size.h },
+                }):addAdaptedText(item.label, nil, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
+                row:addMouseUpHandler(function() openFolder(item.folder) end)
+                return
+            end
+            row:addAdaptedText(item.label, 5, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
+            local function select()
+                if selectedRow then
+                    selectedRow.row.bgColor = ScrollList.getRowColor(selectedRow.index)
+                end
+                selectedRow = { row = row, index = index }
+                selectedPath = item.path
+                row.bgColor = ScrollList.selectedColor
+            end
+            if item.path == selectedPath then select() end
+            row:addMouseUpHandler(function()
+                local now = UIElement.clock or os.clock()
+                local double = lastClick ~= nil and lastClick.path == item.path and now - lastClick.time <= DOUBLE_CLICK_TIME
+                lastClick = { path = item.path, time = now }
+                select()
+                if double then confirm() end
+            end)
+        end, toReload, options.emptyText or ("No folders or ." .. options.extension .. " files here"))
+    end
+
+    local buttonW = (innerW - PADDING) / 2
+    for i, info in ipairs({
+        { label = TB_MENU_LOCALIZED.BUTTONCANCEL, onClick = close },
+        { label = options.confirmLabel or "OK", onClick = confirm },
+    }) do
+
+        MGE.Widgets.button(footer, { x = PADDING + (i - 1) * (buttonW + PADDING), y = PADDING, w = buttonW,
+            h = BUTTON_H }, info.label, info.onClick)
+    end
+
+    rebuild()
+end
+
+return FilePicker

@@ -1,0 +1,231 @@
+player 0
+   body head
+      pos 1.00 2.75 0.80
+      density 0.0001
+   body breast
+      sides 1.25 1.25 0.40
+      pos 1.00 3.06 0.94
+      density 0.0001
+   body chest
+      sides 2.70 0.40 0.10
+      pos 1.00 4.70 0.97
+      density 0.0020
+   body stomach
+      sides 0.85 1.25 0.30
+      pos 1.00 1.85 0.59
+      rot -2.30 0.00 0.00
+      density 0.0001
+   body groin
+      sides 0.25 0.25 0.05
+      pos 1.00 1.00 0.30
+      density 0.0001
+   body r_pecs
+      sides 0.70 2.00 0.40
+      pos 0.56 3.00 0.55
+      density 0.0001
+   body r_biceps
+      sides 2.80 0.35 0.05
+      pos 1.00 4.75 0.75
+      rot -5.00 0.00 0.00
+      density 0.0001
+   body r_triceps
+      sides 0.90 1.25 0.30
+      pos 1.00 4.25 0.50
+      density 0.0001
+   body l_pecs
+      sides 0.70 2.00 0.40
+      pos 1.44 3.00 0.55
+      density 0.0001
+   body l_biceps
+      sides 0.02 0.50 1.25
+      pos 2.55 3.10 0.45
+      rot -45.00 90.00 0.00
+      density 0.0001
+   body l_triceps
+      sides 0.90 1.25 0.30
+      pos 1.00 4.25 0.50
+      density 0.0001
+   body r_hand
+      shape sphere
+      sides 0.30 0.22 0.22
+      pos 0.20 4.40 0.35
+      density 0.0010
+      thrust 1 0.000000 0.000000 -0.040000
+   body l_hand
+      shape sphere
+      sides 0.30 0.22 0.22
+      pos 1.80 4.40 0.35
+      density 0.0010
+      thrust 1 0.000000 0.000000 -0.040000
+   body r_butt
+      pos 0.85 1.25 0.40
+      density 0.0001
+   body l_butt
+      pos 1.20 1.25 0.40
+      density 0.0001
+   body r_thigh
+      shape box
+      sides 0.30 0.10 0.05
+      pos 0.66 0.90 0.30
+      density 0.0001
+   body l_thigh
+      shape box
+      sides 0.30 0.10 0.05
+      pos 1.34 0.90 0.30
+      density 0.0001
+   body l_leg
+      shape box
+      sides 0.35 0.10 0.05
+      pos 1.30 1.00 0.35
+      rot 0.00 0.00 25.00
+      density 0.0001
+   body r_leg
+      shape box
+      sides 0.35 0.10 0.05
+      pos 0.70 1.00 0.35
+      rot 0.00 0.00 -25.00
+      density 0.0001
+   body r_foot
+      shape sphere
+      sides 0.30 0.20 0.08
+      pos 0.20 1.10 0.35
+      density 0.0001
+      thrust 1 0.000000 0.000000 -0.040000
+   body l_foot
+      shape sphere
+      sides 0.30 0.50 0.08
+      pos 1.80 1.10 0.35
+      density 0.0001
+      thrust 1 0.000000 0.000000 -0.040000
+   joint neck
+      pos 1.00 2.75 0.60
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint chest
+      radius 0.15
+      pos 1.00 2.35 0.50
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint lumbar
+      pos 1.00 2.50 0.55
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint abs
+      radius 0.15
+      pos 1.00 1.50 0.65
+      axis 0.00 0.00 1.00
+      range 0.20 -0.20
+      velocity 2.50
+      dm_threshold 0
+   joint r_pecs
+      pos 0.85 2.60 0.57
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint r_shoulder
+      radius 0.10
+      pos 1.00 4.00 0.50
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint r_elbow
+      radius 0.10
+      pos 0.80 4.00 0.50
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint l_pecs
+      pos 1.15 2.60 0.57
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint l_shoulder
+      radius 0.10
+      pos 1.00 4.00 0.50
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint l_elbow
+      radius 0.10
+      pos 1.20 4.00 0.50
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint r_wrist
+      radius 0.15
+      pos 0.54 4.40 0.35
+      axis -1.00 0.00 0.00
+      range 9999.00 -9999.00
+      strength 0.02
+      velocity 400.00
+   joint l_wrist
+      radius 0.15
+      pos 1.46 4.40 0.35
+      axis 1.00 0.00 0.00
+      range 9999.00 -9999.00
+      strength 0.02
+      velocity 400.00
+   joint r_glute
+      radius 0.10
+      pos 1.00 2.30 0.70
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint l_glute
+      radius 0.10
+      pos 1.00 2.00 0.50
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint r_hip
+      radius 0.10
+      pos 1.00 2.00 0.50
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint l_hip
+      radius 0.10
+      pos 1.00 2.20 0.70
+      axis 0.00 0.00 0.00
+      range 0.00 0.00
+      strength 0.00
+      velocity 0.00
+   joint r_knee
+      radius 0.10
+      pos 1.00 1.75 0.50
+      range 0.01 0.01
+      strength 0.00
+      velocity 0.00
+   joint l_knee
+      radius 0.10
+      pos 1.00 2.10 0.50
+      range 0.01 0.01
+      strength 0.00
+      velocity -0.50
+   joint r_ankle
+      radius 0.20
+      pos 0.20 1.10 0.35
+      range 9999.00 -9999.00
+      strength 0.02
+      velocity 400.00
+   joint l_ankle
+      radius 0.20
+      pos 1.80 1.10 0.35
+      range 9999.00 -9999.00
+      strength 0.02
+      velocity 400.00

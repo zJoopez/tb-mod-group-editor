@@ -1,0 +1,391 @@
+
+
+
+
+
+
+
+
+
+
+MGE.MapConv = MGE.MapConv or {}
+local MapConv = MGE.MapConv
+
+local Bsp = {}
+MapConv.Bsp = Bsp
+
+local LUMP = {
+    ENTITIES = 0, PLANES = 1, TEXDATA = 2, VERTEXES = 3, NODES = 5, TEXINFO = 6, FACES = 7, LEAFS = 10,
+    EDGES = 12, SURFEDGES = 13, MODELS = 14, LEAFBRUSHES = 17, BRUSHES = 18, BRUSHSIDES = 19,
+    DISPINFO = 26, DISP_VERTS = 33, TEXDATA_STRING_DATA = 43, TEXDATA_STRING_TABLE = 44,
+}
+local HEADER_LUMPS = 64
+local HEADER_SIZE = 8 + HEADER_LUMPS * 16 + 4
+
+
+local CONTENTS = {
+    SOLID = 0x1, WINDOW = 0x2, GRATE = 0x8, MOVEABLE = 0x4000, PLAYERCLIP = 0x10000,
+}
+
+local SURF_SKY2D, SURF_SKY = 0x2, 0x4
+
+
+
+
+local function has(flags, bits)
+    return flags % (bits * 2) >= bits
+end
+
+
+local function u16(s, pos)
+    local a, b = s:byte(pos, pos + 1)
+    return a + b * 256
+end
+local function i16(s, pos)
+    local v = u16(s, pos)
+    return v >= 32768 and v - 65536 or v
+end
+local function i32(s, pos)
+    local a, b, c, d = s:byte(pos, pos + 3)
+    local v = a + b * 256 + c * 65536 + d * 16777216
+    return v >= 2147483648 and v - 4294967296 or v
+end
+
+
+local POW2 = {}
+for e = 1, 254 do POW2[e] = 2 ^ (e - 127) end
+
+
+
+local function float(a, b, c, d)
+    local sign = d >= 128 and -1 or 1
+    local high = c >= 128 and 1 or 0
+    local exponent = (d % 128) * 2 + high
+    local mantissa = (c - high * 128) * 65536 + b * 256 + a
+    if exponent == 0 then return sign * mantissa * 2 ^ -149 end
+    if exponent == 255 then return mantissa == 0 and sign * math.huge or 0 / 0 end
+    return sign * (1 + mantissa / 8388608) * POW2[exponent]
+end
+
+
+local function f32(s, pos)
+    return float(s:byte(pos, pos + 3))
+end
+Bsp.f32 = f32
+Bsp.u16, Bsp.i16, Bsp.i32 = u16, i16, i32
+local function vec3(s, pos) return { f32(s, pos), f32(s, pos + 4), f32(s, pos + 8) } end
+
+
+
+
+
+
+function Bsp.stringReader(data)
+    return function(offset, length) return data:sub(offset + 1, offset + length) end, #data
+end
+
+
+
+
+function Bsp.fileReader(file)
+    local size = file:seek("end")
+    return function(offset, length)
+        file:seek("set", offset)
+        return file:read(length) or ""
+    end, size
+end
+
+
+
+
+
+
+
+
+
+
+
+local function openLumps(read, fileSize)
+    local header = read(0, HEADER_SIZE)
+    if #header < HEADER_SIZE then error("too short for a map file") end
+    if header:sub(1, 4) ~= "VBSP" then
+        local magic = header:sub(1, 4)
+        if magic == "\30\0\0\0" or magic == "\29\0\0\0" then
+            error("GoldSrc map (Half-Life, CS 1.6): no brushes in these, only .vmf / Source .bsp work")
+        end
+        error("not a Source map (no VBSP header)")
+    end
+    local version = i32(header, 5)
+    if version < 19 or version > 21 then error("BSP version " .. version .. ", only 19-21 (Source 1) work") end
+
+
+    local function readDirectory(o, l, v)
+        local dir = {}
+        for i = 0, HEADER_LUMPS - 1 do
+            local pos = 9 + i * 16
+            local lump = { offset = i32(header, pos + o), length = i32(header, pos + l), version = i32(header, pos + v) }
+            if lump.length < 0 or (lump.length > 0 and (lump.offset < HEADER_SIZE or lump.offset + lump.length > fileSize)) then
+                return nil
+            end
+            dir[i] = lump
+        end
+        return dir
+    end
+    local dir = readDirectory(0, 4, 8) or readDirectory(4, 8, 0)
+    if not dir then error("lump directory doesn't fit the file (damaged or unknown BSP variant)") end
+
+    local cache = {}
+    return {
+        version = function(index) return dir[index].version end,
+        offset = function(index) return dir[index].offset end,
+        length = function(index) return dir[index].length end,
+        get = function(index, size)
+            local bytes = cache[index]
+            if not bytes then
+                bytes = read(dir[index].offset, dir[index].length)
+                if #bytes > 0 and bytes:sub(1, 4) == "LZMA" then
+                    error("compressed lump " .. index .. ", decompress the map first (e.g. bspzip -repack)")
+                end
+                cache[index] = bytes
+            end
+            return bytes, math.floor(#bytes / size)
+        end,
+    }
+end
+
+
+local function readTexinfo(lumps)
+    local tableBytes, tableCount = lumps.get(LUMP.TEXDATA_STRING_TABLE, 4)
+    local strings = lumps.get(LUMP.TEXDATA_STRING_DATA, 1)
+    local names = {}
+    for i = 0, tableCount - 1 do
+        local start = i32(tableBytes, 1 + i * 4) + 1
+        local stop = strings:find("\0", start, true) or #strings + 1
+        names[i] = strings:sub(start, stop - 1)
+    end
+    local texdata, texdataCount = lumps.get(LUMP.TEXDATA, 32)
+    local texdataNames = {}
+    for i = 0, texdataCount - 1 do texdataNames[i] = names[i32(texdata, 1 + i * 32 + 12)] or "" end
+    local bytes, count = lumps.get(LUMP.TEXINFO, 72)
+    local texinfo = {}
+    for i = 0, count - 1 do
+        local pos = 1 + i * 72
+        texinfo[i] = { flags = i32(bytes, pos + 64), material = texdataNames[i32(bytes, pos + 68)] or "" }
+    end
+    return texinfo
+end
+
+
+
+local function brushModels(lumps)
+    local models, modelCount = lumps.get(LUMP.MODELS, 48)
+    local nodes, nodeCount = lumps.get(LUMP.NODES, 32)
+
+    local leafSize = lumps.version(LUMP.LEAFS) == 0 and 56 or 32
+    local leafs, leafCount = lumps.get(LUMP.LEAFS, leafSize)
+    local leafBrushes = lumps.get(LUMP.LEAFBRUSHES, 2)
+
+    local owner = {}
+
+    for model = modelCount - 1, 0, -1 do
+        local stack = { i32(models, 1 + model * 48 + 36) }
+        local seen = 0
+        while #stack > 0 do
+            local node = table.remove(stack)
+            seen = seen + 1
+            if seen > nodeCount + leafCount + 1 then error("BSP tree loops") end
+            if node >= 0 then
+                if node >= nodeCount then error("bad node " .. node) end
+                local pos = 1 + node * 32
+                stack[#stack + 1] = i32(nodes, pos + 4)
+                stack[#stack + 1] = i32(nodes, pos + 8)
+            else
+                local leaf = -1 - node
+                if leaf < leafCount then
+                    local pos = 1 + leaf * leafSize
+                    local first, count = u16(leafs, pos + 24), u16(leafs, pos + 26)
+                    for k = first, first + count - 1 do
+                        local brush = u16(leafBrushes, 1 + k * 2)
+                        if owner[brush] == nil then owner[brush] = model end
+                    end
+                end
+            end
+        end
+    end
+    return owner
+end
+
+
+
+
+
+
+
+
+
+
+
+
+local function readTerrain(lumps, planes, texinfo)
+    local infos, infoCount = lumps.get(LUMP.DISPINFO, 176)
+    if infoCount == 0 then return {} end
+    local faces = lumps.get(LUMP.FACES, 56)
+    local vertexes = lumps.get(LUMP.VERTEXES, 12)
+    local edges = lumps.get(LUMP.EDGES, 4)
+    local surfedges = lumps.get(LUMP.SURFEDGES, 4)
+    local dispVerts = lumps.get(LUMP.DISP_VERTS, 20)
+    local terrain = {}
+    for d = 0, infoCount - 1 do
+        local info = 1 + d * 176
+        local start = vec3(infos, info)
+        local firstVert, power, contents, faceIndex = i32(infos, info + 12), i32(infos, info + 20), i32(infos, info + 32), u16(infos, info + 36)
+        local face = 1 + faceIndex * 56
+        local firstEdge, edgeCount = i32(faces, face + 4), i16(faces, face + 8)
+        if edgeCount == 4 and has(contents, CONTENTS.SOLID) and power >= 1 and power <= 4 then
+            local corners = {}
+            for k = 0, 3 do
+                local se = i32(surfedges, 1 + (firstEdge + k) * 4)
+                local e = 1 + math.abs(se) * 4
+                corners[k + 1] = vec3(vertexes, 1 + (se >= 0 and u16(edges, e) or u16(edges, e + 2)) * 12)
+            end
+            local first, best = 1, math.huge
+            for k = 1, 4 do
+                local dx, dy, dz = corners[k][1] - start[1], corners[k][2] - start[2], corners[k][3] - start[3]
+                local dist = dx * dx + dy * dy + dz * dz
+                if dist < best then first, best = k, dist end
+            end
+            local p = {}
+            for k = 0, 3 do p[k] = corners[(first - 1 + k) % 4 + 1] end
+            local size = 2 ^ power + 1
+            local points = {}
+            for i = 0, size - 1 do
+                local t = i / (size - 1)
+                local a, b = {}, {}
+                for k = 1, 3 do
+                    a[k] = p[0][k] + (p[1][k] - p[0][k]) * t
+                    b[k] = p[3][k] + (p[2][k] - p[3][k]) * t
+                end
+                for j = 0, size - 1 do
+                    local s = j / (size - 1)
+                    local v = 1 + (firstVert + i * size + j) * 20
+
+                    local b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16 = dispVerts:byte(v, v + 15)
+                    local ox, oy, oz = float(b1, b2, b3, b4), float(b5, b6, b7, b8), float(b9, b10, b11, b12)
+                    local dist = float(b13, b14, b15, b16)
+                    points[#points + 1] = { a[1] + (b[1] - a[1]) * s + ox * dist, a[2] + (b[2] - a[2]) * s + oy * dist,
+                        a[3] + (b[3] - a[3]) * s + oz * dist }
+                end
+            end
+            local plane = planes[u16(faces, face)]
+            local n = plane and plane.n or { 0, 0, 1 }
+            if faces:byte(face + 2) ~= 0 then n = { -n[1], -n[2], -n[3] } end
+            local info2 = texinfo[i16(faces, face + 10)]
+            terrain[#terrain + 1] = { id = "disp " .. d, size = size, points = points, n = n, material = info2 and info2.material or "" }
+        end
+    end
+    return terrain
+end
+
+
+
+
+
+function Bsp.placeModel(props)
+    local origin = MapConv.Vmf.readVector(props.origin) or { 0, 0, 0 }
+    local angles = MapConv.Vmf.readVector(props.angles) or { 0, 0, 0 }
+    if origin[1] == 0 and origin[2] == 0 and origin[3] == 0 and angles[1] == 0 and angles[2] == 0 and angles[3] == 0 then
+        return nil
+    end
+    local Mat3 = MGE.Mat3
+    local rot = Mat3.mul(Mat3.rotZ(math.rad(angles[2])),
+        Mat3.mul(Mat3.rotY(math.rad(angles[1])), Mat3.rotX(math.rad(angles[3]))))
+    return { rot = rot, origin = origin }
+end
+
+
+
+
+
+
+function Bsp.placePlane(plane, place)
+    local n = MGE.Mat3.apply(place.rot, plane.n)
+    local o = place.origin
+    return { n = n, d = plane.d + n[1] * o[1] + n[2] * o[2] + n[3] * o[3] }
+end
+
+
+
+
+
+function Bsp.parse(read, fileSize)
+    local lumps = openLumps(read, fileSize)
+    local map = { brushes = {}, entities = {} }
+
+
+    local text = lumps.get(LUMP.ENTITIES, 1):gsub("%z.*$", "")
+    local modelClass = { [0] = "worldspawn" }
+    local modelPlace = {}
+    local modelNonSolid = {}
+    for _, block in ipairs(MapConv.Vmf.parseTree(text).children) do
+        local props = block.props
+        local classname = props.classname or ""
+        table.insert(map.entities, { classname = classname, origin = MapConv.Vmf.readVector(props.origin), props = props })
+        local model = tonumber((props.model or ""):match("^%*(%d+)$"))
+        if model then
+            modelClass[model] = classname
+            if model > 0 then
+                modelPlace[model] = Bsp.placeModel(props)
+                modelNonSolid[model] = MapConv.Vmf.nonSolidEntity(props) or nil
+            end
+        end
+    end
+
+    local planeBytes, planeCount = lumps.get(LUMP.PLANES, 20)
+    local planes = {}
+    for i = 0, planeCount - 1 do
+        local pos = 1 + i * 20
+        planes[i] = { n = vec3(planeBytes, pos), d = f32(planeBytes, pos + 12) }
+    end
+    local texinfo = readTexinfo(lumps)
+    local owner = brushModels(lumps)
+
+    local brushes, brushCount = lumps.get(LUMP.BRUSHES, 12)
+    local sides, sideCount = lumps.get(LUMP.BRUSHSIDES, 8)
+    for b = 0, brushCount - 1 do
+        local pos = 1 + b * 12
+        local firstSide, numSides, contents = i32(brushes, pos), i32(brushes, pos + 4), i32(brushes, pos + 8)
+        local model = owner[b] or 0
+        local brush = { id = tostring(b), entity = modelClass[model] or "worldspawn", sides = {},
+            nonSolid = modelNonSolid[model] }
+        local place = modelPlace[owner[b] or 0]
+        local sky = false
+        for s = firstSide, math.min(firstSide + numSides, sideCount) - 1 do
+            local sp = 1 + s * 8
+            local plane = planes[u16(sides, sp)]
+            local info = texinfo[i16(sides, sp + 2)]
+            local bevel = sides:byte(sp + 6) ~= 0
+            if info and (has(info.flags, SURF_SKY) or has(info.flags, SURF_SKY2D)) then sky = true end
+            if plane and not bevel then
+                if place then plane = Bsp.placePlane(plane, place) end
+                table.insert(brush.sides, { plane = plane, material = info and info.material or "", displacement = false })
+            end
+        end
+        if sky then
+            brush.role, brush.reason = "drop", "tool"
+            brush.sky = true
+        elseif has(contents, CONTENTS.SOLID) or has(contents, CONTENTS.WINDOW) or has(contents, CONTENTS.GRATE)
+            or has(contents, CONTENTS.MOVEABLE) then
+            brush.role = "solid"
+        elseif has(contents, CONTENTS.PLAYERCLIP) then
+            brush.role = "clip"
+        else
+            brush.role, brush.reason = "drop", "tool"
+        end
+        map.brushes[#map.brushes + 1] = brush
+    end
+
+    map.terrain = readTerrain(lumps, planes, texinfo)
+    return map
+end
+
+return Bsp

@@ -1,0 +1,50 @@
+env_obj 10
+   shape box
+   pos 1 0.0333333333 0.0700000003
+   rot 0.00 0.00 0.00
+   sides 0.12 2.62 0.12
+   color 0.31 0.25 0.12 1.00
+   flag 0
+   mass 0.0005
+   bounce 0.100000
+   friction 10000.00
+   force 0.00 0.00 0.00
+   hardness 0.000000
+   model_name env_obj10
+   use_model 0
+
+env_obj 11
+   shape box
+   pos 1 -1.6666666667 0.0700000003
+   rot 0.00 0.00 0.00
+   sides 0.62 1.12 0.14
+   color 0.31 0.25 0.12 1.00
+   flag 0
+   mass 0.0005
+   bounce 0.100000
+   friction 10000.00
+   force 0.00 0.00 0.00
+   model_name env_obj11
+   use_model 0
+
+env_obj 15
+   shape box
+   pos 1 1.3333333333 0.0700000003
+   rot 0.00 0.00 0.00
+   sides 0.30 0.12 0.13
+   color 0.31 0.25 0.12 1.00
+   flag 0
+   mass 0.0005
+   bounce 0.100000
+   friction 10000.00
+   force 0.00 0.00 0.00
+   hardness 0.000000
+   model_name env_obj15
+   use_model 0
+
+env_obj_joint 11 10 15
+   pos 1 1.2633333333 0.0700000003
+
+env_obj_joint 12 11 10
+   pos 1 -1.2166666667 0.0700000003
+
