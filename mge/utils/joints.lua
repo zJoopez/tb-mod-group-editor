@@ -279,23 +279,49 @@ function Joints.parseNumbers(value, count)
     return numbers
 end
 
----Writes a prop on joints, one undo step for all of them
+---Camera follow on: looks at joints' anchors (their pos lines), keeping the distance when they fit, like
+---moving objects does (Transforms.moveBy). After an anchor moved: Pos row, Move gizmo, Recenter
+---@param joints FileParserEnvObjJoint[]
+local function followAnchors(joints)
+    local Camera = MGE.Camera
+    if not Camera or not Camera.followMoves then return end
+    local points, center = {}, { 0, 0, 0 }
+    for _, joint in ipairs(joints) do
+        if joint.props.pos then
+            local p = Joints.parseNumbers(joint.props.pos, 3)
+            points[#points + 1] = p
+            for k = 1, 3 do center[k] = center[k] + p[k] end
+        end
+    end
+    if #points == 0 then return end
+    for k = 1, 3 do center[k] = center[k] / #points end
+    local radius = 0.5 -- an anchor alone: a small sphere around it, the camera keeps its distance
+    for _, p in ipairs(points) do
+        local d = math.sqrt((p[1] - center[1]) ^ 2 + (p[2] - center[2]) ^ 2 + (p[3] - center[3]) ^ 2)
+        radius = math.max(radius, d + 0.5)
+    end
+    Camera.focusOn(center, radius)
+end
+
+---Writes a prop on joints, one undo step for all of them. A changed pos (the anchor) is looked at with
+---camera follow on
 ---@param joints FileParserEnvObjJoint[]
 ---@param key string
 ---@param valueOf fun(joint: FileParserEnvObjJoint): string? new value, nil leaves that joint as it is
 ---@return boolean changed
 function Joints.setProps(joints, key, valueOf)
-    local changed = false
+    local changed = {}
     for _, joint in ipairs(joints) do
         local value = valueOf(joint)
         if value ~= nil and joint.props[key] ~= value then
             joint.props[key] = value
-            changed = true
+            changed[#changed + 1] = joint
         end
     end
-    if not changed then return false end
+    if #changed == 0 then return false end
     MGE.History.commit()
     MGE.apply()
+    if key == "pos" then followAnchors(changed) end
     return true
 end
 
@@ -451,6 +477,11 @@ end
 
 ---@type JointDraft?
 Joints.draft = nil
+---Link tab's Pick from world: while on, a click on an object in the world picks it for the draft (and the
+---object under the cursor is lit). Off, a world click on an object leaves the Joints list for the Objects
+---list with it selected, like from any other list: a stray click can't change the draft. Off again after
+---Create / Update, Reset and leaving the Joints list
+Joints.worldPick = false
 ---Set by ui/editor_link.lua: the draft changed (the tab shows it)
 ---@type fun()
 Joints.onDraftChanged = function() end

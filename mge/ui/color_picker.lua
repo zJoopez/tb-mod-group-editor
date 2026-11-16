@@ -307,7 +307,7 @@ function ColorPicker.open(options)
                 MGE.say("the palette is full: right click a color to remove it")
             end
         end)
-    TBMenu:displayPopup(plus, "Save the new color to the palette.\nOn a color: click uses it, right click removes it.")
+    Widgets.popupBelow(plus, "Save the new color to the palette.\nOn a color: click uses it, right click removes it.")
 
     local buttons = box:addChild({ pos = { PAD, boxH - PAD - BUTTON_H }, size = { innerW, BUTTON_H } })
     -- Cancel on the left, like the other rows' backing-out buttons (Reset on Generate, Off on Thrust)

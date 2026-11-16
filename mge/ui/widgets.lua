@@ -204,6 +204,28 @@ function Widgets.popupBelowLeft(element, popup)
     popup:moveTo(-popup.size.w, element.size.h + 4) -- negative x: from the element's right edge
 end
 
+---Hover popup (TBMenu:displayPopup) under its element, left edges lined up: the game's own puts it on top
+---of the element and pushes it back on screen, near the bottom that's above the button, covering it.
+---Moved left when it would leave the screen on the right, above only when there's no room under it
+---@param element UIElement
+---@param message string
+---@return UIElement? popup nil on mobile (the game shows its own)
+function Widgets.popupBelow(element, message)
+    local popup = TBMenu:displayPopup(element, message) ---@type UIElement?
+    if not popup then return nil end
+    local gap, margin = 4, 10
+    -- where it goes, from the element's top left (element.pos is up to date, the popup's isn't after a move)
+    local x, y = 0.0, element.size.h + gap ---@type number, number
+    local overflow = element.pos.x + popup.size.w - (WIN_W - margin)
+    if overflow > 0 then x = -overflow end
+    if element.pos.y + y + popup.size.h > WIN_H - margin then y = -(popup.size.h + gap) end -- no room under it
+    -- set as a shift from 0: toriui turns a negative one into a place left of / above the element (a
+    -- negative value set directly would count from the element's right / bottom edge)
+    popup:moveTo(0, 0)
+    popup:moveTo(x, y, true)
+    return popup
+end
+
 ---Esc in an overlay's text field closes the overlay (MGE.closeTopOverlay). A focused field takes every
 ---key first, MGE's key hook may not see the Esc then. Keeps the field's other key handlers
 ---@param field UIElement text field inside an MGE overlay
@@ -253,8 +275,13 @@ function Widgets.buttonRow(parent, y, h, buttons, gap, textScale, style)
             created[i] = Widgets.iconButton(parent, rect, info.icon, info.onClick, style)
             local label = info.label
             if type(label) == "string" and label ~= "" then
-                local popup = TBMenu:displayPopup(created[i], label) -- name of the icon on hover
-                if info.popupLeft and popup then Widgets.popupBelowLeft(created[i], popup) end
+                -- name of the icon on hover, under it (popupLeft: under it, opening to the left)
+                if info.popupLeft then
+                    local popup = TBMenu:displayPopup(created[i], label)
+                    if popup then Widgets.popupBelowLeft(created[i], popup) end
+                else
+                    Widgets.popupBelow(created[i], label)
+                end
             end
         else
             created[i] = Widgets.button(parent, rect, info.label, info.onClick, textScale, style)

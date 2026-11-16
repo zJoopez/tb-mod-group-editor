@@ -507,8 +507,8 @@ local function buildBar()
         end },
         { label = "Covered", onClick = function() flip("dropCovered") end },
     }, 4, Widgets.TEXT_SCALE_SMALL)
-    TBMenu:displayPopup(toggles[1], "Joins nearly flat neighbouring slabs (terrain floors,\nfloor tiles) into bigger ones: far fewer boxes")
-    TBMenu:displayPopup(toggles[2], "Also leaves out boxes " .. math.floor(MapConv.COVERED_SHARE * 100 + 0.5) ..
+    Widgets.popupBelow(toggles[1], "Joins nearly flat neighbouring slabs (terrain floors,\nfloor tiles) into bigger ones: far fewer boxes")
+    Widgets.popupBelow(toggles[2], "Also leaves out boxes " .. math.floor(MapConv.COVERED_SHARE * 100 + 0.5) ..
         "% covered by other boxes\ntogether. Boxes inside one other box always go")
     info = bar:addChild({ pos = { pad, pad + rowH + 4 + toggleH + 4 }, size = { inner, Widgets.INFO_HEIGHT + 4 } })
     table.insert(Gizmo.modeListeners, refresh)

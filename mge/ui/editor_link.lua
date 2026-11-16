@@ -1,16 +1,18 @@
 -- Joints list's Link tab: which two objects the current joint slot (Main.jointSlot, always one) links.
--- Clicks only change a draft (Joints.draft, utils/joints.lua): a click on an object in the grid or in
--- the world (utils/world_select.lua) picks it, a click on a picked one takes it out, at most two. Which
+-- Clicks only change a draft (Joints.draft, utils/joints.lua): a click on an object in the grid, or in
+-- the world while Pick from world is on (Joints.worldPick, utils/world_select.lua), picks it, a click on a
+-- picked one takes it out, at most two. Off, a world click selects the object on the Objects list. Which
 -- one is first doesn't matter to the game. Nothing changes in the mod until Create (an empty slot) or
 -- Update (a joint's new objects), so a stray click can't rewire a joint.
---   row 0:    the slot and what the draft would do                             (block jointLinkHead)
---   rows 1-6: every object, picked ones pale, static ones faint, on pages when there are more than
+--   rows 0-5: every object, picked ones pale, static ones faint, on pages when there are more than
 --             fit. Linking one above id MAX_NONSTATIC_OBJECTS reindexes it down (Joints.linkSlots)
 --                                                                               (block jointLinkGrid)
---   row 7:    Create / Update, Reset (the saved link; Delete is in the list's bar). Create with nothing
---             picked makes two default objects joined in the slot              (block jointLinkButtons)
--- A pick only rebuilds the heading and the buttons, the grid restyles its cells in place: rebuilding it
--- would scroll it back to the top. Selecting another slot rebuilds all three.
+--   row 6:    Pick from world (its popup is the tab's help)
+--   row 7:    Reset (the saved link; Delete is in the list's bar), Create / Update: its popup says what
+--             it would do. Create with nothing picked makes two default objects joined in the slot
+--                                                                     (rows 6-7: block jointLinkButtons)
+-- A pick only rebuilds the buttons, the grid restyles its cells in place: rebuilding it would scroll it
+-- back to the top. Selecting another slot rebuilds both.
 -- Has its own buttons (Reset: the draft back to the saved link).
 -- Like the Properties tab, a click on a joint's anchor selects that joint (it becomes the current
 -- slot) and the Move gizmo drags the selected joints' anchors: those come before picking objects
@@ -31,7 +33,7 @@ local gridPage = 1
 
 -- a click in the grid or the world changed the draft: only this tab shows it (no reload, nothing saved)
 Joints.onDraftChanged = function()
-    Rows.refreshBlocks({ "jointLinkHead", "jointLinkButtons" })
+    Rows.refreshBlocks({ "jointLinkButtons" })
     if restyleGrid then restyleGrid() end
 end
 
@@ -69,34 +71,29 @@ local function anyJoint(slots)
     return false
 end
 
----First row: the slot (or how many are selected) and what Create / Update would do
----@param holder UIElement
-local function buildHeading(holder)
-    Rows.begin()
-    local slot, slots = MGE.Main.selectedSlot(), selectedSlots()
+---What Create / Update would do with the current slot's draft, for its button's popup
+---@param slot integer
+---@param slots integer[] the selected slots
+---@return string
+local function statusText(slot, slots)
     local draft, state = Joints.draftFor(slot), Joints.draftState(slot, slots)
     local many = #slots > 1
-    local row, x, w = Rows.createRow(many and #slots .. " joints" or "Joint " .. slot, holder,
-        "Click two objects (list or world), again to unpick.\n" ..
-        "Create / Update applies it, Reset drops the picks.")
     local joint = Joints.find(slot)
     local pair = pairText(draft.obj1, draft.obj2)
-    local text
-    if (state == "new" or state == "changed") and many then
-        text = "Link all " .. #slots .. " to " .. pair
+    if makesPair(slot, draft) then
+        return "Nothing picked: two new default objects side\nby side, joined, in front of the camera"
+    elseif (state == "new" or state == "changed") and many then
+        return "Links all " .. #slots .. " joints to objects " .. pair
     elseif state == "new" then
-        text = "Create joins " .. pair
+        return "Joint " .. slot .. ": joins objects " .. pair
     elseif state == "changed" and joint then
-        text = "Update to " .. pair .. " (now " .. pairText(joint.obj1, joint.obj2) .. ")"
+        return "Joint " .. slot .. ": links " .. pair .. " (now " .. pairText(joint.obj1, joint.obj2) .. ")"
     elseif state == "unchanged" then
-        text = (many and "All link objects " or "Links objects ") .. pair
+        return (many and "All of them link objects " or "Joint " .. slot .. " links objects ") .. pair
     elseif draft.obj1 then
-        text = "Picked " .. draft.obj1 .. ", pick one more"
-    else
-        text = joint and "Pick 2 objects" or "Empty: pick 2 objects, or Create 2 new ones"
+        return "Picked " .. draft.obj1 .. ", pick one more"
     end
-    local textHolder = row:addChild({ pos = { x + 4, 0 }, size = { w - 8, row.size.h } })
-    textHolder:addAdaptedText(text, nil, nil, MGE.Widgets.FONT, LEFTMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
+    return "Pick 2 objects"
 end
 
 ---Every object, a click picks or unpicks one. Picked ones read from the draft on every restyle (the
@@ -170,32 +167,50 @@ local function commit(slot)
     end
 end
 
----Last row: Create / Update (lit when it would do something), Reset
+---The last two rows: Pick from world (lit while on), then Reset and Create / Update (lit when it would do
+---something, its popup says what)
 ---@param holder UIElement
 local function buildButtons(holder)
     Rows.begin()
     local slot, slots = MGE.Main.selectedSlot(), selectedSlots()
     local draft, state = Joints.draftFor(slot), Joints.draftState(slot, slots)
-    local row = holder:addChild({ pos = { Widgets.INSET, Widgets.INSET }, -- like the number fields
-        size = { holder.size.w - Widgets.INSET * 2, ROW_H - Widgets.INSET * 2 } })
-    local buttons = Widgets.buttonRow(row, 0, row.size.h, {
-        { label = anyJoint(slots) and "Update" or "Create", onClick = function() commit(slot) end },
+    ---A full-width row of buttons, inset like the number fields
+    local function buttonsAt(index, items)
+        local row = holder:addChild({ pos = { Widgets.INSET, index * ROW_H + Widgets.INSET },
+            size = { holder.size.w - Widgets.INSET * 2, ROW_H - Widgets.INSET * 2 } })
+        return Widgets.buttonRow(row, 0, row.size.h, items, Widgets.GAP, nil, Widgets.PANEL_STYLE)
+    end
+    local pick = buttonsAt(0, {
+        { label = "Pick from world", onClick = function()
+            Joints.worldPick = not Joints.worldPick
+            if not Joints.worldPick then MGE.WorldSelect.hover = nil end -- no object lit as pickable
+            Rows.refreshBlocks({ "jointLinkButtons" })
+        end },
+    })[1]
+    Rows.setHighlighted(pick, Joints.worldPick)
+    Widgets.popupBelow(pick, "Pick the joint's 2 objects in the list, or in the\n" ..
+        "world while this is lit. Click a picked one to unpick.\n" ..
+        "Off: a world click selects the object on the Objects list.")
+    -- Reset on the left like the other backing-out buttons
+    local buttons = buttonsAt(1, {
         { label = "Reset", onClick = function()
+            Joints.worldPick = false
             Joints.resetDraft()
             Joints.onDraftChanged()
         end },
-    }, Widgets.GAP, nil, Widgets.PANEL_STYLE)
-    Rows.setHighlighted(buttons[1], state == "new" or state == "changed" or makesPair(slot, draft))
-    if makesPair(slot, draft) then
-        TBMenu:displayPopup(buttons[1], "Nothing picked: two new default objects side\nby side, joined, in front of the camera")
-    end
+        { label = anyJoint(slots) and "Update" or "Create", onClick = function()
+            Joints.worldPick = false
+            commit(slot)
+        end },
+    })
+    Rows.setHighlighted(buttons[2], state == "new" or state == "changed" or makesPair(slot, draft))
+    Widgets.popupBelow(buttons[2], statusText(slot, slots))
 end
 
 ---@type EditorPanelModule
 return {
     blocks = {
         { name = "jointLinkGrid", build = buildGrid, panel = "jointLink", row = 0, rows = 6 },
-        { name = "jointLinkButtons", build = buildButtons, panel = "jointLink", row = 6, rows = 1 },
-        { name = "jointLinkHead", build = buildHeading, panel = "jointLink", row = 7, rows = 1 }, -- under the buttons
+        { name = "jointLinkButtons", build = buildButtons, panel = "jointLink", row = 6, rows = 2 },
     },
 }

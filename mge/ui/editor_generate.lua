@@ -83,7 +83,7 @@ end
 -- and kept: other values (Amount, Angle, Size...) change the shape around it (its middle, its bottom
 -- on the point), they don't move it along the view line. Camera follow on: the camera looks at the
 -- shape after every change, backing off when it no longer fits
----@type { origin: number[], dir: number[], point: number[]? }?
+---@type { origin: number[], dir: number[], look: number?, point: number[]? }?
 local anchor = nil
 local anchorVersion = 0 -- part of the preview's key: a new view line plans the preview again
 -- the gizmo's Move on the preview: how far it was moved from the view line, on the axes without a
@@ -92,8 +92,9 @@ local moved = { 0, 0, 0 }
 
 ---Takes the camera's current view line as the place for the shape
 local function anchorToView()
-    local origin, dir = MGE.Camera.viewRay()
-    anchor = { origin = origin, dir = dir }
+    -- look: MGE's camera looks at a point, the shape goes there (Camera.spawnPoint)
+    local origin, dir, look = MGE.Camera.viewRay()
+    anchor = { origin = origin, dir = dir, look = look }
     anchorVersion = anchorVersion + 1
     moved = { 0, 0, 0 }
 end
@@ -128,6 +129,7 @@ end
 ---@return string? note why it's one default object instead of the shape (nil for Amount 1 or less)
 ---@return number[] center where the shape is, Pos-row style
 ---@return GenerateJoint[] joints between neighbouring pieces, where they end up
+---@return number[] middle the middle of the shape's bounds, world: what the camera looks at
 local function planFromFields(factors)
     local function reader(fields)
         return function(i) return fields[i] and not fields[i].destroyed and tonumber(fields[i].textfieldstr[1]) end
@@ -180,7 +182,7 @@ local function planFromFields(factors)
     if not anchor then anchorToView() end
     ---@cast anchor -nil
     -- the first shape there picks the point (far enough to fit it on screen), later ones keep it
-    anchor.point = anchor.point or MGE.Camera.spawnPoint(bounds, anchor.origin, anchor.dir)
+    anchor.point = anchor.point or MGE.Camera.spawnPoint(bounds, anchor.origin, anchor.dir, anchor.look)
     ShapeGen.moveTo(pieces, bounds, anchor.point)
 
     local center = piecesCenter(pieces)
@@ -194,13 +196,20 @@ local function planFromFields(factors)
     end
     local shown = {}
     for k = 1, 3 do shown[k] = center[k] + shift[k] - origin[k] end
-    return pieces, note, shown, ShapeGen.joints(pieces, perPair) -- from the placed pieces
+    -- the middle of the shape's bounds, where it was placed (Camera.spawnPoint: x y the middle, z its
+    -- bottom): the camera looks there. The pieces' average is off it for a bend or a ramp, looking at
+    -- that moved the next placement (on the look-at point) by the difference every time the tab opened
+    local point = anchor.point ---@cast point -nil
+    local middle = { point[1] + shift[1], point[2] + shift[2], point[3] + (bounds.max[3] - bounds.min[3]) / 2 + shift[3] }
+    return pieces, note, shown, ShapeGen.joints(pieces, perPair), middle -- joints from the placed pieces
 end
 
 -- Preview: the pieces Generate would add and their joints' anchors, drawn by utils/highlight.lua while
 -- the Generate tab is open. Planned again only when a field's text, Align or the view line changes, the
 -- draw hook asks every frame
 local previewKey, previewPieces, previewAnchors
+---@type number[]? the middle of the preview's bounds (planFromFields), where camera follow looks
+local previewMiddle
 local previewShown = false -- false while the tab is closed, opening it takes the view line again
 ---@type string[] placeholders of the Position row: where the shape is, empty fields keep it there
 local positionHints = { "0.00", "0.00", "0.00" }
@@ -229,10 +238,11 @@ local function fieldsKey()
 end
 
 ---Camera follow on: the camera looks at the preview, keeping its distance when the shape still fits,
----like moving objects does
+---like moving objects does. At the middle of its bounds, where it was placed: the next placement goes on
+---the point the camera looks at (Camera.spawnPoint), so opening the tab again leaves it where it is
 local function followPreview()
     if not MGE.Camera.followMoves or not previewPieces then return end
-    local center, radius = piecesCenter(previewPieces), 0
+    local center, radius = previewMiddle or piecesCenter(previewPieces), 0
     for _, piece in ipairs(previewPieces) do
         local d, half = 0, 0
         for k = 1, 3 do
@@ -259,7 +269,8 @@ end
 local function replan()
     previewKey = fieldsKey()
     local center, joints, _
-    previewPieces, _, center, joints = planFromFields() -- one default object when the values can't make a shape
+    -- one default object when the values can't make a shape
+    previewPieces, _, center, joints, previewMiddle = planFromFields()
     previewAnchors = {}
     for i, joint in ipairs(joints or {}) do previewAnchors[i] = joint.pos end
     showPosition(center)

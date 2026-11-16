@@ -112,15 +112,16 @@ function Camera.fitDistance(radius)
     return math.min(math.max(radius * Camera.fitFactor + Camera.margin, Camera.minDistance), Camera.zoomMax)
 end
 
----Where the camera is and the unit direction it looks in, MGE's own camera or the game's
----@return number[] origin, number[] dir
+---Where the camera is and the unit direction it looks in, MGE's own camera or the game's. With MGE's
+---camera also how far away the point it looks at is (Camera.target): spawnPoint puts things there
+---@return number[] origin, number[] dir, number? lookDistance
 function Camera.viewRay()
-    local origin, lookat
+    local origin, lookat, own
     if Camera.distance and Camera.target then
         local t, d, cp = Camera.target, Camera.distance, math.cos(Camera.pitch)
         origin = { t[1] + math.cos(Camera.yaw) * cp * d, t[2] + math.sin(Camera.yaw) * cp * d,
             t[3] + math.sin(Camera.pitch) * d }
-        lookat = t
+        lookat, own = t, true
     else
         local c = get_camera_info()
         origin, lookat = { c.pos.x, c.pos.y, c.pos.z }, { c.lookat.x, c.lookat.y, c.lookat.z }
@@ -128,7 +129,7 @@ function Camera.viewRay()
     local dir = { lookat[1] - origin[1], lookat[2] - origin[2], lookat[3] - origin[3] }
     local len = math.sqrt(dir[1] ^ 2 + dir[2] ^ 2 + dir[3] ^ 2)
     if len < 1e-6 then return origin, { 0, 1, 0 } end
-    return origin, { dir[1] / len, dir[2] / len, dir[3] / len }
+    return origin, { dir[1] / len, dir[2] / len, dir[3] / len }, own and len or nil
 end
 
 -- Spawning in view (Generate tab, imports, New): new things go on screen, about as far from the camera
@@ -144,17 +145,27 @@ Camera.GROUND_MAX = 25       -- and so does any distance up to this: small thing
 ---@field min number[]
 ---@field max number[]
 
----Where something goes in front of the camera: on the floor where the view line meets it, when that's
----about the distance that fits it on screen (or within GROUND_MAX), otherwise centered on the view line
----at that distance (not below the floor)
+---Where something goes in front of the camera. MGE's camera (lookDistance): centered on the point it
+---looks at, not below the floor. Camera follow keeps the camera's distance and looks at the new thing,
+---so anywhere else along the view line moved the camera: opening the Generate tab again and again (it
+---places its preview so) walked the camera along the view line, the floor point behind a preview being
+---looked at, or a framing distance shorter than the zoom. The game's camera: on the floor where the
+---view line meets it, when that's about the distance that fits it on screen (or within GROUND_MAX),
+---otherwise centered on the view line at that distance (not below the floor)
 ---@param bounds SpawnBounds
 ---@param origin number[]? view line to use (Generate keeps one), defaults to Camera.viewRay()
 ---@param dir number[]? unit direction of that line
+---@param lookDistance number? how far along it MGE's camera looks (Camera.viewRay's third value)
 ---@return number[] point x y: the center goes there, z: the lowest point
-function Camera.spawnPoint(bounds, origin, dir)
-    if not origin or not dir then origin, dir = Camera.viewRay() end
+function Camera.spawnPoint(bounds, origin, dir, lookDistance)
+    if not origin or not dir then origin, dir, lookDistance = Camera.viewRay() end
     local size = {}
     for k = 1, 3 do size[k] = bounds.max[k] - bounds.min[k] end
+    if lookDistance then
+        local p = {}
+        for k = 1, 3 do p[k] = origin[k] + dir[k] * lookDistance end
+        return { p[1], p[2], math.max(Camera.GROUND_Z, p[3] - size[3] / 2) }
+    end
     local distance = Camera.fitDistance(math.sqrt(size[1] ^ 2 + size[2] ^ 2 + size[3] ^ 2) / 2)
     local groundZ = Camera.GROUND_Z
     if dir[3] < -1e-3 then -- looking down: where the view meets the floor

@@ -29,16 +29,45 @@ through this before `tools/package.ps1`. Tick what you checked and move items yo
 - [ ] The wheel over Pos / Rot / Scale, a joint's Axis and Range, and player Density steps from the real
       value, not the 2-decimal placeholder: an axis of `0.6084998164` steps to `1.1085`, not `1.11`.
 
+### Hover popups under their buttons
+- [ ] The list's icon buttons (New, Duplicate, Delete, Import...), the Link tab's buttons, the map placement
+      toggles, the trash icons (Model, Shader) and the list cells show their popup under the button, left
+      edges lined up. Near the right edge it moves left, at the bottom of the screen it opens above.
+- [ ] The top bar's popups still open under and to the left, and the "?" icons still open to the right.
+
+### Applying a field by clicking another one
+- [ ] Type a joint's Range (or any field that reloads the mod: Axis, an object's Mass), then click another
+      field: the value applies without rows of other tabs flashing in the panel, and the clicked field
+      keeps focus. The same in Settings and on the Players panel.
+
 ### Gizmo steadiness
 - [ ] Orbit and zoom with the gizmo off-center (an object not in the middle of the screen): the gizmo no
       longer shakes while the camera moves. Clicking handles still hits them.
 - [ ] After a change (the reload), the gizmo doesn't shake while the camera settles. If it still does,
       the camera position and the drawn frame disagree for a moment, a second cause to probe.
 
+### Spawning at the look-at point
+- [ ] Opening and closing the Generate tab repeatedly leaves the preview and the camera where they are,
+      also for a bend or a ramp (where the pieces' average isn't the shape's middle).
+- [ ] On Generate, clicking an object or atmo object (in the world or the list) or box selecting switches to
+      Core, and the gizmo moves to the selection. Clicking an atmo object from the Objects list opens the
+      Atmo list on Core.
+- [ ] With MGE's camera in control, Import and adding a player put the new thing where the camera looks,
+      with its bottom on the floor or above it.
+
 ### Joints
+- [ ] Link tab: with Pick from world off, clicking an object in the world selects it on the Objects
+      list (out of the Joints list). With it on, the clicked object is picked for the joint and the object
+      under the cursor is lit. It turns off after Create / Update, Reset and leaving the list.
+- [ ] Link tab layout: Pick from world on its own row above Reset · Create/Update, with no status line or
+      "?" under them. Hovering Create/Update says what it would do ("Joint 3: joins objects 4 and 7").
+- [ ] Properties tab: clicking an object selects it on the Objects list. It no longer starts a new joint.
+- [ ] Clicking a joint's anchor still selects that joint, and box-selecting joints works on the Link tab.
 - [ ] Pos on a joint without a `pos` line (katana.tbm) shows "none". Typing a value puts the anchor at the
       objects' midpoint with that axis, and the objects then hinge there.
 - [ ] Recenter on such a joint does the same, and the wheel steps from the midpoint.
+- [ ] With camera follow on, changing a joint's Pos (typed, wheel, Move gizmo, Recenter) looks at the
+      moved anchor and keeps the camera distance. An Axis or Range change doesn't move the camera.
 
 ### Map converter
 - [ ] The sky clip rules are back to before the cobble/cache attempt: dust2 keeps its walls.

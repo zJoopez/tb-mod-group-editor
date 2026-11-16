@@ -165,7 +165,7 @@ local function buildModel(holder, selected)
     -- game's trash icon, like the object list's Delete
     local none = Widgets.iconButton(row, { x = contentX + inset + modelW + gap, y = inset, w = noneW, h = h },
         "../textures/menu/general/buttons/trash.tga", function() setModel(nil) end, Widgets.PANEL_STYLE)
-    TBMenu:displayPopup(none, "No model (remove)")
+    Widgets.popupBelow(none, "No model (remove)")
 end
 
 ---@type EditorPanelModule

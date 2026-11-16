@@ -130,7 +130,7 @@ local function buildFileRows(holder)
     end, nil, Widgets.PANEL_STYLE)
     local none = Widgets.iconButton(row, { x = contentX + inset + pickW + gap, y = inset, w = noneW, h = h },
         "../textures/menu/general/buttons/trash.tga", function() setShader(nil) end, Widgets.PANEL_STYLE)
-    TBMenu:displayPopup(none, "No shader (remove)")
+    Widgets.popupBelow(none, "No shader (remove)")
 end
 
 ---Dynamic objects can end up above id 48 (the footer warns), this moves them down and static

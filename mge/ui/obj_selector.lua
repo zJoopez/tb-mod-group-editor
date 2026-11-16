@@ -86,7 +86,7 @@ function obj_selector.grid(view, rect, items, opts, toReload)
             restyle(item, cell)
             cell:addAdaptedText(opts.label(item), nil, nil, MGE.Widgets.FONT, CENTERMID, MGE.Widgets.TEXT_SCALE, nil, nil)
             local text = opts.popup and opts.popup(item)
-            if text then TBMenu:displayPopup(cell, text) end
+            if text then Widgets.popupBelow(cell, text) end
             cell:addMouseUpHandler(function()
                 opts.onClick(item, get_keyboard_shift() ~= 0)
                 restyleAll()
@@ -137,6 +137,7 @@ local function create(view, fullList, mode)
         isSelected = function(obj) return obj.selected end,
         onClick = function(obj, additive)
             local selected = ModData.clickSelect(obj, additive)
+            if selected then Main.leaveGenerate() end -- Generate: back to Core, the gizmo on the selection
             -- the selection is framed when the Camera button is on
             if selected then MGE.Camera.followSelection() end
             Main.onSelectionChanged()

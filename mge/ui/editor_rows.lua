@@ -196,16 +196,35 @@ function Rows.fieldKey(input)
     return "field " .. math.floor(input.pos.x) .. "," .. math.floor(input.pos.y)
 end
 
----Leaving a field (a click elsewhere: toriui takes its keyboard focus away) applies what's typed. The mouse
----leaving it ends its wheel steps' undo step (History.endMerge). Checked each frame it's drawn: toriui has no
----focus-lost callback
+-- Fields left by a click elsewhere, applied in MGE's draw3d hook, before toriui draws the next frame.
+-- The leaving is seen while the field draws (applyOnLeave), and applying there reloaded the mod and rebuilt
+-- the panel in the middle of toriui drawing it: the old rows were destroyed mid-draw and every tab's rows
+-- flashed on top of each other for a moment (a joint's Range, then a click on another field). Enter
+-- applies from the key handler, outside the drawing, which never did it
+---@type fun()[]
+local leftFields = {}
+local LEAVE_HOOK = MGE.hookname .. "_rows"
+add_hook("draw3d", LEAVE_HOOK, function()
+    if #leftFields == 0 then return end
+    local queue = leftFields
+    leftFields = {}
+    for _, apply in ipairs(queue) do
+        local ok, err = pcall(apply)
+        if not ok then MGE.say("" .. tostring(err)) end
+    end
+end)
+table.insert(MGE.onQuit, function() remove_hooks(LEAVE_HOOK) end)
+
+---Leaving a field (a click elsewhere: toriui takes its keyboard focus away) applies what's typed, on the
+---next frame outside the UI's drawing (leftFields). The mouse leaving it ends its wheel steps' undo step
+---(History.endMerge). Checked each frame it's drawn: toriui has no focus-lost callback
 ---@param input UIElement
 ---@param apply fun()
 local function applyOnLeave(input, apply)
     local focused = false
     Widgets.addDrawBefore(input, function()
         local now = input.keyboard == true
-        if focused and not now and input.textfieldstr[1] ~= "" then apply() end
+        if focused and not now and input.textfieldstr[1] ~= "" then leftFields[#leftFields + 1] = apply end
         focused = now
         if History.lastMerge and (MOUSE_X < input.pos.x or MOUSE_X > input.pos.x + input.size.w
             or MOUSE_Y < input.pos.y or MOUSE_Y > input.pos.y + input.size.h) then

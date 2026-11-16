@@ -397,4 +397,4 @@ local buttonY = panelH - PAD - BUTTON_H
 Widgets.button(panel, { x = PAD, y = buttonY, w = buttonW, h = BUTTON_H }, "Cancel", function() overlay:kill() end)
 local placeButton = Widgets.button(panel, { x = PAD + buttonW + 8, y = buttonY, w = buttonW, h = BUTTON_H },
     function() return pending and "Loading..." or "Place" end, function() convert() end)
-TBMenu:displayPopup(placeButton, "Shows the map in the world: pick the region to\nconvert and where the map sits, then Convert there")
+Widgets.popupBelow(placeButton, "Shows the map in the world: pick the region to\nconvert and where the map sits, then Convert there")

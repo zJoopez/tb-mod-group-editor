@@ -463,6 +463,18 @@ function Main.setTab(id)
     Main.applyTab()
 end
 
+---Selecting objects or atmo objects (a click in the world or the list, a box) while their list is on
+---Generate: back to Core, the gizmo and the rows then work on the selection instead of the preview
+---@param list string? "objects" or "atmo", the list the selection is on, default the shown one (a click that switches
+---lists passes the one it switches to, before switching: it opens on Core)
+function Main.leaveGenerate(list)
+    list = list or Main.listTab
+    if (list ~= "objects" and list ~= "atmo") or Main.activeTabs[list] ~= "generate" then return end
+    Main.activeTabs[list] = "core"
+    if list == "objects" then Main.activeTab = "core" end
+    if list == Main.listTab then Main.applyTab() end
+end
+
 ---Players in the current mod (numplayers gamerule), keeps the selected players in range
 ---@return integer
 function Main.getPlayerCount()
@@ -637,6 +649,7 @@ end
 function Main.setListTab(id)
     local changed = Main.listTab ~= id
     Main.listTab = id
+    if id ~= "joints" then MGE.Joints.worldPick = false end -- the Link tab's Pick from world ends with the list
     MGE.AtmoLayer.setObjectsSeeThrough(id == "atmo")
     applyListTab()
     Main.applyTab()

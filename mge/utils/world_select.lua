@@ -683,6 +683,13 @@ local function linkSlot()
     return Main and Main.linkSlot and Main.linkSlot() or nil
 end
 
+---The Link tab's slot while its Pick from world is on (Joints.worldPick): world clicks pick objects for it
+---@return integer?
+local function linkPick()
+    local slot = linkSlot()
+    return slot and MGE.Joints and MGE.Joints.worldPick and slot or nil
+end
+
 ---@type { done: fun(obj: FileParserEnvObj), ended: fun()? }? a one-shot pick (the Core tab's color
 ---picker): the next world click hands its object to done instead of selecting, a click on nothing
 ---cancels. ended runs either way (and on cancelPick)
@@ -705,8 +712,8 @@ function WorldSelect.cancelPick()
     return p ~= nil
 end
 
--- on the Link tab, and while picking, the object under the cursor is highlighted: it's what a click
--- would pick. Tested only after the mouse moved, not every frame
+-- on the Link tab with Pick from world on, and while picking, the object under the cursor is highlighted:
+-- it's what a click would pick. Tested only after the mouse moved, not every frame
 add_hook("mouse_move", HOOK_SET, function(x, y)
     local box = pressed and pressed.box and pressed
     if box then
@@ -714,7 +721,7 @@ add_hook("mouse_move", HOOK_SET, function(x, y)
         local limit = WorldSelect.clickMoveLimit
         if math.abs(x - box.x) > limit or math.abs(y - box.y) > limit then box.moved = true end
     end
-    if not linkSlot() and not WorldSelect.picking then return end
+    if not linkPick() and not WorldSelect.picking then return end
     if not isActive() or isOverUI(x, y) then
         pendingHover, WorldSelect.hover = nil, nil
         return
@@ -722,26 +729,10 @@ add_hook("mouse_move", HOOK_SET, function(x, y)
     pendingHover = { x = x, y = y }
 end)
 
----Properties tab click on an object: taken as the start of a new joint. The lowest empty slot on the
----Link tab, the object picked for it (the next click picks the other one). Joints full: says so
----@param obj FileParserEnvObj
-local function startNewJoint(obj)
-    local Main, Joints = MGE.Main, MGE.Joints
-    local id = Joints.nextId()
-    if not id then
-        Joints.haveRoom(1) -- prints that the joints are full
-        return
-    end
-    Main.selectJointsOnly({ id })
-    Main.setTab("jointLink")
-    Main.updateWindow() -- the list's cells and the Link tab show the new slot
-    Joints.offerDraft(id, obj.id)
-end
-
----A clicked object: on the Joints list it never switches lists (after Create the Properties tab shows,
----the next object click would throw the joint work away): the Link tab picks it for the current slot's
----draft, Properties starts a new joint with it. On the Objects list the usual click select, from
----Players it switches to Objects with only that object selected
+---A clicked object: with the Link tab's Pick from world on (Joints.worldPick) it's picked for the current
+---slot's draft. On the Objects list the usual click select. From any other list, the Joints list too, it
+---switches to Objects with only that object selected: a click on an object always gets you to it, picking
+---for a joint is asked for with the button
 ---@param obj FileParserEnvObj
 ---@param additive boolean
 local function clickObject(obj, additive)
@@ -751,25 +742,29 @@ local function clickObject(obj, additive)
         -- with only that one selected
         if Main.listTab == "atmo" then
             local selected = ModData.clickSelect(obj, additive)
+            if selected then Main.leaveGenerate() end -- Generate: back to Core, the gizmo on the selection
             Main.updateWindow()
             if selected then MGE.Camera.followSelection() end
         else
             for _, other in ipairs(ModData.parsed.atmo) do other.selected = nil end
             obj.selected = true
+            Main.leaveGenerate("atmo") -- opens on Core when it was on Generate
             Main.setListTab("atmo")
         end
         return
     end
-    if Main.listTab == "joints" then
-        local slot = linkSlot()
-        if slot then MGE.Joints.offerDraft(slot, obj.id) else startNewJoint(obj) end
+    local slot = linkPick()
+    if slot then
+        MGE.Joints.offerDraft(slot, obj.id)
     elseif Main.listTab == "objects" then
         local selected = ModData.clickSelect(obj, additive)
+        if selected then Main.leaveGenerate() end -- Generate: back to Core, the gizmo on the selection
         Main.updateWindow() -- list checkboxes and editor values follow the selection
         if selected then MGE.Camera.followSelection() end -- like selecting in the list
     else
         for _, other in ipairs(ModData.parsed.env_obj) do other.selected = nil end
         obj.selected = true
+        Main.leaveGenerate("objects") -- opens on Core when it was on Generate
         Main.setListTab("objects") -- rebuilds the window, camera follow frames the selection
     end
 end
@@ -818,6 +813,7 @@ local function boxSelect(b)
             end
         end
         if not any then return end
+        Main.leaveGenerate() -- Generate: back to Core, the gizmo on the selection
         Main.updateWindow() -- list checkboxes and editor values follow the selection
         MGE.Camera.followSelection()
     elseif Main.listTab == "players" then
@@ -827,7 +823,7 @@ local function boxSelect(b)
         Main.selectedPlayer = players[#players]
         Main.updateWindow()
         MGE.Camera.followPlayer(Main.selectedPlayerList())
-    elseif Main.listTab == "joints" and not linkSlot() then -- Link tab: clicks pick objects for a draft
+    elseif Main.listTab == "joints" and not linkPick() then -- Pick from world on: clicks pick objects for a draft
         local last
         for _, joint in ipairs(WorldSelect.pickJointsBox(b.x1, b.y1, b.x2, b.y2)) do
             if not Main.selectedJoints[joint.id] then
@@ -867,7 +863,7 @@ add_hook("draw3d", HOOK_SET, function()
         if not ok then MGE.say("box select error: " .. tostring(err)) end
     end
     local picking = WorldSelect.picking
-    if not linkSlot() and not picking then
+    if not linkPick() and not picking then
         pendingHover, WorldSelect.hover = nil, nil
     elseif pendingHover then
         -- only an object a click would pick for the draft: not one behind a joint's anchor or a player.
