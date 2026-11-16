@@ -132,10 +132,9 @@ local function buildThrust(holder, selected)
         "Push along the axes below. Turns thrust on if it's off.")
     inwuts.thrust = { framesInputs[1], dirInputs[1], dirInputs[2], dirInputs[3] }
 
-    -- the axes choices plus Off, objects without thrust count as Off
-    local choices = {}
-    for i, space in ipairs(THRUST_SPACES) do choices[i] = space end
-    table.insert(choices, { label = "Off", value = "off" })
+    -- Off then the axes choices (backing out on the left, like Cancel / Reset), objects without thrust count as Off
+    local choices = { { label = "Off", value = "off" } }
+    for _, space in ipairs(THRUST_SPACES) do table.insert(choices, space) end
     local current = sharedChoice(selected, function(obj)
         local thrust = getThrust(obj)
         return thrust and thrust.space or "off"
@@ -146,7 +145,7 @@ local function buildThrust(holder, selected)
             thrust.space = space
             return thrust
         end)
-    end, "World: world axes. Object: turns with the object.\nOff: no thrust.")
+    end, "Off: no thrust. World: world axes.\nObject: turns with the object.")
 end
 
 

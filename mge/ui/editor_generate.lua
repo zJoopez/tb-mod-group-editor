@@ -531,10 +531,10 @@ end
 local function buildButtons(holder)
     Rows.begin()
     createToggleButtonRow("", holder, {
-        { label = "Generate", active = false, onClick = generate },
+        { label = "Reset", active = false, onClick = resetFields }, -- backing out on the left, like Cancel / Off
         { label = "To view", active = false, onClick = toView },
-        { label = "Reset", active = false, onClick = resetFields },
-    }, "Generate: adds the orange preview. To view: moves it\nin front of the camera. Reset: back to the defaults.")
+        { label = "Generate", active = false, onClick = generate },
+    }, "Reset: back to the defaults. To view: moves the\npreview in front of the camera. Generate: adds it.")
 end
 
 

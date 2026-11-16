@@ -310,14 +310,14 @@ function ColorPicker.open(options)
     TBMenu:displayPopup(plus, "Save the new color to the palette.\nOn a color: click uses it, right click removes it.")
 
     local buttons = box:addChild({ pos = { PAD, boxH - PAD - BUTTON_H }, size = { innerW, BUTTON_H } })
-    local list = {}
+    -- Cancel on the left, like the other rows' backing-out buttons (Reset on Generate, Off on Thrust)
+    local list = { { label = TB_MENU_LOCALIZED.BUTTONCANCEL, onClick = close } }
     if options.onPickWorld then
         list[#list + 1] = { label = "Pick from world", onClick = function()
             close()
             options.onPickWorld()
         end }
     end
-    list[#list + 1] = { label = TB_MENU_LOCALIZED.BUTTONCANCEL, onClick = close }
     list[#list + 1] = { label = "Apply", onClick = apply }
     Widgets.buttonRow(buttons, 0, BUTTON_H, list, Widgets.GAP)
 
