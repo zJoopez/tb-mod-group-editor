@@ -137,10 +137,8 @@ local function create(view, fullList, mode)
         isSelected = function(obj) return obj.selected end,
         onClick = function(obj, additive)
             local selected = ModData.clickSelect(obj, additive)
-            if selected then Main.leaveGenerate() end -- Generate: back to Core, the gizmo on the selection
-            -- the selection is framed when the Camera button is on
-            if selected then MGE.Camera.followSelection() end
             Main.onSelectionChanged()
+            if selected then Main.selectionMade() end -- Generate back to Core, camera follow
         end,
     })
 

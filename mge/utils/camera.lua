@@ -116,12 +116,12 @@ end
 ---camera also how far away the point it looks at is (Camera.target): spawnPoint puts things there
 ---@return number[] origin, number[] dir, number? lookDistance
 function Camera.viewRay()
-    local origin, lookat, own
+    local origin, lookat, lookDistance
     if Camera.distance and Camera.target then
         local t, d, cp = Camera.target, Camera.distance, math.cos(Camera.pitch)
         origin = { t[1] + math.cos(Camera.yaw) * cp * d, t[2] + math.sin(Camera.yaw) * cp * d,
             t[3] + math.sin(Camera.pitch) * d }
-        lookat, own = t, true
+        lookat, lookDistance = t, d -- the look-at point is the distance away
     else
         local c = get_camera_info()
         origin, lookat = { c.pos.x, c.pos.y, c.pos.z }, { c.lookat.x, c.lookat.y, c.lookat.z }
@@ -129,7 +129,7 @@ function Camera.viewRay()
     local dir = { lookat[1] - origin[1], lookat[2] - origin[2], lookat[3] - origin[3] }
     local len = math.sqrt(dir[1] ^ 2 + dir[2] ^ 2 + dir[3] ^ 2)
     if len < 1e-6 then return origin, { 0, 1, 0 } end
-    return origin, { dir[1] / len, dir[2] / len, dir[3] / len }, own and len or nil
+    return origin, { dir[1] / len, dir[2] / len, dir[3] / len }, lookDistance
 end
 
 -- Spawning in view (Generate tab, imports, New): new things go on screen, about as far from the camera

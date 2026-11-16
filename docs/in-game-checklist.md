@@ -13,6 +13,10 @@ through this before `tools/package.ps1`. Tick what you checked and move items yo
 
 ## Not yet checked in game
 
+### HUD after the main menu
+- [ ] With MGE shown, Esc to the main menu and back: the game's HUD is hidden again. With MGE hidden (F1) it
+      stays as the game left it, and a `/opt hud 1` typed while MGE is shown isn't undone.
+
 ### Players
 - [ ] Rotating a player in a mod without a `version` line (aikido.tbm, fat.tbm) applies the turn and adds `version 15`.
 - [ ] Rot field: the wheel steps by the rotate step (Shift: 1 degree) and also works after a gizmo turn.
@@ -93,6 +97,8 @@ a bare name with no file at that path.
       with its bottom on the floor or above it.
 
 ### Joints
+- [ ] Axis / Range with several joints selected: values that differ even past 2 decimals show "mixed" (they
+      used to show the same rounded number). The wheel over a shared value steps from the exact number.
 - [ ] Link tab: with Pick from world off, clicking an object in the world selects it on the Objects
       list (out of the Joints list). With it on, the clicked object is picked for the joint and the object
       under the cursor is lit. It turns off after Create / Update, Reset and leaving the list.

@@ -41,6 +41,20 @@ local function forAtmo()
     return MGE.Main ~= nil and MGE.Main.listTab == "atmo"
 end
 
+local limitsCache = {} -- countDynamic scans every object: once per undo state / reload, not every frame
+
+---Dynamic objects in the mod (ModData.countDynamic), counted again only when the data changes: the preview
+---is planned every frame during a Scale or Rotate drag
+---@return integer
+local function dynamicCount()
+    local ModData = MGE.ModData
+    local state = MGE.History.states[MGE.History.index]
+    if limitsCache.parsed ~= ModData.parsed or limitsCache.state ~= state then
+        limitsCache = { parsed = ModData.parsed, state = state, dynamic = ModData.countDynamic() }
+    end
+    return limitsCache.dynamic
+end
+
 ---The most pieces Generate can add now, and what limits it. Objects: the free ids, joined pieces (they're
 ---dynamic) only as many as fit in ids 1-MAX_NONSTATIC_OBJECTS. Atmo list: the atmo's room (Settings > Most
 ---atmo objects): its default 256 keeps a typo from planning thousands, raising it is the player's call. It
@@ -54,7 +68,7 @@ local function maxGenerate(atmo, perPair)
     if atmo then return MGE.AtmoLayer.room(), "room in the atmo" end
     local free = ModData.freeCount()
     if perPair > 0 then
-        local dynamicRoom = math.max(0, MGE.MAX_NONSTATIC_OBJECTS - ModData.countDynamic())
+        local dynamicRoom = math.max(0, MGE.MAX_NONSTATIC_OBJECTS - dynamicCount())
         if dynamicRoom < free then return dynamicRoom, "free dynamic ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS end
     end
     return free, "free ids"
@@ -63,14 +77,8 @@ end
 ---What the limits depend on, for the preview's key: the preview is planned again when they change (an
 ---import, a delete, Max atmo objects), so it never shows something Generate wouldn't add
 ---@return string
-local limitsCache = {} -- countDynamic scans every object: once per undo state / reload, not every frame
 local function limitsKey()
-    local ModData = MGE.ModData
-    local state = MGE.History.states[MGE.History.index]
-    if limitsCache.parsed ~= ModData.parsed or limitsCache.state ~= state then
-        limitsCache = { parsed = ModData.parsed, state = state, dynamic = ModData.countDynamic() }
-    end
-    return MGE.AtmoLayer.room() .. "," .. ModData.freeCount() .. "," .. limitsCache.dynamic
+    return MGE.AtmoLayer.room() .. "," .. MGE.ModData.freeCount() .. "," .. dynamicCount()
 end
 
 ---@return number[] sides of the default object (ui/assets.lua), what empty Size fields use
@@ -123,13 +131,8 @@ end
 ---The Rot row's angles in degrees (empty fields: 0)
 ---@return number[]
 local function typedAngles()
-    local angles = {} ---@type number[]
-    for k = 1, 3 do
-        local input = (inwuts.generateRot or {})[k]
-        local value = input and not input.destroyed and tonumber(input.textfieldstr[1])
-        angles[k] = value or 0
-    end
-    return angles
+    local typed = Rows.readInputs(inwuts.generateRot or {})
+    return { typed[1] or 0, typed[2] or 0, typed[3] or 0 }
 end
 
 ---The Rot row as a rotation, like the Core tab's Rot (rotX(x) * rotY(y) * rotZ(z)), nil for none
@@ -137,8 +140,7 @@ end
 local function typedRotation()
     local a = typedAngles()
     if a[1] == 0 and a[2] == 0 and a[3] == 0 then return nil end
-    local Mat3 = MGE.Mat3
-    return Mat3.mul(Mat3.rotX(math.rad(a[1])), Mat3.mul(Mat3.rotY(math.rad(a[2])), Mat3.rotZ(math.rad(a[3]))))
+    return MGE.Mat3.fromEulerDegrees(a[1], a[2], a[3])
 end
 
 ---Pieces for the typed values (empty fields use their placeholders), same for the preview and Generate.
@@ -271,7 +273,7 @@ end
 ---the point the camera looks at (Camera.spawnPoint), so opening the tab again leaves it where it is
 local function followPreview()
     if not MGE.Camera.followMoves or not previewPieces then return end
-    local center, radius = previewMiddle or piecesCenter(previewPieces), 0
+    local center, radius = previewMiddle, 0 -- set with previewPieces (replan)
     for _, piece in ipairs(previewPieces) do
         local d, half = 0, 0
         for k = 1, 3 do
@@ -377,9 +379,7 @@ end
 ---@param value number
 ---@return string
 local function sizeText(value)
-    local s = string.format("%.4f", value):gsub("0+$", ""):gsub("%.$", "")
-    if s == "-0" then s = "0" end
-    return s
+    return Rows.formatNumberText(value, 4)
 end
 
 ---Gizmo Scale released on the preview: Size gets the factors in its text (empty fields: the default
@@ -423,8 +423,7 @@ local function rotateBy(rotation)
     local angles = { math.deg(x), math.deg(y), math.deg(z) }
     for k, input in ipairs(inwuts.generateRot or {}) do
         if not input.destroyed then
-            local text = string.format("%.2f", angles[k]):gsub("0+$", ""):gsub("%.$", "")
-            if text == "-0" then text = "0" end
+            local text = Rows.formatNumberText(angles[k], 2)
             input.textfieldstr[1], input.textfieldindex = text, #text
         end
     end
@@ -555,15 +554,9 @@ local function buildAmount(holder)
     end
 end
 
----@type table<string, UIElement?> the names of the rows the gizmo's tools change on the preview: Position
----(move), Size (scale). Lit for the active tool like the Core tab's Pos / Rot / Scale, rebuilt with the rows
-local gizmoLabels = {}
-
----Lights the name of the row the active gizmo tool changes (toolbar, Alt + Q / W / E)
-local function highlightGizmoLabels()
-    for mode, label in pairs(gizmoLabels) do Rows.setHighlighted(label, mode == MGE.Gizmo.mode) end
-end
-table.insert(MGE.Gizmo.modeListeners, highlightGizmoLabels)
+-- the names of the rows the gizmo's tools change on the preview: Position (move), Rot (rotate), Size (scale),
+-- the active tool's lit like the Core tab's Pos / Rot / Scale
+local gizmoLabels, highlightGizmoLabels = Rows.gizmoLabels()
 
 -- the fields of the two blocks below, inwuts.generate puts them together in FIELD's order: gap, angle,
 -- size x y z, increment x y z (Position and Rot sit between the blocks, like the Core tab's Pos / Rot / Scale)

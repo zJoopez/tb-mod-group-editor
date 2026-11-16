@@ -194,6 +194,17 @@ function Joints.midpoint(obj1, obj2)
     return formatVector((a[1] + b[1]) / 2, (a[2] + b[2]) / 2, (a[3] + b[3]) / 2)
 end
 
+---Halfway between the two objects a joint links, as numbers: where Recenter puts its anchor and where a
+---joint without a pos line (the game locks its objects together) starts from. nil when an object is gone
+---@param joint FileParserEnvObjJoint
+---@return number[]?
+function Joints.jointMidpoint(joint)
+    local a, b = Joints.objectById(joint.obj1), Joints.objectById(joint.obj2)
+    if not a or not b then return nil end
+    local p, q = MGE.Transforms.positionOf(a), MGE.Transforms.positionOf(b)
+    return { (p[1] + q[1]) / 2, (p[2] + q[2]) / 2, (p[3] + q[3]) / 2 }
+end
+
 ---The game doesn't join two static objects (the joint isn't shown and nothing moves): when a new link
 ---joins two, both are made dynamic (the static bit cleared, other flags kept). One static object is
 ---fine, the joint then holds the dynamic one to it. Call after the joints changed and before
@@ -285,44 +296,47 @@ end
 local function followAnchors(joints)
     local Camera = MGE.Camera
     if not Camera or not Camera.followMoves then return end
-    local points, center = {}, { 0, 0, 0 }
-    for _, joint in ipairs(joints) do
-        if joint.props.pos then
-            local p = Joints.parseNumbers(joint.props.pos, 3)
-            points[#points + 1] = p
-            for k = 1, 3 do center[k] = center[k] + p[k] end
-        end
-    end
-    if #points == 0 then return end
-    for k = 1, 3 do center[k] = center[k] / #points end
+    local target = Joints.target(joints) -- the anchors' center, joints without a pos line left out
+    if not target then return end
+    local center = target.pivot()
     local radius = 0.5 -- an anchor alone: a small sphere around it, the camera keeps its distance
-    for _, p in ipairs(points) do
+    for _, joint in ipairs(target.joints) do
+        local p = Joints.parseNumbers(joint.props.pos, 3)
         local d = math.sqrt((p[1] - center[1]) ^ 2 + (p[2] - center[2]) ^ 2 + (p[3] - center[3]) ^ 2)
         radius = math.max(radius, d + 0.5)
     end
     Camera.focusOn(center, radius)
 end
 
----Writes a prop on joints, one undo step for all of them. A changed pos (the anchor) is looked at with
----camera follow on
+---Writes a prop on joints, one undo step for all of them
 ---@param joints FileParserEnvObjJoint[]
 ---@param key string
 ---@param valueOf fun(joint: FileParserEnvObjJoint): string? new value, nil leaves that joint as it is
 ---@return boolean changed
 function Joints.setProps(joints, key, valueOf)
-    local changed = {}
+    local changed = false
     for _, joint in ipairs(joints) do
         local value = valueOf(joint)
         if value ~= nil and joint.props[key] ~= value then
             joint.props[key] = value
-            changed[#changed + 1] = joint
+            changed = true
         end
     end
-    if #changed == 0 then return false end
+    if not changed then return false end
     MGE.History.commit()
     MGE.apply()
-    if key == "pos" then followAnchors(changed) end
     return true
+end
+
+---Moves joints' anchors (their pos lines, one undo step), camera follow looks at them after: the Pos row,
+---the Move gizmo, Recenter. Other pos writes (linking, imports) leave the camera alone
+---@param joints FileParserEnvObjJoint[]
+---@param posOf fun(joint: FileParserEnvObjJoint): string? new pos line, nil leaves that joint as it is
+---@return boolean changed
+function Joints.moveAnchors(joints, posOf)
+    local changed = Joints.setProps(joints, "pos", posOf)
+    if changed then followAnchors(joints) end
+    return changed
 end
 
 ---Sets one number of a prop on joints (x of pos, low of range...), the other numbers stay
@@ -393,7 +407,7 @@ function Joints.target(joints)
     function t.restoreLive() Joints.posPreview = nil end
     function t.moveBy(offset)
         t.restoreLive()
-        Joints.setProps(list, "pos", function(joint)
+        Joints.moveAnchors(list, function(joint)
             local p = Joints.parseNumbers(joint.props.pos, 3)
             return formatVector(p[1] + offset[1], p[2] + offset[2], p[3] + offset[3])
         end)
@@ -413,15 +427,14 @@ end
 function Joints.setPosAxis(joints, index, value)
     local target = Joints.target(joints)
     local delta = target and value - target.pivot()[index] or 0
-    return Joints.setProps(joints, "pos", function(joint)
+    return Joints.moveAnchors(joints, function(joint)
         local p
         if joint.props.pos then
             p = Joints.parseNumbers(joint.props.pos, 3)
             p[index] = p[index] + delta
         else
-            local a, b = Joints.objectById(joint.obj1), Joints.objectById(joint.obj2)
-            if not a or not b then return nil end
-            p = Joints.parseNumbers(Joints.midpoint(a, b), 3)
+            p = Joints.jointMidpoint(joint)
+            if not p then return nil end
             p[index] = value
         end
         return formatVector(p[1], p[2], p[3])
@@ -432,9 +445,9 @@ end
 ---@param joints FileParserEnvObjJoint[]
 ---@return boolean changed
 function Joints.centerPos(joints)
-    return Joints.setProps(joints, "pos", function(joint)
-        local a, b = Joints.objectById(joint.obj1), Joints.objectById(joint.obj2)
-        return a and b and Joints.midpoint(a, b) or nil
+    return Joints.moveAnchors(joints, function(joint)
+        local m = Joints.jointMidpoint(joint)
+        return m and formatVector(m[1], m[2], m[3]) or nil
     end)
 end
 

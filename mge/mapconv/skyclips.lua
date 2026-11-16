@@ -1,9 +1,9 @@
 -- Sky clips (MapConv.SkyClips.drop, used by MapConv.pieces in convert.lua): leaves out the clips that
 -- are lids over the map. Loaded after convert.lua: it shares its piece bounds (MapConv.boundsOf, memoized
--- while MapConv.pieces runs) and footprint grid (MapConv.SKY_CELL, MapConv.Merge.cellKey) with the roof caps.
+-- while MapConv.pieces runs) and the solids' footprint grid (MapConv.solidsGrid / solidsAt) with the roof caps.
 -- tools/mapconv_baseline.lua check shows which clips a change here drops or keeps on every map.
 local MapConv = MGE.MapConv
-local boundsOf, SKY_CELL, cellKey = MapConv.boundsOf, MapConv.SKY_CELL, MapConv.Merge.cellKey
+local boundsOf = MapConv.boundsOf
 
 -- Sky clips: mappers fill the open parts of the map with huge clip brushes, so players can't jump
 -- onto the roofs or out of the map. In Toribash they're giant lids (dust2: up to 2650 x 3100 units,
@@ -58,21 +58,7 @@ local function drop(pieces, skies)
     end
     local lids = {}
 
-    -- solids by footprint cell
-    local grid = {}
-    for _, piece in ipairs(pieces) do
-        if piece.role ~= "clip" then
-            local min, max = boundsOf(piece)
-            local entry = { min = min, max = max }
-            for x = math.floor(min[1] / SKY_CELL), math.floor(max[1] / SKY_CELL) do
-                for y = math.floor(min[2] / SKY_CELL), math.floor(max[2] / SKY_CELL) do
-                    local key = cellKey(x, y)
-                    grid[key] = grid[key] or {}
-                    table.insert(grid[key], entry)
-                end
-            end
-        end
-    end
+    local grid = MapConv.solidsGrid(pieces) -- solids by footprint cell (MapConv.solidsAt)
 
     -- clip ceilings: top heights many wide clips share, above nearly all the solid pieces
     local shared = {}
@@ -119,7 +105,7 @@ local function drop(pieces, skies)
                                 break
                             end
                         end
-                        for _, s in ipairs(grid[cellKey(math.floor(x / SKY_CELL), math.floor(y / SKY_CELL))] or {}) do
+                        for _, s in ipairs(MapConv.solidsAt(grid, x, y)) do
                             if x >= s.min[1] and x <= s.max[1] and y >= s.min[2] and y <= s.max[2] and s.min[3] >= max[3] - 1 then
                                 roofed = roofed + 1
                                 break
@@ -164,7 +150,7 @@ local function drop(pieces, skies)
                         and sky.min[3] >= max[3] - 1 and sky.min[3] < skyZ then skyZ = sky.min[3] end
                 end
                 local free, clear = true, skyZ < math.huge
-                for _, s in ipairs(grid[cellKey(math.floor(x / SKY_CELL), math.floor(y / SKY_CELL))] or {}) do
+                for _, s in ipairs(MapConv.solidsAt(grid, x, y)) do
                     if x >= s.min[1] and x <= s.max[1] and y >= s.min[2] and y <= s.max[2] then
                         if s.max[3] > min[3] - SKY_CLIP.clearance and s.min[3] < max[3] then free = false end
                         if s.max[3] > max[3] + 1 and s.min[3] < skyZ - 1 then clear = false end
@@ -185,5 +171,5 @@ local function drop(pieces, skies)
 end
 
 ---@class MapConvSkyClips
-MapConv.SkyClips = { RULES = SKY_CLIP, drop = drop }
+MapConv.SkyClips = { drop = drop }
 return MapConv.SkyClips

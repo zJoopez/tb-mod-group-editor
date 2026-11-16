@@ -14,7 +14,6 @@ local function atmoShown() return MGE.Main ~= nil and MGE.Main.listTab == "atmo"
 local inwuts = Rows.inputs
 local readInputs = Rows.readInputs
 local sharedChoice = Rows.sharedChoice
-local formatHints = Rows.formatHints
 local createInputRow = Rows.createInputRow
 local createChoiceRow = Rows.createChoiceRow
 local function refreshProperties() Rows.refreshProperties() end
@@ -27,14 +26,8 @@ local function angleSelected(only) Transforms.angleTo(readInputs(inwuts.angle, o
 local function sizeSelected(only) Transforms.sizeTo(readInputs(inwuts.size, only)) end
 local shownPosition, groupAngles, groupExtents = Transforms.shownPosition, Transforms.groupAngles, Transforms.groupExtents
 
----@type table<string, UIElement> the Pos / Rot / Scale names by gizmo tool, rebuilt with the rows
-local transformLabels = {}
-
----Lights the name of the row that belongs to the active gizmo tool (toolbar, Alt + Q / W / E)
-local function highlightTransformLabels()
-    for mode, label in pairs(transformLabels) do Rows.setHighlighted(label, mode == MGE.Gizmo.mode) end
-end
-table.insert(MGE.Gizmo.modeListeners, highlightTransformLabels)
+-- the Pos / Rot / Scale names by gizmo tool, rebuilt with the rows, the active tool's lit
+local transformLabels, highlightTransformLabels = Rows.gizmoLabels()
 
 ---Pos / Rot / Scale rows: the group ends up at the typed values. Placeholders show the selection's current
 ---center, orientation (degrees) and size ("0.00" without a selection). Small steps: the mouse wheel. The name
@@ -43,23 +36,20 @@ table.insert(MGE.Gizmo.modeListeners, highlightTransformLabels)
 ---@param selected FileParserEnvObj[]
 local function buildMeasuredRows(holder, selected)
     Rows.begin()
-    local zeros = { "0.00", "0.00", "0.00" }
+    local zeros = { 0, 0, 0 }
     local any = #selected > 0
     local _
-    -- exact: the wheel steps from the real values, not the placeholders' 2 decimals
-    local position = any and shownPosition(selected) or nil
+    -- number placeholders: shown with 2 decimals, the wheel steps from the real values
     inwuts.position, _, transformLabels.move = createInputRow("Pos", holder, function(_, i) positionSelected(i) end,
-        position and formatHints(position) or zeros,
-        "Moves the selection's center to X, Y, Z.", nil, { exact = position })
+        any and shownPosition(selected) or zeros,
+        "Moves the selection's center to X, Y, Z.")
     local angles = any and groupAngles(selected) or { 0, 0, 0 }
     for i = 1, 3 do angles[i] = math.deg(angles[i]) end
     inwuts.angle, _, transformLabels.rotate = createInputRow("Rot", holder, function(_, i) angleSelected(i) end,
-        formatHints(angles),
-        "Turns the selection to the angles (degrees).", nil, { angle = true, exact = any and angles or nil })
-    local extents = any and groupExtents(selected) or nil
+        angles, "Turns the selection to the angles (degrees).", nil, { angle = true })
     inwuts.size, _, transformLabels.scale = createInputRow("Scale", holder, function(_, i) sizeSelected(i) end,
-        extents and formatHints(extents) or zeros,
-        "Sets the selection's size along its axes.", nil, { exact = extents })
+        any and groupExtents(selected) or zeros,
+        "Sets the selection's size along its axes.")
     highlightTransformLabels()
 end
 

@@ -58,6 +58,16 @@ function Mat3.rotZ(t)
     return { { c, -s, 0 }, { s, c, 0 }, { 0, 0, 1 } }
 end
 
+---rotX(x) * rotY(y) * rotZ(z) from angles in degrees, the inverse of toEulerXYZ (which gives radians): the
+---Rot rows' and engageplayerrot's x y z
+---@param x number degrees
+---@param y number degrees
+---@param z number degrees
+---@return number[][]
+function Mat3.fromEulerDegrees(x, y, z)
+    return Mat3.mul(Mat3.rotX(math.rad(x)), Mat3.mul(Mat3.rotY(math.rad(y)), Mat3.rotZ(math.rad(z))))
+end
+
 ---Angles x, y, z (radians) with m = rotX(x) * rotY(y) * rotZ(z), the order MGE's rotate tool
 ---applies rotations in (RotatingOld.SetRotPos: z, then y, then x)
 ---@param m number[][]

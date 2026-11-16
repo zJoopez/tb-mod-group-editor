@@ -351,7 +351,7 @@ end
 local SKY_CELL = 512 -- grid of the solids' footprints, map units
 local cellKey = MapConv.Merge.cellKey -- grid cells as numbers, not "x,y" strings
 -- shared with the sky clips (mapconv/skyclips.lua, loaded after this file)
-MapConv.boundsOf, MapConv.SKY_CELL = boundsOf, SKY_CELL
+MapConv.boundsOf = boundsOf
 
 -- Roof caps: the tops of buildings nobody sees from the ground are nodraw brushes (dust2: 69 big flat
 -- ones high up), dropped with the other invisible brushes (the sealing slab under the map, the backs
@@ -366,13 +366,11 @@ MapConv.boundsOf, MapConv.SKY_CELL = boundsOf, SKY_CELL
 --              2336 x 2624 x 288 one), and floating leftovers have nothing at all
 local ROOF = { open = 0.5, samples = 6, support = 8 }
 
----Keeps the roof caps (ROOF) of the invisible brushes, adds them to pieces (role solid, roof true)
----@param pieces MapConvPiece[] every other piece, terrain too
----@param candidates MapConvPiece[] flat invisible brushes
----@param skies { min: number[], max: number[] }[] skyBounds
----@return integer kept
-local function keepRoofs(pieces, candidates, skies)
-    if #candidates == 0 or #skies == 0 then return 0 end
+---The solid pieces (not clips) by footprint cell (SKY_CELL map units): what's under, over or around a
+---point, for the roof caps and the sky clips (mapconv/skyclips.lua)
+---@param pieces MapConvPiece[]
+---@return table<number, { min: number[], max: number[] }[]> grid entries by cellKey
+function MapConv.solidsGrid(pieces)
     local grid = {}
     for _, piece in ipairs(pieces) do
         if piece.role ~= "clip" then
@@ -387,6 +385,25 @@ local function keepRoofs(pieces, candidates, skies)
             end
         end
     end
+    return grid
+end
+
+local NO_SOLIDS = {}
+---The solids whose footprint cell holds the point (x, y): test their bounds for the point itself
+---@param grid table MapConv.solidsGrid
+---@return { min: number[], max: number[] }[]
+function MapConv.solidsAt(grid, x, y)
+    return grid[cellKey(math.floor(x / SKY_CELL), math.floor(y / SKY_CELL))] or NO_SOLIDS
+end
+
+---Keeps the roof caps (ROOF) of the invisible brushes, adds them to pieces (role solid, roof true)
+---@param pieces MapConvPiece[] every other piece, terrain too
+---@param candidates MapConvPiece[] flat invisible brushes
+---@param skies { min: number[], max: number[] }[] skyBounds
+---@return integer kept
+local function keepRoofs(pieces, candidates, skies)
+    if #candidates == 0 or #skies == 0 then return 0 end
+    local grid = MapConv.solidsGrid(pieces)
     local n, kept = ROOF.samples, 0
     for _, piece in ipairs(candidates) do
         local min, max = boundsOf(piece)
@@ -402,7 +419,7 @@ local function keepRoofs(pieces, candidates, skies)
                 end
                 local clear = skyZ < math.huge
                 if clear then
-                    for _, s in ipairs(grid[cellKey(math.floor(x / SKY_CELL), math.floor(y / SKY_CELL))] or {}) do
+                    for _, s in ipairs(MapConv.solidsAt(grid, x, y)) do
                         if x >= s.min[1] and x <= s.max[1] and y >= s.min[2] and y <= s.max[2]
                             and s.max[3] > top + 1 and s.min[3] < skyZ then
                             clear = false
@@ -628,7 +645,7 @@ end
 
 ---Budget order of a box, bigger first: MapConv.score, with its walkable top counting FLOOR_WEIGHT times
 ---extra, so a floor beats an equally big wall (a ceiling slab's top counts too: a lower region leaves
----those out). Floors first was a toggle once, and Center first an option: always on / dropped (2026-11-15)
+---those out)
 ---@param box MapBox
 ---@return number
 function MapConv.priority(box)

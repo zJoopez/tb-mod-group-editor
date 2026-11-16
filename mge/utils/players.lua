@@ -290,7 +290,7 @@ end
 ---@param r number[] x y z degrees
 ---@return number[][]
 local function rotMatrix(r)
-    return Mat3.mul(Mat3.rotX(math.rad(r[1])), Mat3.mul(Mat3.rotY(math.rad(r[2])), Mat3.rotZ(math.rad(r[3]))))
+    return Mat3.fromEulerDegrees(r[1], r[2], r[3])
 end
 
 ---Turns players by a world rotation around pivot (default: their center) as one rigid group, one undo

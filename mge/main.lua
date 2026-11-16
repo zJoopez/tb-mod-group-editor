@@ -108,8 +108,7 @@ function MGE.isPlacing()
 end
 
 -- map converter, pure Lua (the tests run it outside the game). Needs mat3 / file_handler / mod_export
-local MAPCONV_MODULES = { "mapconv/vmf.lua", "mapconv/bsp.lua", "mapconv/brush.lua",
-    "mapconv/boxfit.lua", "mapconv/merge.lua", "mapconv/convert.lua", "mapconv/skyclips.lua" }
+local MAPCONV_MODULES = dofile(MGE.scriptPath .. "mapconv/modules.lua")
 
 ---Loads the map converter the first time it's needed (Advanced tab > Map), not at startup: the rest of
 ---MGE starts faster and doesn't depend on it. Throws when a module fails to load, the next call tries again
@@ -646,6 +645,20 @@ function MGE.hideGameHudNextFrame()
 end
 table.insert(MGE.onQuit, function() remove_hooks(HUD_START_HOOK) end)
 MGE.hideGameHudNextFrame()
+
+-- The game's main menu (Esc) puts the HUD back while it's open (opt hud 1), and leaves it on when it
+-- closes. When it closes with MGE's window shown, the HUD is hidden again. Only on that change, not every
+-- frame: a /opt hud 1 typed with MGE shown stays. TB_MENU_MAIN_ISOPEN is the game's own flag (system/menu_*)
+local HUD_MENU_HOOK = MGE.hookname .. "_hudMenu"
+local menuWasOpen = TB_MENU_MAIN_ISOPEN == 1
+add_hook("draw2d", HUD_MENU_HOOK, function()
+    local open = TB_MENU_MAIN_ISOPEN == 1
+    if menuWasOpen and not open and MGE.Main and MGE.Main.window and MGE.Main.window.displayed then
+        MGE.hideGameHud(true)
+    end
+    menuWasOpen = open
+end)
+table.insert(MGE.onQuit, function() remove_hooks(HUD_MENU_HOOK) end)
 
 add_hook("key_up", MGE.hookname, function(key)
     if key ~= 282 then return end --F1

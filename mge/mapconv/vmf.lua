@@ -76,7 +76,6 @@ end
 ---@field reason string? why a dropped brush is dropped
 ---@field sky boolean? a sky brush (bsp.lua: sky surface flags; .vmf sky brushes are found by material)
 ---@field nonSolid boolean? its entity isn't solid in normal play (Vmf.nonSolidEntity): dropped
----@field model integer? .bsp: the brush model it's in, 0 the world (*1, *2... are entities')
 ---(MapConv.brushRole)
 
 ---@class MapEntity

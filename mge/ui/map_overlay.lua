@@ -170,7 +170,7 @@ for _, field in ipairs(FIELDS) do
             size = { w, ROW_H },
         })
         -- Enter converts; box counts (whole) step by 1 on the wheel
-        local input = Rows.createInput(holder, function() convert() end, field.hints[i], "form", field.whole)
+        local input = Rows.createInput(holder, function() convert() end, field.hints[i], { mode = "form", whole = field.whole })
         Widgets.closeOnEscape(input)
         local text = state.texts[key] or ""
         input.textfieldstr[1] = text
@@ -262,9 +262,7 @@ end
 ---@param decimals integer
 ---@return string
 local function fieldText(value, decimals)
-    local s = string.format("%." .. decimals .. "f", value):gsub("0+$", ""):gsub("%.$", "")
-    if s == "-0" then s = "0" end
-    return s
+    return MGE.EditorRows.formatNumberText(value, decimals)
 end
 
 ---The map's pieces (MapConv.pieces): read and built once per map and the options they depend on,

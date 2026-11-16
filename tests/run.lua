@@ -77,9 +77,11 @@ Files = {
     end,
 }
 
-for _, module in ipairs({ "utils/mat3.lua", "utils/file_handler.lua", "utils/mod_export.lua",
-    "utils/history.lua", "utils/atmo_layer.lua", "utils/atmo.lua", "mapconv/vmf.lua", "mapconv/bsp.lua", "mapconv/brush.lua", "mapconv/boxfit.lua",
-    "mapconv/merge.lua", "mapconv/convert.lua", "mapconv/skyclips.lua", "ui/scroll_list.lua", "utils/shape_gen.lua", "utils/config.lua" }) do
+local modules = { "utils/mat3.lua", "utils/file_handler.lua", "utils/mod_export.lua",
+    "utils/history.lua", "utils/atmo_layer.lua", "utils/atmo.lua" }
+for _, module in ipairs(dofile(MGE.scriptPath .. "mapconv/modules.lua")) do modules[#modules + 1] = module end
+for _, module in ipairs({ "ui/scroll_list.lua", "utils/shape_gen.lua", "utils/config.lua" }) do modules[#modules + 1] = module end
+for _, module in ipairs(modules) do
     dofile(MGE.scriptPath .. module)
 end
 

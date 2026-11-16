@@ -284,8 +284,8 @@ local function addNumberSection(name, fields, infoText)
         local content = addRow(y, step.label)
         local entry = { step = step }
         -- keep: the wheel and leaving the field apply it, the value stays in the field
-        entry.input = Rows.createInput(content, function() applySnap(entry) end, formatStep(step.get()), "keep",
-            step.whole)
+        entry.input = Rows.createInput(content, function() applySnap(entry) end, formatStep(step.get()),
+            { mode = "keep", whole = step.whole })
         Widgets.closeOnEscape(entry.input) -- Esc while typing closes too (applies it, like Close)
         table.insert(numberInputs, entry)
         applySnap(entry) -- fills the field with the current value

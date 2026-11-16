@@ -354,8 +354,9 @@ function Bsp.parse(read, fileSize)
     for b = 0, brushCount - 1 do
         local pos = 1 + b * 12
         local firstSide, numSides, contents = i32(brushes, pos), i32(brushes, pos + 4), i32(brushes, pos + 8)
-        local brush = { id = tostring(b), entity = modelClass[owner[b] or 0] or "worldspawn", sides = {},
-            model = owner[b] or 0, nonSolid = modelNonSolid[owner[b] or 0] } -- model: brush model index (0 the world)
+        local model = owner[b] or 0 -- the brush model it's in, 0 the world (*1, *2... are entities')
+        local brush = { id = tostring(b), entity = modelClass[model] or "worldspawn", sides = {},
+            nonSolid = modelNonSolid[model] }
         local place = modelPlace[owner[b] or 0]
         local sky = false
         for s = firstSide, math.min(firstSide + numSides, sideCount) - 1 do

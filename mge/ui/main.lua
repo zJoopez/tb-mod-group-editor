@@ -104,7 +104,7 @@ local closeButton = TBMenu:spawnCloseButton(topBar, { x = -BAR_H, y = 0, w = BAR
     Main.window:kill() -- killAction quits
 end, { default = BAR_COLOR, hover = Widgets.HOVER_COLOR, pressed = TB_MENU_DEFAULT_DARKEST_COLOR,
     ui = { 1, 1, 1, 1 } }) -- the bar's button colors, its default ones are the panel's red
-Widgets.popupBelowLeft(closeButton, TBMenu:displayPopup(closeButton, "Close MGE (F1 only hides it)"))
+Widgets.popupBelowLeft(closeButton, "Close MGE (F1 only hides it)")
 if closeButton.child and closeButton.child[1] then -- its cross loads again after a graphics change
     Widgets.trackImage(closeButton.child[1], "../textures/menu/general/buttons/crosswhite.tga")
 end
@@ -347,24 +347,22 @@ local function addFooterPart()
     return Main.window:addChild({ pos = { 0, 0 }, size = { 1, FOOTER_H } })
 end
 local limitsRow = addFooterPart() -- object, dynamic id and joint usage, set by setDynamicStrings
-local messageRow = addFooterPart() -- the newest message
-messageRow.uiColor = { 0, 0, 0, 0 } -- black like the rest of the footer (FOOTER_COLOR, set below), see-through without one
 local fileRow = addFooterPart() -- the file Save writes, unsaved changes
 local shown = {} -- what the file row shows (below)
 
 -- the message rows, bottom up: the footer's middle (the newest), then the older ones above it (placed by
--- Main.fitScreen). Empty without messages
+-- Main.fitScreen). Black like the rest of the footer (FOOTER_COLOR, set below), empty without messages
 ---@type UIElement[]
-local messageRows = { messageRow }
-for i = 2, MESSAGE_MAX do
+local messageRows = {}
+for k = 1, MESSAGE_MAX do
     local row = addFooterPart()
-    row.uiColor = { 0, 0, 0, 0 } -- black like the footer, see-through until it has a message
-    messageRows[i] = row
+    row.uiColor = { 0, 0, 0, 0 }
+    messageRows[k] = row
 end
 
 ---@type { text: string, at: number }[] the messages that show, oldest first (at most MESSAGE_MAX)
 local messages = {}
----@type (string|false)[] what each message row has laid out (Widgets.infoText fits the text to the width once)
+---@type string[] what each message row has laid out (Widgets.infoText fits the text to the width once)
 local rowTexts = {}
 
 ---MGE.say's footer half: the message in the middle, one line, without chat color codes. The ones before it
@@ -380,7 +378,8 @@ function MGE.onMessage(text)
     if #messages > MESSAGE_MAX then table.remove(messages, 1) end
 end
 
-Widgets.addDrawBefore(messageRow, function()
+-- on the newest row: the footer's middle is always shown with the window, the rows above it too
+Widgets.addDrawBefore(messageRows[1], function()
     local now = os.clock_real()
     -- each one shows MESSAGE_SHOW seconds, then fades for MESSAGE_FADE, on its own clock
     for i = #messages, 1, -1 do
@@ -388,13 +387,14 @@ Widgets.addDrawBefore(messageRow, function()
     end
     for k, row in ipairs(messageRows) do
         local m = messages[#messages - k + 1] -- row 1 the newest
-        local text, alpha = false, 0 ---@type string|false, number
+        -- a row without a message is emptied: its old text would otherwise still be drawn, see-through
+        local text, alpha = "", 0
         if m then
             local age = now - m.at
             text, alpha = m.text, age > MESSAGE_SHOW and 1 - (age - MESSAGE_SHOW) / MESSAGE_FADE or 1
         end
         row.uiColor[4] = alpha -- the text reads the row's color as it draws
-        if text and text ~= rowTexts[k] then
+        if text ~= rowTexts[k] then
             Widgets.infoText(row, text)
             rowTexts[k] = text
         end
@@ -410,15 +410,14 @@ function Main.fitScreen()
     topBar.size.w = w
     topBar:moveTo(0, 0) -- updates its children's positions
     local sideW = (w - MESSAGE_W) / 2 - FOOTER_EDGE - BAR_SEP
-    for _, part in ipairs({ { limitsRow, FOOTER_EDGE, sideW }, { messageRow, (w - MESSAGE_W) / 2, MESSAGE_W },
-        { fileRow, w - FOOTER_EDGE - sideW, sideW } }) do
-        part[1].size.w = part[3]
+    for _, part in ipairs({ { limitsRow, FOOTER_EDGE }, { fileRow, w - FOOTER_EDGE - sideW } }) do
+        part[1].size.w = sideW
         part[1]:moveTo(part[2], h - FOOTER_H)
     end
-    -- the older messages stacked above the footer's middle, as wide
-    for k = 2, #messageRows do
-        messageRows[k].size.w = MESSAGE_W
-        messageRows[k]:moveTo((w - MESSAGE_W) / 2, h - FOOTER_H * k)
+    -- the messages: the newest in the footer's middle, the older ones stacked above it, as wide
+    for k, row in ipairs(messageRows) do
+        row.size.w = MESSAGE_W
+        row:moveTo((w - MESSAGE_W) / 2, h - FOOTER_H * k)
     end
     rowTexts = {} -- the message rows lay their text out again for the new width
     shown = {} -- the file row lays its text out again for its new width
@@ -497,6 +496,15 @@ function Main.leaveGenerate(list)
     Main.activeTabs[list] = "core"
     if list == "objects" then Main.activeTab = "core" end
     if list == Main.listTab then Main.applyTab() end
+end
+
+---After objects or atmo objects got selected on the shown list, once its window shows the selection (each
+---caller refreshes the way it needs: the list's cells, or the whole window): Generate goes back to Core
+---(Main.leaveGenerate) and camera follow frames the selection. Every way of selecting ends here: a click in the
+---world or the list, a box, select all. Not for deselecting: the camera and tab stay
+function Main.selectionMade()
+    Main.leaveGenerate()
+    MGE.Camera.followSelection()
 end
 
 ---Players in the current mod (numplayers gamerule), keeps the selected players in range
@@ -766,8 +774,7 @@ function Main.toggleSelectAll(value)
         obj.selected = value or nil
     end
     Main.updateWindow()
-    -- selecting everything frames it when the camera button is on, like selecting in the list
-    if value then MGE.Camera.followSelection() end
+    if value then Main.selectionMade() end -- like any selecting: Generate back to Core, camera follow
 end
 
 ---Selects every atmo object, or none when all are selected already (the Atmo list's select all, Ctrl + A)
@@ -779,7 +786,7 @@ function Main.toggleSelectAllAtmo()
     end
     for _, obj in ipairs(list) do obj.selected = not all or nil end
     Main.updateWindow()
-    if not all then MGE.Camera.followSelection() end
+    if not all then Main.selectionMade() end -- like any selecting: Generate back to Core, camera follow
 end
 
 function Main.resetWindow()

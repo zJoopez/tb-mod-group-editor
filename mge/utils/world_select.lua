@@ -75,10 +75,40 @@ end
 ---@field m22 number
 ---@field det number
 
+-- measuring distances, as shares of the camera distance: far out first (less rounding), closer in when
+-- those points are off screen (measureProjection)
+local MEASURE_SHARES = { 0.25, 0.05 }
+
+---Screen position of target + dir * e, nil off screen (get_screen_pos, draw3d only)
+---@return number? x, number? y
+local function screenAt(target, dir, e)
+    local x, y, z = get_screen_pos(target[1] + dir[1] * e, target[2] + dir[2] * e, target[3] + dir[3] * e)
+    if x == nil or z ~= 0 then return nil end
+    return x, y
+end
+
+-- the projection measured this frame: the gizmo and the highlight both ask in their draw3d, measured once.
+-- Only within a frame (UIElement.frameIndex): a cache kept while get_camera_info stayed the same froze a
+-- measurement taken while the drawn view was still easing toward that camera (after selecting, a reload),
+-- the gizmo stayed off and clicks missed until the camera was turned
+---@type CameraProjection?
+local frameProjection = nil
+local frameMeasured = nil -- UIElement.frameIndex it was measured in
+
 ---Measures the camera's projection. Must be called from draw3d (uses get_screen_pos), the result
----stays valid while the camera doesn't move, so mouse events can use the one from the last frame
+---stays valid while the camera doesn't move, so mouse events can use the one from the last frame. A
+---second call in the same frame gives the same one (callers only read it)
 ---@return CameraProjection?
 function WorldSelect.measureProjection()
+    local frame = UIElement and UIElement.frameIndex
+    if frame and frame == frameMeasured then return frameProjection end
+    frameProjection, frameMeasured = WorldSelect.measureProjectionNow(), frame
+    return frameProjection
+end
+
+---Measures the camera's projection now (measureProjection: once a frame)
+---@return CameraProjection?
+function WorldSelect.measureProjectionNow()
     local info = get_camera_info()
     local eye = { info.pos.x, info.pos.y, info.pos.z }
     local target = { info.lookat.x, info.lookat.y, info.lookat.z }
@@ -94,18 +124,13 @@ function WorldSelect.measureProjection()
     -- of rounding made M up to 1% off, handles far from the screen center a few pixels, a little
     -- different every frame while the camera moved: the gizmo shook until it stopped. Points on both
     -- sides, a quarter of the distance out: the pairs' average is the center, their difference M, the
-    -- rounding about 10 times smaller. Closer in when those would be off screen
-    local function at(dir, e)
-        local x, y, z = get_screen_pos(target[1] + dir[1] * e, target[2] + dir[2] * e, target[3] + dir[3] * e)
-        if x == nil or z ~= 0 then return nil end
-        return x, y
-    end
-    for _, share in ipairs({ 0.25, 0.05 }) do
+    -- rounding about 10 times smaller. Closer in when those would be off screen (MEASURE_SHARES)
+    for _, share in ipairs(MEASURE_SHARES) do
         local e = dist * share
-        local rx1, ry1 = at(right, e)
-        local rx2, ry2 = at(right, -e)
-        local ux1, uy1 = at(up, e)
-        local ux2, uy2 = at(up, -e)
+        local rx1, ry1 = screenAt(target, right, e)
+        local rx2, ry2 = screenAt(target, right, -e)
+        local ux1, uy1 = screenAt(target, up, e)
+        local ux2, uy2 = screenAt(target, up, -e)
         if rx1 and rx2 and ux1 and ux2 then
             local k = dist / (2 * e) -- 1 / (sideways / depth) between the pair's points
             local m11, m21 = (rx1 - rx2) * k, (ry1 - ry2) * k
@@ -742,9 +767,8 @@ local function clickObject(obj, additive)
         -- with only that one selected
         if Main.listTab == "atmo" then
             local selected = ModData.clickSelect(obj, additive)
-            if selected then Main.leaveGenerate() end -- Generate: back to Core, the gizmo on the selection
             Main.updateWindow()
-            if selected then MGE.Camera.followSelection() end
+            if selected then Main.selectionMade() end -- Generate back to Core, camera follow
         else
             for _, other in ipairs(ModData.parsed.atmo) do other.selected = nil end
             obj.selected = true
@@ -758,9 +782,8 @@ local function clickObject(obj, additive)
         MGE.Joints.offerDraft(slot, obj.id)
     elseif Main.listTab == "objects" then
         local selected = ModData.clickSelect(obj, additive)
-        if selected then Main.leaveGenerate() end -- Generate: back to Core, the gizmo on the selection
         Main.updateWindow() -- list checkboxes and editor values follow the selection
-        if selected then MGE.Camera.followSelection() end -- like selecting in the list
+        if selected then Main.selectionMade() end -- Generate back to Core, camera follow, like the list
     else
         for _, other in ipairs(ModData.parsed.env_obj) do other.selected = nil end
         obj.selected = true
@@ -813,9 +836,8 @@ local function boxSelect(b)
             end
         end
         if not any then return end
-        Main.leaveGenerate() -- Generate: back to Core, the gizmo on the selection
         Main.updateWindow() -- list checkboxes and editor values follow the selection
-        MGE.Camera.followSelection()
+        Main.selectionMade() -- Generate back to Core, camera follow
     elseif Main.listTab == "players" then
         local players = WorldSelect.pickPlayersBox(b.x1, b.y1, b.x2, b.y2)
         if not players[1] then return end

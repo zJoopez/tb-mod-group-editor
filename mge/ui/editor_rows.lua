@@ -84,12 +84,14 @@ end
 ---A number as a field shows it after a wheel step: no trailing zeros, "-0" as "0"
 ---@param value number
 ---@return string
-local function formatStep(value)
-    local s = string.format("%.4f", value):gsub("0+$", ""):gsub("%.$", "")
+---@param decimals integer? at most this many, default 4
+local function formatStep(value, decimals)
+    local s = string.format("%." .. (decimals or 4) .. "f", value):gsub("0+$", ""):gsub("%.$", "")
     if s == "-0" then s = "0" end
     return s
 end
 Rows.formatWheelValue = formatStep -- for the tests
+Rows.formatNumberText = formatStep -- a number as a field's text: Generate's sizes and angles, the map overlay
 
 ---The value a wheel step starts from: the typed number, else the placeholder's (the selection's current
 ---value), else 0 ("mixed", or nothing to read)
@@ -99,19 +101,6 @@ Rows.formatWheelValue = formatStep -- for the tests
 function Rows.wheelBase(text, placeholder)
     -- the placeholder's leading number: "8 obj" (Generate's Amount) is 8
     return tonumber(text) or tonumber(tostring(placeholder or ""):match("^%s*(-?%d*%.?%d+)")) or 0
-end
-
----The value after a wheel step. Whole-number fields step by 1 (Shift too) and round first
----@param base number
----@param up boolean
----@param step number the wheel's step for decimal fields (Config.wheelStep or .wheelFineStep)
----@param whole boolean?
----@return number
-function Rows.wheelValue(base, up, step, whole)
-    if whole then
-        base, step = math.floor(base + 0.5), 1
-    end
-    return base + (up and step or -step)
 end
 
 ---@alias InputMode
@@ -141,7 +130,7 @@ local function applyField(input, onInputFunc, mode, mergeKey)
         local ok, err = pcall(onInputFunc)
         History.mergeKey = nil
         Rows.applying = nil
-        if not ok then MGE.say("" .. tostring(err)) end
+        if not ok then MGE.say(tostring(err)) end
     end
     -- empty again (also "-" or "." alone): the placeholder shows the selection's value now
     if not input.destroyed then input:clearTextfield() end
@@ -154,12 +143,13 @@ end
 ---text. toriui sends the wheel to every scrollEnabled element, wherever the mouse is, so the field checks the
 ---cursor itself (MOUSE_X / Y: the wheel's own x, y aren't the cursor)
 ---@param input UIElement
----@param placeholder string? the field's placeholder (toriui's text field doesn't keep it)
----@param apply fun(mergeKey: string?) applies the field (applyField with its mode), nil for form fields
----@param whole boolean? a whole-number field: steps of 1 (an angle field: the rotate step, rounded)
----@param angle boolean? a Rot field: steps of Config.rotateStep degrees, with Shift 1
----@param exact number? the value the placeholder rounds (2 decimals): an empty field steps from this
-local function addWheelStep(input, placeholder, apply, whole, angle, exact)
+---@param placeholder string the field's placeholder text (toriui's text field doesn't keep it)
+---@param exact number? the value the placeholder shows rounded: an empty field steps from this
+---@param apply fun(mergeKey: string?)? applies the field (applyField with its mode), nil for form fields
+---@param opts InputOptions whole: steps of 1 (an angle field: the rotate step, rounded), angle: steps of
+---Config.rotateStep degrees, with Shift 1
+local function addWheelStep(input, placeholder, exact, apply, opts)
+    local whole, angle = opts.whole, opts.angle
     local press = input.btnDown
     input.scrollEnabled = true
     input.btnDown = function(btn, x, y)
@@ -175,11 +165,13 @@ local function addWheelStep(input, placeholder, apply, whole, angle, exact)
         local step ---@type number
         if angle then
             step = shift and 1 or Config.rotateStep
+        elseif whole then
+            step = 1
         else
             step = shift and Config.wheelFineStep or Config.wheelStep
         end
-        local after = Rows.wheelValue(value, btn == 4, step, whole and not angle)
-        if whole and angle then after = math.floor(after + 0.5) end -- whole degrees (engageplayerrot)
+        local after = value + (btn == 4 and step or -step) -- 4: up
+        if whole then after = math.floor(after + 0.5) end -- counts, levels, whole degrees (engageplayerrot)
         local text = formatStep(after)
         input.textfieldstr[1] = text
         input.textfieldindex = #text
@@ -210,7 +202,7 @@ add_hook("draw3d", LEAVE_HOOK, function()
     leftFields = {}
     for _, apply in ipairs(queue) do
         local ok, err = pcall(apply)
-        if not ok then MGE.say("" .. tostring(err)) end
+        if not ok then MGE.say(tostring(err)) end
     end
 end)
 table.insert(MGE.onQuit, function() remove_hooks(LEAVE_HOOK) end)
@@ -233,15 +225,31 @@ local function applyOnLeave(input, apply)
     end)
 end
 
----@param placeholder string? text shown while empty, defaults to "0"
----@param mode InputMode? defaults to "live"
----@param whole boolean? a whole-number field (a count, a level): the wheel steps by 1
----@param angle boolean? a Rot field in degrees: the wheel steps by the rotate step (addWheelStep)
----@param exact number? the value the placeholder shows rounded: the wheel steps from it (addWheelStep)
-local function createInput(container, onInputFunc, placeholder, mode, whole, angle, exact)
-    mode = mode or "live"
+---@class InputOptions
+---@field mode InputMode? defaults to "live"
+---@field whole boolean? a whole-number field (a count, a level, whole degrees): the wheel's result is rounded
+---@field angle boolean? a Rot field in degrees: the wheel steps by the rotate step, with Shift 1
+
+---@alias InputPlaceholder string|number|{ text: string, value: number? }
+---A placeholder as text shown while empty and the exact value the wheel steps from: a number shows with 2
+---decimals (Rows.formatHint) and steps from itself, { text, value } shows text and steps from value (a
+---joint without an anchor: "none", the wheel from its objects' midpoint), text steps from its leading number
+---@param placeholder InputPlaceholder?
+---@return string text, number? value
+local function resolvePlaceholder(placeholder)
+    if type(placeholder) == "number" then return formatHint(placeholder), placeholder end
+    if type(placeholder) == "table" then return placeholder.text, placeholder.value end
+    return placeholder or "0", nil
+end
+
+---@param placeholder InputPlaceholder? shown while empty, defaults to "0" (resolvePlaceholder)
+---@param opts InputOptions? default: a live decimal field
+local function createInput(container, onInputFunc, placeholder, opts)
+    opts = opts or {}
+    local mode = opts.mode or "live"
+    local text, exact = resolvePlaceholder(placeholder)
     local input = TBMenu:spawnTextField2(container, nil, "",
-        placeholder or "0",
+        text,
         {
             inputType = 2,
             textfield = true,
@@ -263,7 +271,7 @@ local function createInput(container, onInputFunc, placeholder, mode, whole, ang
         apply()
     end)
     if mode ~= "form" then applyOnLeave(input, apply) end
-    addWheelStep(input, placeholder, mode ~= "form" and apply or nil, whole, angle, exact)
+    addWheelStep(input, text, exact, mode ~= "form" and apply or nil, opts)
     return input
 end
 
@@ -315,11 +323,10 @@ end
 ---@param label string
 ---@param parent UIElement
 ---@param func fun(inputs: UIElement[], index: integer) called on enter
----@param placeholders string[] one per input
+---@param placeholders InputPlaceholder[] one per input: numbers show rounded, the wheel steps from them exactly
 ---@param help string? explanation shown when hovering the "?" icon
 ---@param onLabelClick function? see createRow
----@param opts { mode: InputMode?, whole: boolean?, angle: boolean?, exact: number[]? }? see createInput, default:
----live decimal fields. exact: the values the placeholders round, one per input (the wheel steps from them)
+---@param opts InputOptions? for every input of the row, default: live decimal fields
 ---@return UIElement[] inputs, UIElement row, UIElement? labelButton see createRow
 local function createInputRow(label, parent, func, placeholders, help, onLabelClick, opts)
     local row, contentX, contentW, labelButton = createRow(label, parent, help, onLabelClick)
@@ -331,8 +338,7 @@ local function createInputRow(label, parent, func, placeholders, help, onLabelCl
             size = { columnSize, row.size.h },
             interactive = true,
         }, true)
-        inputs[i] = createInput(inputContainer, function() func(inputs, i) end, placeholder, opts and opts.mode,
-            opts and opts.whole, opts and opts.angle, opts and opts.exact and opts.exact[i])
+        inputs[i] = createInput(inputContainer, function() func(inputs, i) end, placeholder, opts)
     end
     return inputs, row, labelButton
 end
@@ -502,6 +508,20 @@ Rows.createRow = createRow
 Rows.createInputRow = createInputRow
 Rows.createChoiceRow = createChoiceRow
 Rows.setHighlighted = setHighlighted
+
+---The names of a panel's rows the gizmo's tools change, lit for the active tool (toolbar, Alt + Q / W / E):
+---the panel puts its row names in labels.move / .rotate / .scale as it builds them (createInputRow's
+---third value) and calls highlight after a rebuild, tool changes call it on their own. One per panel
+---(Core, Generate, Players), called when the panel module loads
+---@return table<string, UIElement?> labels, fun() highlight
+function Rows.gizmoLabels()
+    local labels = {}
+    local function highlight()
+        for mode, label in pairs(labels) do setHighlighted(label, mode == MGE.Gizmo.mode) end
+    end
+    table.insert(MGE.Gizmo.modeListeners, highlight)
+    return labels, highlight
+end
 Rows.createToggleButtonRow = createToggleButtonRow
 Rows.buildPropertyRows = buildPropertyRows
 Rows.setSelectedProp = setSelectedProp

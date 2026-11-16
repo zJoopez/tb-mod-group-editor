@@ -196,13 +196,16 @@ end)
 ---@field onClick function?
 ---@field popupLeft boolean? the hover name goes under the button, its right edge at the button's (Widgets.popupBelowLeft)
 
----Puts a hover popup (TBMenu:displayPopup's) under its element, right edges lined up, so it opens to the
----left: for buttons near the screen's right edge (the top bar). The game's own placement moves a popup
----that would leave the screen before it shrinks to its text: its text and background ended up apart
+---Hover popup (TBMenu:displayPopup) under its element, right edges lined up, so it opens to the left: for
+---buttons near the screen's right edge (the top bar). The game's own placement moves a popup that would
+---leave the screen before it shrinks to its text: its text and background ended up apart
 ---@param element UIElement
----@param popup UIElement what TBMenu:displayPopup returned
-function Widgets.popupBelowLeft(element, popup)
-    popup:moveTo(-popup.size.w, element.size.h + 4) -- negative x: from the element's right edge
+---@param message string
+---@return UIElement? popup nil on mobile (the game shows its own)
+function Widgets.popupBelowLeft(element, message)
+    local popup = TBMenu:displayPopup(element, message) ---@type UIElement?
+    if popup then popup:moveTo(-popup.size.w, element.size.h + 4) end -- negative x: from the element's right edge
+    return popup
 end
 
 ---Hover popup (TBMenu:displayPopup) under its element, left edges lined up: the game's own puts it on top
@@ -277,12 +280,8 @@ function Widgets.buttonRow(parent, y, h, buttons, gap, textScale, style)
             local label = info.label
             if type(label) == "string" and label ~= "" then
                 -- name of the icon on hover, under it (popupLeft: under it, opening to the left)
-                if info.popupLeft then
-                    local popup = TBMenu:displayPopup(created[i], label)
-                    if popup then Widgets.popupBelowLeft(created[i], popup) end
-                else
-                    Widgets.popupBelow(created[i], label)
-                end
+                local place = info.popupLeft and Widgets.popupBelowLeft or Widgets.popupBelow
+                place(created[i], label)
             end
         else
             created[i] = Widgets.button(parent, rect, info.label, info.onClick, textScale, style)

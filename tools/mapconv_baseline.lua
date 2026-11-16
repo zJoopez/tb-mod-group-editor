@@ -18,10 +18,10 @@ end
 
 local root = (arg[0]:match("^(.*[/\\])") or "./") .. "../"
 MGE = { scriptPath = root .. "mge/" }
-for _, m in ipairs({ "utils/mat3.lua", "utils/file_handler.lua", "utils/mod_export.lua", "mapconv/vmf.lua",
-    "mapconv/bsp.lua", "mapconv/brush.lua", "mapconv/boxfit.lua", "mapconv/merge.lua", "mapconv/convert.lua", "mapconv/skyclips.lua" }) do
+for _, m in ipairs({ "utils/mat3.lua", "utils/file_handler.lua", "utils/mod_export.lua" }) do
     dofile(MGE.scriptPath .. m)
 end
+for _, m in ipairs(dofile(MGE.scriptPath .. "mapconv/modules.lua")) do dofile(MGE.scriptPath .. m) end
 local MapConv = MGE.MapConv
 local mapDir = MGE.scriptPath .. "assets/maps/"
 local baselinePath = mapDir .. "baseline.txt"

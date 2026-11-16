@@ -13,7 +13,6 @@
 --                                                                     (rows 7-8: block jointLinkButtons)
 -- A pick only rebuilds the buttons, the grid restyles its cells in place: rebuilding it would scroll it
 -- back to the top. Selecting another slot rebuilds both.
--- Has its own buttons (Reset: the draft back to the saved link).
 -- Like the Properties tab, a click on a joint's anchor selects that joint (it becomes the current
 -- slot) and the Move gizmo drags the selected joints' anchors: those come before picking objects
 

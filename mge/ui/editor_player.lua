@@ -14,7 +14,6 @@
 local Rows = MGE.EditorRows
 local inwuts = Rows.inputs
 local readInputs = Rows.readInputs
-local formatHints = Rows.formatHints
 local createInputRow = Rows.createInputRow
 
 local NOT_SET = { "-", "-", "-" }
@@ -76,15 +75,8 @@ local function applyTyped(inputs, key, list, current)
     end
 end
 
----@type table<string, UIElement?> Pos / Rot / Scale names by gizmo tool, lit for the active one like the Core
----tab's (rebuilt with the rows)
-local gizmoLabels = {}
-
----Lights the name of the row the active gizmo tool changes (toolbar, Alt + Q / W / E)
-local function highlightGizmoLabels()
-    for mode, label in pairs(gizmoLabels) do Rows.setHighlighted(label, mode == MGE.Gizmo.mode) end
-end
-table.insert(MGE.Gizmo.modeListeners, highlightGizmoLabels)
+-- Pos / Rot / Scale names by gizmo tool, the active one lit like the Core tab's (rebuilt with the rows)
+local gizmoLabels, highlightGizmoLabels = Rows.gizmoLabels()
 
 ---Pos / Rot / Scale rows for the players, rebuilt when the selection, the gamerules or the mod change
 ---(placeholders show the current values)
@@ -106,7 +98,7 @@ local function buildPlayer(holder)
     local _
     inwuts.playerPos, _, gizmoLabels.move = createInputRow("Pos", holder, function(_, i)
         if #list > 0 then Players.setShownPos(list, readInputs(inwuts.playerPos, i)) end
-    end, pos and formatHints(pos) or NOT_SET, posHelp, nil, { exact = pos }) -- the wheel steps from the exact center
+    end, pos or NOT_SET, posHelp) -- numbers: shown rounded, the wheel steps from the exact center
     inwuts.playerRot, _, gizmoLabels.rotate = createInputRow("Rot", holder, function(_, i)
         if #list > 0 then Players.setShownRot(list, readInputs(inwuts.playerRot, i)) end
     end, rot and wholeHints(rot) or NOT_SET, rotHelp, nil, { whole = true, angle = true })
@@ -117,8 +109,7 @@ local function buildPlayer(holder)
         local typed = tonumber(inwuts.playerScale[1].textfieldstr[1])
         if not typed or typed <= 0 or not size or size <= 0 then return end
         Players.scaleBy(list, typed / size)
-    end, { size and Rows.formatHint(size) or "-" },
-        "Size of " .. whom(list) .. " (default body 1).\nBigger is heavier.", nil, { exact = { size } })
+    end, { size or "-" }, "Size of " .. whom(list) .. " (default body 1).\nBigger is heavier.")
     highlightGizmoLabels()
 end
 
@@ -145,7 +136,8 @@ local function buildParts(holder)
         local current = MGE.Players.groupPartAverage(list, key)
         inwuts[name] = createInputRow(row[2], holder, function()
             applyTyped(inwuts[name], key, list, current)
-        end, { #list > 0 and hint(current) or "-" }, row[4], nil, { exact = #list > 0 and { current } or nil })
+        -- 3 significant digits (small densities stay readable), the wheel steps from the exact average
+        end, { #list > 0 and { text = hint(current), value = current } or "-" }, row[4])
     end
 end
 

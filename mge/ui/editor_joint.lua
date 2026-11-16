@@ -51,17 +51,18 @@ local function valueOf(joint, key)
     return joint.props[key] or DEFAULTS[key]
 end
 
----Placeholder for number `index` of a prop that has `count` numbers
+---Placeholder for number `index` of a prop that has `count` numbers: the joints' shared number (shown with 2
+---decimals, the wheel steps from it exactly: an axis like 0.6084998164), "mixed" when they differ
 ---@param joints FileParserEnvObjJoint[]
 ---@param key string
 ---@param index integer
 ---@param count integer
----@return string
+---@return InputPlaceholder
 local function hintOf(joints, key, index, count)
     return Rows.sharedChoice(joints, function(joint)
         local value = valueOf(joint, key)
         if value == nil then return "-" end
-        return Rows.formatHint(Joints.parseNumbers(value, count)[index])
+        return Joints.parseNumbers(value, count)[index]
     end) or "-"
 end
 
@@ -75,20 +76,12 @@ end
 ---@param count integer numbers in the prop
 ---@param help string
 local function numberRow(holder, joints, label, name, key, count, help)
-    local hints, exact = {}, {}
-    for i = 1, count do
-        hints[i] = hintOf(joints, key, i, count)
-        -- shared value: the wheel steps from it exactly (an axis like 0.6084998164 shows 0.61)
-        local shared = Rows.sharedChoice(joints, function(joint)
-            local value = valueOf(joint, key)
-            return value and Joints.parseNumbers(value, count)[i]
-        end)
-        exact[i] = type(shared) == "number" and shared or nil
-    end
+    local hints = {}
+    for i = 1, count do hints[i] = hintOf(joints, key, i, count) end
     inwuts[name] = Rows.createInputRow(label, holder, function(inputs, index)
         local value = tonumber(inputs[index].textfieldstr[1])
         if value then Joints.setComponent(selectedJoints(), key, index, count, value) end
-    end, hints, help, nil, { exact = exact })
+    end, hints, help)
 end
 
 ---Sets a whole prop to one value on the selected joints
@@ -103,21 +96,21 @@ end
 ---@param holder UIElement
 ---@param joints FileParserEnvObjJoint[]
 local function buildPos(holder, joints)
+    -- the anchors' center (numbers: shown rounded, the wheel steps from them exactly). Locked joints only:
+    -- "none", the wheel from their objects' midpoint
     local target = Joints.target(joints)
-    local hints = target and Rows.formatHints(target.pivot()) or { "none", "none", "none" }
-    -- the wheel steps from the exact center; locked joints only ("none"): from their objects' midpoint
-    local exact = target and target.pivot()
-    if not exact then
+    local hints = target and target.pivot() ---@type InputPlaceholder[]?
+    if not hints then
         local sum, n = { 0, 0, 0 }, 0
         for _, joint in ipairs(joints) do
-            local a, b = Joints.objectById(joint.obj1), Joints.objectById(joint.obj2)
-            if a and b then
-                local m = Joints.parseNumbers(Joints.midpoint(a, b), 3)
+            local m = Joints.jointMidpoint(joint)
+            if m then
                 for k = 1, 3 do sum[k] = sum[k] + m[k] end
                 n = n + 1
             end
         end
-        if n > 0 then exact = { sum[1] / n, sum[2] / n, sum[3] / n } end
+        hints = {}
+        for k = 1, 3 do hints[k] = { text = "none", value = n > 0 and sum[k] / n or nil } end
     end
     inwuts.jointPos = Rows.createInputRow("Pos", holder, function(inputs, index)
         local value = tonumber(inputs[index].textfieldstr[1])
@@ -126,7 +119,7 @@ local function buildPos(holder, joints)
     end, hints,
         "The point it turns around (world coordinates).\n" ..
         "None: the game locks the two objects together,\n" ..
-        "a typed value makes it a hinge there.", nil, { exact = exact or nil })
+        "a typed value makes it a hinge there.")
 end
 
 ---Type row: the jointtype line, a whole number
