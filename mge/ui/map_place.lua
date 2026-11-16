@@ -2,13 +2,14 @@
 -- map conversion is picked. The map is drawn in the world where Convert puts it, with the box of it
 -- that gets converted (the region). The gizmo (toolbar Move / Rotate / Scale, Alt + Q / W / E) works
 -- on what the bar at the top picks:
---   Region: Move it, Scale it per axis (its size), in the map's own axes
+--   Region: Move it, Scale it per axis (its size), in the map's own axes. It doesn't turn: Rotate
+--           switches over to the Map
 --   Map:    Move (where the map sits: the anchor), Rotate around z (yaw), Scale (white cube: map scale)
 -- Orange: what Convert adds (the biggest pieces up to the budget), purple: added to the atmo (the ones
 -- after the overlay's Budget, its Atmo count, utils/atmo_layer.lua), red: in the region but over the
 -- budget, grey: the map around the region (MapPlace.contextMargin, its biggest boxes). The counts in
 -- the bar are the conversion's own (MapConv.select, run again after every region change). The preview
--- draws at most MapPlace.maxDraws shapes a frame, the bar says when some are left out.
+-- draws every kept box and at most MapPlace.maxDraws other shapes a frame, the bar says when some are left out.
 -- Convert adds the boxes and closes the view, Settings (or Esc) goes back to the overlay. Both keep
 -- the placement for the next time. World clicks don't select while it's open, camera drags still work.
 local MapConv = MGE.MapConv
@@ -20,12 +21,10 @@ local Highlight = MGE.Highlight
 ---@class MapPlace
 local MapPlace = {
     active = false,
-    -- the game draws only so many 3D shapes a frame, a whole map (dust2) is far more: what's drawn is
-    -- capped (a draw each): region, kept, over budget, grey context, kept outlines. 512: what MGE has
-    -- next to the game's 256 objects (786 cut off the red boxes once 256 atmo boxes were kept)
+    -- the game draws only so many 3D shapes a frame (how many depends on its graphics settings), a whole
+    -- map (dust2) is far more. Every kept box is drawn (Budget + Atmo, the player's pick), the rest on top
+    -- of them is capped (a draw each): over budget, grey context, kept outlines
     maxDraws = 512,
-    -- share of maxDraws kept for the red boxes over the budget, so they show however many are kept
-    cutShare = 0.25,
     contextLimit = 250, -- grey boxes at most, the biggest near the region
     contextMargin = 0.5, -- grey boxes come from around the region: this share of its size on each side
     minRegion = 16, -- map units, smallest region side
@@ -71,7 +70,7 @@ local kept, cut, context = {}, {}, {}
 local allContext = {}
 ---@type { pieces: MapConvPiece[], key: string, boxes: MapConvBox[] }? the last allContext and what it was made from
 local contextCache = nil
--- how many of kept, cut and context fit in MapPlace.maxDraws (see plan)
+-- how many of kept, cut and context are drawn: every kept one, the rest in MapPlace.maxDraws (see plan)
 local shown = { kept = 0, cut = 0, context = 0, outlines = 0, trimmed = false }
 ---@type { key: string, kept: HighlightBox[], cut: HighlightBox[], context: HighlightBox[] }?
 local world = nil
@@ -128,7 +127,7 @@ local function setInfo(message)
     Widgets.infoText(info, message or (#kept .. " boxes of " .. budget .. (#cut > 0 and (", " .. #cut .. " over (red)") or "")
         .. (atmoCount > 0 and (", " .. atmoCount .. " to the atmo (purple)") or "")
         .. (shown.trimmed and ", preview trimmed" or "")
-        .. "   Move / Scale: Alt + Q / E" .. (editing == "map" and ", Rotate: Alt + W" or "")))
+        .. "   Move / Scale: Alt + Q / E, Rotate (the map): Alt + W"))
 end
 
 ---The grey context: boxes of the whole map whose middle is around the region but not in it
@@ -151,14 +150,13 @@ local function pickContext()
     end
 end
 
----How many boxes of each kind fit in MapPlace.maxDraws, one draw per fill: the region box (fill and
----outline), kept (a MapPlace.cutShare of the draws held back for the boxes over the budget while
----there are some), over budget, context, then outlines for the kept boxes with what's left
+---How many boxes of each kind are drawn, one draw per fill: the region box (fill and outline), every
+---kept box (what Convert adds: the overlay's Budget + Atmo, the player picked that many for their
+---graphics settings; capped by maxDraws they were cut off past ~380 with a big atmo), then from
+---MapPlace.maxDraws on top of them: over budget, context, then outlines for the kept boxes
 local function plan()
+    shown.kept = #kept
     local left = MapPlace.maxDraws - 2
-    local cutReserve = math.min(#cut, math.floor(left * MapPlace.cutShare))
-    shown.kept = math.max(0, math.min(#kept, left - cutReserve))
-    left = left - shown.kept
     shown.cut = math.max(0, math.min(#cut, left))
     left = left - shown.cut
     shown.context = math.max(0, math.min(#context, left))
@@ -355,8 +353,11 @@ end
 local function gizmoTarget(mode)
     if not session then return nil end
     if editing == "region" then
-        if mode == "rotate" then return nil end -- the region stays in the map's axes
-        return regionTarget()
+        if mode ~= "rotate" then return regionTarget() end
+        -- the region stays in the map's axes, Rotate turns the map: picking it (the bar, Alt + W) while
+        -- the region is edited goes over to the map, so the tool always does something
+        editing = "map"
+        if refreshBar then refreshBar() end
     end
     return mapTarget()
 end
@@ -475,6 +476,8 @@ local function buildBar()
     local function pick(what)
         Gizmo.cancel()
         editing = what
+        -- the region doesn't turn (gizmoTarget would go back to the map): its Move instead
+        if what == "region" and Gizmo.mode == "rotate" then Gizmo.setMode("move") end
         refresh()
     end
     edits = Widgets.buttonRow(group(0, 2), 0, rowH, {

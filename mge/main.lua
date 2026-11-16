@@ -109,7 +109,7 @@ end
 
 -- map converter, pure Lua (the tests run it outside the game). Needs mat3 / file_handler / mod_export
 local MAPCONV_MODULES = { "mapconv/vmf.lua", "mapconv/bsp.lua", "mapconv/brush.lua",
-    "mapconv/boxfit.lua", "mapconv/merge.lua", "mapconv/convert.lua" }
+    "mapconv/boxfit.lua", "mapconv/merge.lua", "mapconv/convert.lua", "mapconv/skyclips.lua" }
 
 ---Loads the map converter the first time it's needed (Advanced tab > Map), not at startup: the rest of
 ---MGE starts faster and doesn't depend on it. Throws when a module fails to load, the next call tries again

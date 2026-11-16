@@ -72,8 +72,7 @@ local function buildAtmoProps(holder, selected)
             or tostring(default)
     end
     inputs.atmoLevels = Rows.createInputRow("Graphics", holder, setLevels, { level("min_level", 0), level("max_level", 2) },
-        "The game's graphics levels it's drawn at, lowest\nand highest: 0 lowest, 2 highest. Players on other\n" ..
-        "settings don't see it: a way to keep detail off\nslower computers.", nil, { whole = true })
+        "Lowest and highest graphics level it's drawn at\n(0-2): keeps detail off slower computers.", nil, { whole = true })
     -- the other lines (count, randompos, rotate, parent...): kept, not edited, not drawn as the game does
     local kept, keys = 0, {}
     for _, obj in ipairs(selected) do
@@ -90,8 +89,7 @@ local function buildAtmoProps(holder, selected)
     Rows.createToggleButtonRow("Kept", holder, {
         { label = kept == 0 and "no other lines" or (kept .. " lines: " .. table.concat(names, ", ")), active = false,
             onClick = function() end },
-    }, "Lines the selected ones have that MGE doesn't edit\n(count, randompos, rotate, parent...), and the\n" ..
-        "object lines atmos skip (flag, mass...). Written back\nas they are; MGE draws such objects as their shape.")
+    }, "Lines MGE doesn't edit (count, randompos, parent...),\nsaved as they are.")
 end
 
 ---@type EditorPanelModule

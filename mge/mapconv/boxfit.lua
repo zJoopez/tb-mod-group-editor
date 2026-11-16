@@ -138,8 +138,19 @@ local SLOPE_MIN_Z, SLOPE_MAX_Z = 0.2, 0.98
 ---@param options BoxFitOptions
 ---@return MapBox
 function BoxFit.fit(geometry, options)
-    local axes = distinctAxes(geometry.faces)
     local frames = { frameFromAxes({ 1, 0, 0 }, { 0, 1, 0 }) } -- first: equal volumes keep world axes
+    -- every face along a world axis (most brushes of a map): the frames from its faces are the world's
+    -- axes again, which the search below skips as repeats. Same box, without making them
+    local aligned = true
+    for _, face in ipairs(geometry.faces) do
+        local n = face.n
+        local x, y, z = math.abs(n[1]), math.abs(n[2]), math.abs(n[3])
+        if not ((x == 1 and y == 0 and z == 0) or (x == 0 and y == 1 and z == 0) or (x == 0 and y == 0 and z == 1)) then
+            aligned = false
+            break
+        end
+    end
+    local axes = aligned and {} or distinctAxes(geometry.faces)
     for i, a in ipairs(axes) do
         local p = perpendicularTo(a)
         if p then frames[#frames + 1] = frameFromAxes(a, p) end
@@ -229,17 +240,31 @@ function BoxFit.terrain(terrain, options)
     local size, points = terrain.size, terrain.points
     local function at(i, j) return points[i * size + j + 1] end
     local slabs = {}
+    -- each cell's own area (split along its diagonals), the coverage test below adds them up for every
+    -- patch it looks at: worked out once, not again on every split level
+    local cellArea = {}
+    for i = 0, size - 2 do
+        for j = 0, size - 2 do
+            local p00, p01, p10, p11 = at(i, j), at(i, j + 1), at(i + 1, j), at(i + 1, j + 1)
+            local ax, ay, az = p11[1] - p00[1], p11[2] - p00[2], p11[3] - p00[3]
+            local bx, by, bz = p01[1] - p10[1], p01[2] - p10[2], p01[3] - p10[3]
+            local cx, cy, cz = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
+            cellArea[i * size + j + 1] = math.sqrt(cx * cx + cy * cy + cz * cz) / 2
+        end
+    end
     local function patch(i0, i1, j0, j1)
         local n = Vec.normalize(cross(sub(at(i1, j1), at(i0, j0)), sub(at(i0, j1), at(i1, j0))))
         if not n then return end -- collapsed patch, nothing to stand on
         if dot(n, terrain.n) < 0 then n = scale(n, -1) end
         local low, high = math.huge, -math.huge
         local list = {}
+        local n1, n2, n3 = n[1], n[2], n[3]
         for i = i0, i1 do
+            local row = i * size + 1
             for j = j0, j1 do
-                local p = at(i, j)
+                local p = points[row + j]
                 list[#list + 1] = p
-                local h = dot(n, p)
+                local h = n1 * p[1] + n2 * p[2] + n3 * p[3]
                 if h < low then low = h end
                 if h > high then high = h end
             end
@@ -279,15 +304,10 @@ function BoxFit.terrain(terrain, options)
         try(edge(at(i1, j0), at(i1, j1)))
         if not box then return end
         if i1 - i0 >= 2 and boxArea > 0 then
-            local covered = 0 -- the patch's own area, cell by cell (each split along its diagonals)
+            local covered = 0 -- the patch's own area, cell by cell
             for i = i0, i1 - 1 do
-                for j = j0, j1 - 1 do
-                    local p00, p01, p10, p11 = at(i, j), at(i, j + 1), at(i + 1, j), at(i + 1, j + 1)
-                    local ax, ay, az = p11[1] - p00[1], p11[2] - p00[2], p11[3] - p00[3]
-                    local bx, by, bz = p01[1] - p10[1], p01[2] - p10[2], p01[3] - p10[3]
-                    local cx, cy, cz = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
-                    covered = covered + math.sqrt(cx * cx + cy * cy + cz * cz) / 2
-                end
+                local row = i * size + 1
+                for j = j0, j1 - 1 do covered = covered + cellArea[row + j] end
             end
             if covered < BoxFit.terrainFill * boxArea then return split() end
         end

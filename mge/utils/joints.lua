@@ -376,6 +376,32 @@ function Joints.target(joints)
     return t --[[@as GizmoTarget]]
 end
 
+---Pos row (ui/editor_joint.lua): one axis of the anchors set to `value`, one undo step. Joints with a pos
+---line move together so their center (Joints.target's pivot) gets there. A joint without one has no
+---anchor (the game then locks its two objects together, a test mod showed): it starts from the
+---midpoint of its objects with that axis typed, which makes it a hinge there
+---@param joints FileParserEnvObjJoint[]
+---@param index integer 1-3
+---@param value number
+---@return boolean changed
+function Joints.setPosAxis(joints, index, value)
+    local target = Joints.target(joints)
+    local delta = target and value - target.pivot()[index] or 0
+    return Joints.setProps(joints, "pos", function(joint)
+        local p
+        if joint.props.pos then
+            p = Joints.parseNumbers(joint.props.pos, 3)
+            p[index] = p[index] + delta
+        else
+            local a, b = Joints.objectById(joint.obj1), Joints.objectById(joint.obj2)
+            if not a or not b then return nil end
+            p = Joints.parseNumbers(Joints.midpoint(a, b), 3)
+            p[index] = value
+        end
+        return formatVector(p[1], p[2], p[3])
+    end)
+end
+
 ---Moves joints' anchors halfway between the two objects each links
 ---@param joints FileParserEnvObjJoint[]
 ---@return boolean changed

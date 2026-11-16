@@ -77,12 +77,8 @@ local function buildHeading(holder)
     local draft, state = Joints.draftFor(slot), Joints.draftState(slot, slots)
     local many = #slots > 1
     local row, x, w = Rows.createRow(many and #slots .. " joints" or "Joint " .. slot, holder,
-        "Click two objects in the list below or in the world.\n" ..
-        "A click on a picked one takes it out. Nothing changes\n" ..
-        "until Create / Update, Reset goes back to the saved\n" ..
-        "link. With several joints selected Update links them\n" ..
-        "all, empty slots too. An object above id " .. MGE.MAX_NONSTATIC_OBJECTS .. " is\n" ..
-        "reindexed down when linked, the game joins only those.")
+        "Click two objects (list or world), again to unpick.\n" ..
+        "Create / Update applies it, Reset drops the picks.")
     local joint = Joints.find(slot)
     local pair = pairText(draft.obj1, draft.obj2)
     local text

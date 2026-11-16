@@ -17,8 +17,8 @@
 -- selected joints' anchors (utils/joints.lua: Move only).
 -- A drag only changes the live world (target.previewMove / previewRotate). Releasing applies it
 -- once like the Pos / Rot / Scale rows do (target.moveBy / rotateByMatrix / scaleBy): one undo
--- step (Shift + Z takes the drag back), joints follow, editor rows refresh. Ctrl snaps: Gizmo.step (move,
--- scale) and rotateStep.
+-- step (Shift + Z takes the drag back), joints follow, editor rows refresh. Ctrl snaps to the Snapping
+-- steps (MGE.Config): move and scale to wheelStep (with Shift wheelFineStep), rings to rotateStep (Shift: 1).
 local GizmoMath = MGE.GizmoMath
 local WorldSelect = MGE.WorldSelect
 local ModData = MGE.ModData
@@ -36,9 +36,6 @@ local Gizmo = {
     ---(ui/editor_core.lua)
     modeListeners = {},
     size = 0.10,      -- arrow length as a share of the camera distance, keeps the gizmo's size on screen
-    step = 0.5,       -- Ctrl while dragging: an arrow / square moves in these units, a scale handle multiplies in
-                      -- these steps (0.5: x1, x1.5, x2...). One setting for both (Settings > Gizmo snapping)
-    rotateStep = 15,  -- Ctrl while dragging a ring: degrees
     ---@type (fun(mode: GizmoMode): GizmoTarget?)? when set, the gizmo works on what this gives instead
     ---of the selection (ui/map_place.lua: the region or the map being placed)
     targetOverride = nil,
@@ -421,20 +418,30 @@ end
 local function updateDrag(x, y)
     local o, d = WorldSelect.rayFrom(projection, x, y)
     if not d then return end
-    local snapping = get_keyboard_ctrl() ~= 0
+    -- Ctrl snaps to the Snapping steps (MGE.Config): an arrow / square moves in these units, a scale handle
+    -- multiplies in them (0.5: x1, x1.5, x2...), a ring turns in degrees. Shift: the fine step, 1 degree
+    local step, turn = nil, nil ---@type number?, number?
+    if get_keyboard_ctrl() ~= 0 then
+        local Config = MGE.Config
+        if get_keyboard_shift() ~= 0 then
+            step, turn = Config.wheelFineStep, math.rad(1)
+        else
+            step, turn = Config.wheelStep, math.rad(Config.rotateStep)
+        end
+    end
     if drag.handle.kind == "ring" then
-        local angle = GizmoMath.ringAngle(drag.handle, drag.grab, o, d, snapping and math.rad(Gizmo.rotateStep) or nil)
+        local angle = GizmoMath.ringAngle(drag.handle, drag.grab, o, d, turn)
         if not angle then return end -- ray unusable this frame, keep the last angle
         drag.rotation = GizmoMath.rotationAbout(drag.handle.normal, angle)
         drag.target.previewRotate(drag.rotation)
     elseif drag.scale then
         local factors, travel = GizmoMath.scaleFactors(drag.handle, drag.grab, o, d, drag.base.size,
-            snapping and Gizmo.step or nil)
+            step)
         if not factors then return end -- ray parallel to the handle this frame, keep the last factors
         drag.scale, drag.travel = factors, travel
         drag.target.previewScale(factors, drag.baseSides)
     else
-        local offset = GizmoMath.dragOffset(drag.handle, drag.center, drag.grab, o, d, snapping and Gizmo.step or nil)
+        local offset = GizmoMath.dragOffset(drag.handle, drag.center, drag.grab, o, d, step)
         if not offset then return end -- ray parallel to the axis this frame, keep the last offset
         drag.offset = offset
         drag.target.previewMove(offset)

@@ -112,9 +112,7 @@ local function buildFileRows(holder)
 
     local _, shader = findShader()
     row, contentX, contentW = createRow("Shader", holder,
-        "The atmo's shader (data/shader), shown right away. Players\n" ..
-        "get it with the mod's atmo (Shaders & Atmos > Atmos), Save\n" ..
-        "writes it. Trash icon: no shader (your own comes back).")
+        "The atmo's shader, saved with it.\nTrash icon: no shader.")
     local gap, inset = Widgets.GAP, Widgets.INSET -- like the number fields
     local h = row.size.h - inset * 2
     local noneW = h -- square icon button, the shader's name gets the rest

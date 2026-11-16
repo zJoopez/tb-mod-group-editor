@@ -50,15 +50,26 @@ local function i32(s, pos)
     local v = a + b * 256 + c * 65536 + d * 16777216
     return v >= 2147483648 and v - 4294967296 or v
 end
----IEEE 754 single precision
-local function f32(s, pos)
-    local a, b, c, d = s:byte(pos, pos + 3)
+-- 2 ^ (exponent - 127) for each float exponent: a big map has millions of floats, a table read is
+-- cheaper than the power (powers of two are exact, the same numbers either way)
+local POW2 = {}
+for e = 1, 254 do POW2[e] = 2 ^ (e - 127) end
+
+---IEEE 754 single precision from its 4 bytes
+---@return number
+local function float(a, b, c, d)
     local sign = d >= 128 and -1 or 1
-    local exponent = (d % 128) * 2 + math.floor(c / 128)
-    local mantissa = (c % 128) * 65536 + b * 256 + a
+    local high = c >= 128 and 1 or 0
+    local exponent = (d % 128) * 2 + high
+    local mantissa = (c - high * 128) * 65536 + b * 256 + a
     if exponent == 0 then return sign * mantissa * 2 ^ -149 end -- zero and denormals
     if exponent == 255 then return mantissa == 0 and sign * math.huge or 0 / 0 end
-    return sign * (1 + mantissa / 8388608) * 2 ^ (exponent - 127)
+    return sign * (1 + mantissa / 8388608) * POW2[exponent]
+end
+
+---IEEE 754 single precision
+local function f32(s, pos)
+    return float(s:byte(pos, pos + 3))
 end
 Bsp.f32 = f32 -- also the offline tests
 Bsp.u16, Bsp.i16, Bsp.i32 = u16, i16, i32
@@ -258,7 +269,9 @@ local function readTerrain(lumps, planes, texinfo)
                     local s = j / (size - 1)
                     local v = 1 + (firstVert + i * size + j) * 20
                     -- offset vector and distance, read straight into the point (no table per vertex)
-                    local ox, oy, oz, dist = f32(dispVerts, v), f32(dispVerts, v + 4), f32(dispVerts, v + 8), f32(dispVerts, v + 12)
+                    local b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16 = dispVerts:byte(v, v + 15)
+                    local ox, oy, oz = float(b1, b2, b3, b4), float(b5, b6, b7, b8), float(b9, b10, b11, b12)
+                    local dist = float(b13, b14, b15, b16)
                     points[#points + 1] = { a[1] + (b[1] - a[1]) * s + ox * dist, a[2] + (b[2] - a[2]) * s + oy * dist,
                         a[3] + (b[3] - a[3]) * s + oz * dist }
                 end

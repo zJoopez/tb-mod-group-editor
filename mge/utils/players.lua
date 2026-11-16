@@ -53,6 +53,17 @@ local function formatList(list, count)
     return table.concat(parts, ",")
 end
 
+---Angle rounded to whole degrees, "-0" as 0. The game keeps engageplayerrot in whole degrees (its
+---modmaker writes 0,0,180, a saved working copy had 11,0,156 where MGE wrote decimals): a fraction
+---was lost on the reload, 0.5 degree wheel steps after a gizmo turn changed nothing
+---@param degrees number
+---@return number
+function Players.wholeDegrees(degrees)
+    local r = math.floor(degrees + 0.5)
+    return r == 0 and 0 or r
+end
+local wholeDegrees = Players.wholeDegrees
+
 ---@return boolean the mod sets player positions
 function Players.hasPositions()
     return readList(POS) ~= nil
@@ -164,6 +175,8 @@ end
 local function commit(pos, rot, count)
     set_gamerule(POS, formatList(pos, count))
     set_gamerule(ROT, formatList(rot, count))
+    -- a mod without a version line is read the old way, where engageplayerrot does nothing
+    MGE.FileHandler.ensureVersion(MGE.ModData.parsed)
     MGE.syncGamerules()
     History.commit()
     MGE.apply()
@@ -177,6 +190,7 @@ local pending = nil
 ---@param fn fun()
 local function afterReload(fn)
     pending = { run = fn }
+    MGE.FileHandler.ensureVersion(MGE.ModData.parsed) -- the rotations count in what's measured (commit)
     MGE.apply()
 end
 
@@ -217,7 +231,7 @@ local function ensurePositions(then_)
         local head = Players.head(p)
         targets[p] = Players.center(p)
         pos[p * 3 + 1], pos[p * 3 + 2], pos[p * 3 + 3] = head[1], head[2], head[3]
-        rot[p * 3 + 1], rot[p * 3 + 2], rot[p * 3 + 3] = 0, 0, Players.yaw(p)
+        rot[p * 3 + 1], rot[p * 3 + 2], rot[p * 3 + 3] = 0, 0, wholeDegrees(Players.yaw(p))
     end
     set_gamerule(POS, formatList(pos))
     set_gamerule(ROT, formatList(rot))
@@ -295,10 +309,14 @@ function Players.rotateByMatrix(players, m, pivot)
             local i = player * 3
             local current = rotMatrix({ rot[i + 1] or 0, rot[i + 2] or 0, rot[i + 3] or 0 })
             local x, y, z = Mat3.toEulerXYZ(Mat3.mul(m, current))
-            rot[i + 1], rot[i + 2], rot[i + 3] = math.deg(x), math.deg(y), math.deg(z)
+            -- whole degrees (wholeDegrees): the turn this player really gets is the rounded one, its
+            -- position follows that turn
+            local turned = { wholeDegrees(math.deg(x)), wholeDegrees(math.deg(y)), wholeDegrees(math.deg(z)) }
+            rot[i + 1], rot[i + 2], rot[i + 3] = turned[1], turned[2], turned[3]
+            local mi = Mat3.mul(rotMatrix(turned), Mat3.transpose(current))
             local c, h = Players.center(player), Players.head(player)
-            local wanted = Mat3.apply(m, { c[1] - p[1], c[2] - p[2], c[3] - p[3] })
-            local byHead = Mat3.apply(m, { c[1] - h[1], c[2] - h[2], c[3] - h[3] })
+            local wanted = Mat3.apply(mi, { c[1] - p[1], c[2] - p[2], c[3] - p[3] })
+            local byHead = Mat3.apply(mi, { c[1] - h[1], c[2] - h[2], c[3] - h[3] })
             for k = 1, 3 do pos[i + k] = (pos[i + k] or 0) + (p[k] + wanted[k]) - (h[k] + byHead[k]) end
         end
         commit(pos, rot)
@@ -585,6 +603,38 @@ function Players.partAverage(player, key)
         sum, n = sum + value, n + 1
     end)
     return n > 0 and sum / n or 0
+end
+
+-- the default body's head and groin (modmaker.tbm, player 0): their distance is size 1
+local DEFAULT_HEAD, DEFAULT_GROIN = { 1, 0.85, 2.65 }, { 1, 1, 1.55 }
+
+---@return number
+local function distance(a, b)
+    local x, y, z = a[1] - b[1], a[2] - b[2], a[3] - b[3]
+    return math.sqrt(x * x + y * y + z * z)
+end
+
+---A player's size compared to the default body: its model's head to groin distance (the mod's lines,
+---the default's where it has none) over the default's. Scaling multiplies it by the factor. From the
+---mod data, not the live bodies: right after a change the panel shows it, before the players are placed
+---@param player integer
+---@return number
+function Players.size(player)
+    local head, groin
+    for _, part in ipairs(playerSection(player).parts) do
+        if part.kind == "body" and part.name == "head" then head = readVec(getProp(part, "pos")) end
+        if part.kind == "body" and part.name == "groin" then groin = readVec(getProp(part, "pos")) end
+    end
+    return distance(head or DEFAULT_HEAD, groin or DEFAULT_GROIN) / distance(DEFAULT_HEAD, DEFAULT_GROIN)
+end
+
+---Average size of players (Players.size): what the players panel's Scale row shows
+---@param players integer|integer[]
+---@return number
+function Players.groupSize(players)
+    local list, sum = asList(players), 0
+    for _, player in ipairs(list) do sum = sum + Players.size(player) end
+    return #list > 0 and sum / #list or 1
 end
 
 ---Rewrites a value of every part of players with change(value) -> new value, one undo step and a

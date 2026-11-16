@@ -25,7 +25,7 @@ function Vec.normalize(a)
     return { a[1] / l, a[2] / l, a[3] / l }
 end
 
-local add, sub, scale, dot, cross = Vec.add, Vec.sub, Vec.scale, Vec.dot, Vec.cross
+local sub, scale, dot, cross = Vec.sub, Vec.scale, Vec.dot, Vec.cross
 local atan2 = math.atan2 or math.atan -- newer Lua takes two arguments in atan
 
 local INSIDE_EPS = 0.02 -- how far outside a plane a corner may be and still count (map units)
@@ -117,14 +117,24 @@ end
 ---@field min number[] bounding box
 ---@field max number[]
 
+-- polygonArea, buildFaces and volumeOf run for every brush of a map: their vector math is written out
+-- on numbers (no table per step), each sum in the same order as the Vec helpers, so the results are
+-- the same to the last bit
+
 ---Area of a face polygon
 local function polygonArea(verts, idx)
-    local total = { 0, 0, 0 }
+    local tx, ty, tz = 0, 0, 0
     local v0 = verts[idx[1]]
+    local x0, y0, z0 = v0[1], v0[2], v0[3]
     for i = 2, #idx - 1 do
-        total = add(total, cross(sub(verts[idx[i]], v0), sub(verts[idx[i + 1]], v0)))
+        local p, q = verts[idx[i]], verts[idx[i + 1]]
+        local px, py, pz = p[1] - x0, p[2] - y0, p[3] - z0
+        local qx, qy, qz = q[1] - x0, q[2] - y0, q[3] - z0
+        tx = tx + (py * qz - pz * qy)
+        ty = ty + (pz * qx - px * qz)
+        tz = tz + (px * qy - py * qx)
     end
-    return Vec.length(total) / 2
+    return math.sqrt(tx * tx + ty * ty + tz * tz) / 2
 end
 
 ---Faces from the corners on each plane, sorted around their middle. Planes with fewer than 3 corners
@@ -134,24 +144,43 @@ end
 ---@return MapFace[]
 local function buildFaces(planes, verts)
     local faces = {}
+    local abs, sqrt = math.abs, math.sqrt
+    local count = #verts
+    local angles = {}
+    local function byAngle(a, b) return angles[a] < angles[b] end
     for _, plane in ipairs(planes) do
+        local n, d = plane.n, plane.d
+        local n1, n2, n3 = n[1], n[2], n[3]
         local idx = {}
-        for i, v in ipairs(verts) do
-            if math.abs(dot(plane.n, v) - plane.d) < SAME_EPS then idx[#idx + 1] = i end
+        for i = 1, count do
+            local v = verts[i]
+            if abs(n1 * v[1] + n2 * v[2] + n3 * v[3] - d) < SAME_EPS then idx[#idx + 1] = i end
         end
         if #idx >= 3 then
-            local c = { 0, 0, 0 }
-            for _, i in ipairs(idx) do c = add(c, verts[i]) end
-            c = scale(c, 1 / #idx)
-            local u = Vec.normalize(sub(verts[idx[1]], c)) or { 1, 0, 0 }
-            local w = cross(plane.n, u) -- u to w turns counterclockwise seen from outside
-            local angles = {}
+            local cx, cy, cz = 0, 0, 0
             for _, i in ipairs(idx) do
-                local r = sub(verts[i], c)
-                angles[i] = atan2(dot(r, w), dot(r, u))
+                local v = verts[i]
+                cx, cy, cz = cx + v[1], cy + v[2], cz + v[3]
             end
-            table.sort(idx, function(a, b) return angles[a] < angles[b] end)
-            faces[#faces + 1] = { verts = idx, n = plane.n, material = plane.material, area = polygonArea(verts, idx) }
+            local s = 1 / #idx
+            cx, cy, cz = cx * s, cy * s, cz * s
+            local first = verts[idx[1]]
+            local u1, u2, u3 = first[1] - cx, first[2] - cy, first[3] - cz
+            local l = sqrt(u1 * u1 + u2 * u2 + u3 * u3)
+            if l < 1e-12 then
+                u1, u2, u3 = 1, 0, 0
+            else
+                u1, u2, u3 = u1 / l, u2 / l, u3 / l
+            end
+            -- w = n x u: u to w turns counterclockwise seen from outside
+            local w1, w2, w3 = n2 * u3 - n3 * u2, n3 * u1 - n1 * u3, n1 * u2 - n2 * u1
+            for _, i in ipairs(idx) do
+                local v = verts[i]
+                local r1, r2, r3 = v[1] - cx, v[2] - cy, v[3] - cz
+                angles[i] = atan2(r1 * w1 + r2 * w2 + r3 * w3, r1 * u1 + r2 * u2 + r3 * u3)
+            end
+            table.sort(idx, byAngle)
+            faces[#faces + 1] = { verts = idx, n = n, material = plane.material, area = polygonArea(verts, idx) }
         end
     end
     return faces
@@ -161,15 +190,20 @@ end
 ---@param faces MapFace[]
 ---@return number
 local function volumeOf(verts, faces)
-    local c = { 0, 0, 0 }
-    for _, v in ipairs(verts) do c = add(c, v) end
-    c = scale(c, 1 / #verts)
+    local cx, cy, cz = 0, 0, 0
+    for _, v in ipairs(verts) do cx, cy, cz = cx + v[1], cy + v[2], cz + v[3] end
+    local s = 1 / #verts
+    cx, cy, cz = cx * s, cy * s, cz * s
     local total = 0
     for _, face in ipairs(faces) do
-        local a = sub(verts[face.verts[1]], c)
-        for i = 2, #face.verts - 1 do
-            local b, d = sub(verts[face.verts[i]], c), sub(verts[face.verts[i + 1]], c)
-            total = total + dot(a, cross(b, d)) / 6
+        local fv = face.verts
+        local p = verts[fv[1]]
+        local a1, a2, a3 = p[1] - cx, p[2] - cy, p[3] - cz
+        for i = 2, #fv - 1 do
+            local q, r = verts[fv[i]], verts[fv[i + 1]]
+            local b1, b2, b3 = q[1] - cx, q[2] - cy, q[3] - cz
+            local d1, d2, d3 = r[1] - cx, r[2] - cy, r[3] - cz
+            total = total + (a1 * (b2 * d3 - b3 * d2) + a2 * (b3 * d1 - b1 * d3) + a3 * (b1 * d2 - b2 * d1)) / 6
         end
     end
     return math.abs(total)

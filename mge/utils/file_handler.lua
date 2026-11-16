@@ -438,6 +438,30 @@ local function partsOf(lines)
     return parts
 end
 
+-- the mod format version the game's own modmaker writes (data/mod/modmaker.tbm: "version 15")
+FileHandler.MOD_VERSION = 15
+
+---Gives a mod without a `version` line the current one (FileHandler.MOD_VERSION), after its "#!" line.
+---Mods without it (aikido.tbm, fat.tbm) are read the old way: engageplayerrot did nothing there, the
+---same rules in a versioned copy (the modmaker's fat2.tbm, a4_drift_track_one.tbm's version 12) turned
+---the players. ignores is replaced with a new table, not modified: history states share it
+---@param parser FileParserResult
+---@return boolean added
+function FileHandler.ensureVersion(parser)
+    for _, key in ipairs(PLAYER_LISTS) do
+        for _, line in ipairs(parser[key] or {}) do
+            if line:match("^%s*version%s+%d+") then return false end
+        end
+    end
+    local old, lines = parser.ignores or {}, {}
+    local at = (old[1] and old[1]:match("^#!")) and 2 or 1
+    for i = 1, at - 1 do lines[#lines + 1] = old[i] end
+    lines[#lines + 1] = "version " .. FileHandler.MOD_VERSION
+    for i = at, #old do lines[#lines + 1] = old[i] end
+    parser.ignores = lines
+    return true
+end
+
 ---Mods like fatkido.tbm give every player the same model with body/joint parts outside any player section.
 ---Read: those parts become every player's own section (a player's own parts win over the shared ones for the
 ---same body part or joint), so every player's model is edited on its own (Reset, Import, the Players panel).

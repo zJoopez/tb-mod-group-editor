@@ -4,7 +4,7 @@
 --   Pos / Rot:  the group's center from the dojo center, and the picked player's rotation (the group
 --               turns as one around its center), placeholders the current values also in mods without
 --               positions. Saved as the engageplayerpos / engageplayerrot gamerules (utils/players.lua)
---   Scale:      a factor for the size, like the Scale gizmo's white cube
+--   Scale:      the size compared to the default body (Players.size), a typed size scales them to it
 --   Density:    the average body part density of the players, a typed value sets that average (all
 --               parts of all of them scaled together, their ratios stay)
 --   Strength:   the same for the average joint strength (neck 1 / knees 4 differences stay)
@@ -24,6 +24,15 @@ local NOT_SET = { "-", "-", "-" }
 ---@return string
 local function hint(v)
     return string.format("%.3g", v)
+end
+
+---Angles as whole-degree placeholders: engageplayerrot keeps whole degrees (Players.wholeDegrees)
+---@param values number[]
+---@return string[]
+local function wholeHints(values)
+    local hints = {}
+    for i = 1, 3 do hints[i] = tostring(MGE.Players.wholeDegrees(values[i])) end
+    return hints
 end
 
 ---Players the panel works on: the selected ones with the picked player first (its rotation is the
@@ -67,7 +76,7 @@ local function applyTyped(inputs, key, list, current)
     end
 end
 
----Pos / Rot rows for the players, rebuilt when the selection, the gamerules or the mod change
+---Pos / Rot / Scale rows for the players, rebuilt when the selection, the gamerules or the mod change
 ---(placeholders show the current values)
 ---@param holder UIElement
 local function buildPlayer(holder)
@@ -78,60 +87,39 @@ local function buildPlayer(holder)
     if #list > 0 then pos, rot = Players.shown(list) end
     local posHelp, rotHelp
     if #list > 1 then
-        posHelp = "Center of " .. whom(list) .. ", from the\n" ..
-            "dojo center (like objects' Pos), they move together.\n"
-        rotHelp = "Player " .. list[1] .. "'s rotation in degrees, the others\n" ..
-            "turn with it as one group around their center,\n"
+        posHelp = "Center of " .. whom(list) .. " from the\ndojo center, they move together."
+        rotHelp = "Player " .. list[1] .. "'s rotation, the others turn\nwith it around the group's center."
     else
-        posHelp = "Center of " .. whom(list) .. ", from the dojo center\n" ..
-            "(like objects' Pos). "
-        rotHelp = "Rotation of " .. whom(list) .. " in degrees, turned around\n" ..
-            "its center, "
+        posHelp = "Center of " .. whom(list) .. " from the dojo center."
+        rotHelp = "Rotation of " .. whom(list) .. " in whole degrees."
     end
     inwuts.playerPos = createInputRow("Pos", holder, function(_, i)
         if #list > 0 then Players.setShownPos(list, readInputs(inwuts.playerPos, i)) end
-    end, pos and formatHints(pos) or NOT_SET,
-        posHelp .. "Saved as engageplayerpos: a mod\n" ..
-        "without it gets it for every player on the first change.")
+    end, pos and formatHints(pos) or NOT_SET, posHelp, nil, { exact = pos }) -- the wheel steps from the exact center
     inwuts.playerRot = createInputRow("Rot", holder, function(_, i)
         if #list > 0 then Players.setShownRot(list, readInputs(inwuts.playerRot, i)) end
-    end, rot and formatHints(rot) or NOT_SET,
-        rotHelp .. "like the Rotate gizmo. Saved as engageplayerrot.")
-end
-
----Scale row: multiplies the selected players' size (all of them, a factor is relative), like the
----Scale gizmo's white cube. Built once, the typed factor stays to try again
----@param holder UIElement
-local function buildScale(holder)
-    Rows.begin()
+    end, rot and wholeHints(rot) or NOT_SET, rotHelp, nil, { whole = true, angle = true })
+    -- Scale: the size compared to the default body (Players.size), a typed size scales to it (several
+    -- players: their average, the differences stay). Rebuilt with Pos / Rot so it shows the new size
+    local size = #list > 0 and Players.groupSize(list) or nil
     inwuts.playerScale = createInputRow("Scale", holder, function()
-        local factor = tonumber(inwuts.playerScale[1].textfieldstr[1])
-        if not factor or factor <= 0 then return end
-        MGE.Players.scaleBy(panelPlayers(), factor)
-    end, { "1.00" },
-        "Multiplies the selected players' size (body parts,\n" ..
-        "joints and the distances between them), around\n" ..
-        "their center. Density stays: bigger is heavier.")
+        local typed = tonumber(inwuts.playerScale[1].textfieldstr[1])
+        if not typed or typed <= 0 or not size or size <= 0 then return end
+        Players.scaleBy(list, typed / size)
+    end, { size and Rows.formatHint(size) or "-" },
+        "Size of " .. whom(list) .. " (default body 1).\nBigger is heavier.", nil, { exact = { size } })
 end
 
 -- part rows: input name, label, mod line, help
 local PART_ROWS = {
     { "playerDensity", "Density", "density",
-        "Average body part density (default 0.25). A typed\n" ..
-        "value sets it for the selected players, every part\n" ..
-        "scaled together: heavier or lighter, the size stays." },
+        "Average body part density (default 0.25),\nall parts scaled together." },
     { "playerStrength", "Strength", "strength",
-        "Average joint strength (the game's defaults are\n" ..
-        "1-4 per joint). A typed value sets it for the selected\n" ..
-        "players, every joint scaled together." },
+        "Average joint strength (default 1-4),\nall joints scaled together." },
     { "playerFriction", "Friction", "friction",
-        "Average friction of body parts and joints (default\n" ..
-        "0.3). A typed value sets it for the selected players,\n" ..
-        "every part scaled together." },
+        "Average friction of parts and joints\n(default 0.3), all scaled together." },
     { "playerBounce", "Bounce", "bounce",
-        "Average bounce of body parts and joints (default\n" ..
-        "0.1). A typed value sets it for the selected players,\n" ..
-        "every part scaled together." },
+        "Average bounce of parts and joints\n(default 0.1), all scaled together." },
 }
 
 ---Density / Strength / Friction / Bounce rows for the players, rebuilt like Pos / Rot (placeholders
@@ -145,7 +133,7 @@ local function buildParts(holder)
         local current = MGE.Players.groupPartAverage(list, key)
         inwuts[name] = createInputRow(row[2], holder, function()
             applyTyped(inwuts[name], key, list, current)
-        end, { #list > 0 and hint(current) or "-" }, row[4])
+        end, { #list > 0 and hint(current) or "-" }, row[4], nil, { exact = #list > 0 and { current } or nil })
     end
 end
 
@@ -155,21 +143,19 @@ local function buildModel(holder)
     Rows.begin()
     Rows.createToggleButtonRow("Model", holder, {
         { label = "Reset", active = false, onClick = function() MGE.PlayerList.resetModels(panelPlayers()) end },
-    }, "Back to the default body: the players' own\nbody and joint changes go (one undo step).")
+    }, "Back to the default body (one undo step).")
 end
 
 ---@type EditorPanelModule
 return {
     fixed = {
-        { build = buildScale, panel = "player", row = 2, rows = 1 },
         { build = buildModel, panel = "player", row = 3 + #PART_ROWS, rows = 1 },
     },
     blocks = {
-        { name = "player", build = buildPlayer, panel = "player", row = 0, rows = 2 },
+        { name = "player", build = buildPlayer, panel = "player", row = 0, rows = 3 },
         { name = "playerParts", build = buildParts, panel = "player", row = 3, rows = #PART_ROWS },
     },
     inputs = {
-        fixed = { "playerScale" },
-        rebuilt = { "playerPos", "playerRot", "playerDensity", "playerStrength", "playerFriction", "playerBounce" },
+        rebuilt = { "playerPos", "playerRot", "playerScale", "playerDensity", "playerStrength", "playerFriction", "playerBounce" },
     },
 }

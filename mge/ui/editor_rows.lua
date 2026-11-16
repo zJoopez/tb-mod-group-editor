@@ -147,7 +147,8 @@ local function applyField(input, onInputFunc, mode, mergeKey)
     if not input.destroyed then input:clearTextfield() end
 end
 
----Mouse wheel over a number field: up adds the step (Config.wheelStep, with Shift Config.wheelFineStep), down
+---Mouse wheel over a number field: up adds the step (Config.wheelStep, with Shift Config.wheelFineStep; a Rot
+---field Config.rotateStep, with Shift 1), down
 ---takes it away, from the typed number or the
 ---placeholder's (the selection's value). Live and keep fields apply it right away, form fields only get the
 ---text. toriui sends the wheel to every scrollEnabled element, wherever the mouse is, so the field checks the
@@ -155,8 +156,10 @@ end
 ---@param input UIElement
 ---@param placeholder string? the field's placeholder (toriui's text field doesn't keep it)
 ---@param apply fun(mergeKey: string?) applies the field (applyField with its mode), nil for form fields
----@param whole boolean? a whole-number field: steps of 1
-local function addWheelStep(input, placeholder, apply, whole)
+---@param whole boolean? a whole-number field: steps of 1 (an angle field: the rotate step, rounded)
+---@param angle boolean? a Rot field: steps of Config.rotateStep degrees, with Shift 1
+---@param exact number? the value the placeholder rounds (2 decimals): an empty field steps from this
+local function addWheelStep(input, placeholder, apply, whole, angle, exact)
     local press = input.btnDown
     input.scrollEnabled = true
     input.btnDown = function(btn, x, y)
@@ -166,10 +169,18 @@ local function addWheelStep(input, placeholder, apply, whole)
             or my < input.pos.y or my > input.pos.y + input.size.h then
             return false -- not this field: the wheel goes on to the next element (a list, the camera)
         end
-        local value = Rows.wheelBase(input.textfieldstr[1], placeholder)
-        local Config = MGE.Config
-        local step = get_keyboard_shift() ~= 0 and Config.wheelFineStep or Config.wheelStep
-        local text = formatStep(Rows.wheelValue(value, btn == 4, step, whole))
+        local typed = input.textfieldstr[1]
+        local value = (tonumber(typed) == nil and exact) or Rows.wheelBase(typed, placeholder)
+        local Config, shift = MGE.Config, get_keyboard_shift() ~= 0
+        local step ---@type number
+        if angle then
+            step = shift and 1 or Config.rotateStep
+        else
+            step = shift and Config.wheelFineStep or Config.wheelStep
+        end
+        local after = Rows.wheelValue(value, btn == 4, step, whole and not angle)
+        if whole and angle then after = math.floor(after + 0.5) end -- whole degrees (engageplayerrot)
+        local text = formatStep(after)
         input.textfieldstr[1] = text
         input.textfieldindex = #text
         if apply then apply(Rows.fieldKey(input)) end -- one undo step while the mouse stays on the field
@@ -206,7 +217,9 @@ end
 ---@param placeholder string? text shown while empty, defaults to "0"
 ---@param mode InputMode? defaults to "live"
 ---@param whole boolean? a whole-number field (a count, a level): the wheel steps by 1
-local function createInput(container, onInputFunc, placeholder, mode, whole)
+---@param angle boolean? a Rot field in degrees: the wheel steps by the rotate step (addWheelStep)
+---@param exact number? the value the placeholder shows rounded: the wheel steps from it (addWheelStep)
+local function createInput(container, onInputFunc, placeholder, mode, whole, angle, exact)
     mode = mode or "live"
     local input = TBMenu:spawnTextField2(container, nil, "",
         placeholder or "0",
@@ -231,7 +244,7 @@ local function createInput(container, onInputFunc, placeholder, mode, whole)
         apply()
     end)
     if mode ~= "form" then applyOnLeave(input, apply) end
-    addWheelStep(input, placeholder, mode ~= "form" and apply or nil, whole)
+    addWheelStep(input, placeholder, mode ~= "form" and apply or nil, whole, angle, exact)
     return input
 end
 
@@ -286,7 +299,8 @@ end
 ---@param placeholders string[] one per input
 ---@param help string? explanation shown when hovering the "?" icon
 ---@param onLabelClick function? see createRow
----@param opts { mode: InputMode?, whole: boolean? }? see createInput, default: live decimal fields
+---@param opts { mode: InputMode?, whole: boolean?, angle: boolean?, exact: number[]? }? see createInput, default:
+---live decimal fields. exact: the values the placeholders round, one per input (the wheel steps from them)
 ---@return UIElement[] inputs, UIElement row, UIElement? labelButton see createRow
 local function createInputRow(label, parent, func, placeholders, help, onLabelClick, opts)
     local row, contentX, contentW, labelButton = createRow(label, parent, help, onLabelClick)
@@ -299,7 +313,7 @@ local function createInputRow(label, parent, func, placeholders, help, onLabelCl
             interactive = true,
         }, true)
         inputs[i] = createInput(inputContainer, function() func(inputs, i) end, placeholder, opts and opts.mode,
-            opts and opts.whole)
+            opts and opts.whole, opts and opts.angle, opts and opts.exact and opts.exact[i])
     end
     return inputs, row, labelButton
 end

@@ -59,43 +59,57 @@ local function mergeAlong(boxes, k, step, cache)
             key = info.prefix .. "|" .. round(c[a]) .. "|" .. round(c[b]) .. "|" .. round(box.sides[a]) .. "|" .. round(box.sides[b])
             info.keys[k] = key
         end
-        if not groups[key] then
-            groups[key] = {}
+        -- the boxes of a row; most rows are one box, which stays as it is (no sorting or joining)
+        local list = groups[key]
+        if not list then
+            groups[key] = { box }
             order[#order + 1] = key -- first seen order, the result doesn't depend on pairs()
+        else
+            list[#list + 1] = box
         end
-        table.insert(groups[key], { box = box, low = c[k] - box.sides[k] / 2, high = c[k] + box.sides[k] / 2, mid = c[k] })
     end
     local out, joined = {}, 0
+    local current
+    local function finish()
+        if not current then return end
+        local box = current.box
+        if current.count > 1 then
+            local copy = {}
+            for field, value in pairs(box) do copy[field] = value end
+            copy.sides = { box.sides[1], box.sides[2], box.sides[3] }
+            copy.sides[k] = current.high - current.low
+            copy.center = MapConv.Vec.add(box.center, MapConv.Vec.scale(column(box, k), (current.low + current.high) / 2 - current.mid))
+            copy.merged = (box.merged or 1) + current.extra
+            box = copy
+        end
+        out[#out + 1] = box
+    end
+    local function byLow(p, q) return p.low < q.low end
     for _, key in ipairs(order) do
-        local list = groups[key]
-        table.sort(list, function(p, q) return p.low < q.low end)
-        local current
-        local function finish()
-            if not current then return end
-            local box = current.box
-            if current.count > 1 then
-                local copy = {}
-                for field, value in pairs(box) do copy[field] = value end
-                copy.sides = { box.sides[1], box.sides[2], box.sides[3] }
-                copy.sides[k] = current.high - current.low
-                copy.center = MapConv.Vec.add(box.center, MapConv.Vec.scale(column(box, k), (current.low + current.high) / 2 - current.mid))
-                copy.merged = (box.merged or 1) + current.extra
-                box = copy
+        local members = groups[key]
+        if #members == 1 then
+            out[#out + 1] = members[1]
+        else
+            local list = {}
+            for i, box in ipairs(members) do
+                local mid = cache[box].c[k]
+                list[i] = { box = box, low = mid - box.sides[k] / 2, high = mid + box.sides[k] / 2, mid = mid }
             end
-            out[#out + 1] = box
-        end
-        for _, item in ipairs(list) do
-            if current and item.low <= current.high + step then
-                current.high = math.max(current.high, item.high)
-                current.count = current.count + 1
-                current.extra = current.extra + (item.box.merged or 1)
-                joined = joined + 1
-            else
-                finish()
-                current = { box = item.box, low = item.low, high = item.high, mid = item.mid, count = 1, extra = 0 }
+            table.sort(list, byLow)
+            current = nil
+            for _, item in ipairs(list) do
+                if current and item.low <= current.high + step then
+                    current.high = math.max(current.high, item.high)
+                    current.count = current.count + 1
+                    current.extra = current.extra + (item.box.merged or 1)
+                    joined = joined + 1
+                else
+                    finish()
+                    current = { box = item.box, low = item.low, high = item.high, mid = item.mid, count = 1, extra = 0 }
+                end
             end
+            finish()
         end
-        finish()
     end
     return out, joined
 end

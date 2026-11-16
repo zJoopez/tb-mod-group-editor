@@ -461,9 +461,7 @@ local function buildAlign(holder)
         align = value
         Rows.refreshBlocks({ "generateAlign" })
     end,
-        "Edge the pieces line up on. In: inside of the bend (top).\n" ..
-        "Out: outside (bottom), Increment Z 0.3: stairs.\n" ..
-        "Center: middles, Increment Y, Z 0.3: pyramid.")
+        "Edge the pieces line up on: inside of the bend,\noutside, or their middles.")
 end
 
 ---Amount row (rebuilt: the tab is on both lists): pieces, and on the Objects list the joints between
@@ -481,9 +479,7 @@ local function buildAmount(holder)
     else
         inwuts.generateAmount = createInputRow("Amount", holder, function() generate() end,
             { GENERATE_AMOUNT .. " obj", GENERATE_JOINTS .. " joint" },
-            pieces .. ",\nand joints between each two\n" ..
-            "neighbours: 1 between their centers, 2 at their\n" ..
-            "edges (a hinge). Joined pieces are made dynamic.\n" ..
+            pieces .. ",\nand joints between neighbours (1: rigid, 2: a hinge).\n" ..
             "Enter in any field generates.", nil, FORM_WHOLE)
         local joints = inwuts.generateAmount[JOINTS]
         if keptJoints ~= "" then joints.textfieldstr[1], joints.textfieldindex = keptJoints, #keptJoints end
@@ -503,7 +499,7 @@ local function buildGenerate(holder)
     end
     add(createInputRow("Gap", holder, apply, { "0.00" }, "Space between pieces, negative overlaps.", nil, FORM))
     add(createInputRow("Angle", holder, apply, { tostring(GENERATE_ANGLE) },
-        "Total bend: 0 line, 90 quarter pipe, 360 loop.", nil, FORM))
+        "Total bend: 0 line, 90 quarter pipe, 360 loop.", nil, { mode = "form", angle = true }))
     add(createInputRow("Size", holder, apply, formatHints(defaultSides()),
         "First piece's size, empty: the default object's.\nThe Scale gizmo on the preview sets it too.", nil, FORM))
     add(createInputRow("Increment", holder, apply, { "0.00", "0.00", "0.00" },
@@ -516,10 +512,7 @@ end
 local function buildPosition(holder)
     Rows.begin()
     inwuts.generatePos = createInputRow("Position", holder, function() generate() end, positionHints,
-        "Shape's center like Pos shows it (from the dojo center).\n" ..
-        "Empty: in front of the camera, typed axes stay put.\n" ..
-        "The Move gizmo drags the preview too.\n" ..
-        "To view clears it and the gizmo's moves.", nil, FORM)
+        "Center from the dojo center, empty: in front of\nthe camera. The Move gizmo drags the preview too.", nil, FORM)
 end
 
 ---Empties the tab's fields: the preview goes back to the defaults (placeholders). Its fields keep their text
@@ -541,10 +534,7 @@ local function buildButtons(holder)
         { label = "Generate", active = false, onClick = generate },
         { label = "To view", active = false, onClick = toView },
         { label = "Reset", active = false, onClick = resetFields },
-    }, "Generate: adds the orange preview (static pieces, or\ndynamic ones joined) and selects them.\n" ..
-        "To view: moves the preview in front of the camera\n(also done when this tab opens), clears Position.\n" ..
-        "Reset: empties the fields, back to the defaults.\n" ..
-        "On the Atmo list the pieces go to the atmo.")
+    }, "Generate: adds the orange preview. To view: moves it\nin front of the camera. Reset: back to the defaults.")
 end
 
 

@@ -46,17 +46,20 @@ local function buildMeasuredRows(holder, selected)
     local zeros = { "0.00", "0.00", "0.00" }
     local any = #selected > 0
     local _
+    -- exact: the wheel steps from the real values, not the placeholders' 2 decimals
+    local position = any and shownPosition(selected) or nil
     inwuts.position, _, transformLabels.move = createInputRow("Pos", holder, function(_, i) positionSelected(i) end,
-        any and formatHints(shownPosition(selected)) or zeros,
-        "Moves the selection's center to X, Y, Z.")
+        position and formatHints(position) or zeros,
+        "Moves the selection's center to X, Y, Z.", nil, { exact = position })
     local angles = any and groupAngles(selected) or { 0, 0, 0 }
     for i = 1, 3 do angles[i] = math.deg(angles[i]) end
     inwuts.angle, _, transformLabels.rotate = createInputRow("Rot", holder, function(_, i) angleSelected(i) end,
         formatHints(angles),
-        "Turns the selection to the angles (degrees).")
+        "Turns the selection to the angles (degrees).", nil, { angle = true, exact = any and angles or nil })
+    local extents = any and groupExtents(selected) or nil
     inwuts.size, _, transformLabels.scale = createInputRow("Scale", holder, function(_, i) sizeSelected(i) end,
-        any and formatHints(groupExtents(selected)) or zeros,
-        "Sets the selection's size along its axes.")
+        extents and formatHints(extents) or zeros,
+        "Sets the selection's size along its axes.", nil, { exact = extents })
     highlightTransformLabels()
 end
 
@@ -180,8 +183,7 @@ local function buildCoreProps(holder, selected)
     end
     local _
     inwuts.color, _, colorLabel = createInputRow("Color", holder, function() adjustColor() end, colorHints,
-        "RGBA 0-255 (up to 500 is brighter). A typed field\napplies when you leave it, empty ones keep each own.\n" ..
-        "\"mixed\": the selected objects differ.\nName click: color picker, or pick from an object in the world.",
+        "RGBA 0-255 (up to 500: brighter), empty fields\nkeep each object's own. Click the name: color picker.",
         pickColor)
     Rows.setHighlighted(colorLabel, MGE.WorldSelect.picking ~= nil) -- rebuilt while picking
     -- atmo objects have no mass
@@ -261,16 +263,12 @@ local function buildLayerRow(holder)
         Rows.createToggleButtonRow("Atmo", holder, {
             { label = "To objects", active = false, onClick = function() MGE.AtmoLayer.toObjects() end },
             { label = "Save atmo", active = false, onClick = function() MGE.AtmoLayer.exportAtmo() end },
-        }, "To objects: the selected ones back into the game as\nobjects, as many as there are free ids.\n" ..
-            "Save atmo: writes data/atmospheres/MGE - <mod>.atmo\nnow, without saving the mod (Save does both).")
+        }, "To objects: back into the game (as many as ids are free).\n" ..
+            "Save atmo: writes the atmo now, without the mod.")
     else
         Rows.createToggleButtonRow("Atmo", holder, {
             { label = "To atmo", active = false, onClick = function() MGE.AtmoLayer.toAtmo() end },
-        }, "The selected objects leave the game (ids freed) and\n" ..
-            "join the atmo (the Atmo list): drawn only, no collisions.\n" ..
-            "Save keeps them in data/atmospheres/MGE - <mod>.atmo,\n" ..
-            "players load it in Shaders & Atmos > Atmos.\n" ..
-            "Objects joined by joints stay.")
+        }, "Moves the selection to the atmo: drawn only, no\ncollisions, ids freed. Objects with joints stay.")
     end
 end
 

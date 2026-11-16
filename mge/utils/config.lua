@@ -3,8 +3,9 @@
 --
 --   uiScale 1.3
 --   cameraFollow 1
---   snapStep 0.5              the gizmo's move / scale snap (Ctrl)
---   wheelStep 0.5             the mouse wheel over a number field, wheelFineStep with Shift
+--   wheelStep 0.5             the mouse wheel over a number field and the gizmo's move / scale snap (Ctrl),
+--                             wheelFineStep with Shift
+--   rotateStep 15             the wheel over a Rot field and the gizmo's ring snap (Ctrl), degrees
 --   palette 255 128 0 255     one line a color, r g b a 0-255
 --
 -- Read when MGE starts (Config.load, before the window is built: the UI size is needed then), put on the
@@ -13,10 +14,15 @@
 local Config = {}
 MGE.Config = Config
 
--- the mouse wheel over a number field (ui/editor_rows.lua): the step, and with Shift the fine one. Kept here:
--- the editor rows load after the config is applied
+-- Snapping (Settings), one set of steps for the mouse wheel over a number field (ui/editor_rows.lua) and the
+-- gizmo's Ctrl snap (utils/gizmo.lua): the step, with Shift the fine one, and the rotate step in degrees for
+-- Rot fields and the rings (with Shift: 1 degree). Kept here: the editor rows load after the config is applied
+---@type number
 Config.wheelStep = 0.5
+---@type number
 Config.wheelFineStep = 0.05
+---@type number
+Config.rotateStep = 15
 
 ---@class MgeConfigEntry
 ---@field key string
@@ -35,16 +41,14 @@ Config.ENTRIES = {
         set = function(v) if MGE_UI_SCALE == nil then MGE_UI_SCALE = v end end }, -- a restart's choice wins
     { key = "cameraFollow", kind = "boolean",
         get = function() return MGE.Camera.followMoves end, set = function(v) MGE.Camera.followMoves = v end },
-    { key = "snapStep", kind = "number", min = 1e-6, max = 100,
-        get = function() return MGE.Gizmo.step end, set = function(v) MGE.Gizmo.step = v end },
     { key = "rotateStep", kind = "number", min = 1e-6, max = 180,
-        get = function() return MGE.Gizmo.rotateStep end, set = function(v) MGE.Gizmo.rotateStep = v end },
+        get = function() return Config.rotateStep end, set = function(v) Config.rotateStep = v --[[@as number]] end },
     { key = "maxAtmo", kind = "number", min = 0, max = 100000, whole = true,
         get = function() return MGE.AtmoLayer.maxAtmo end, set = function(v) MGE.AtmoLayer.maxAtmo = v end },
     { key = "wheelStep", kind = "number", min = 1e-6, max = 1000,
-        get = function() return Config.wheelStep end, set = function(v) Config.wheelStep = v end },
+        get = function() return Config.wheelStep end, set = function(v) Config.wheelStep = v --[[@as number]] end },
     { key = "wheelFineStep", kind = "number", min = 1e-6, max = 1000,
-        get = function() return Config.wheelFineStep end, set = function(v) Config.wheelFineStep = v end },
+        get = function() return Config.wheelFineStep end, set = function(v) Config.wheelFineStep = v --[[@as number]] end },
 }
 
 ---@type table<string, number|boolean> values read from the file, by key

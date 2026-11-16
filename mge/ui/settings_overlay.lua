@@ -1,9 +1,9 @@
 -- Settings overlay, opened by the toolbar's settings button (ui/main.lua):
 --   Camera follow: the camera looks at the selection when selecting and moving (MGE.Camera.followMoves)
---   Gizmo snapping: the steps a gizmo drag snaps to while Ctrl is held (Gizmo.step for move and scale,
---                   Gizmo.rotateStep). A typed step applies when you leave the field or the overlay
---                   closes, an invalid one goes back to the current step
---   Mouse wheel:    the step a wheel turn over a number field adds, and with Shift (MGE.Config)
+--   Snapping:       the steps (MGE.Config) a wheel turn over a number field adds and a gizmo drag snaps
+--                   to while Ctrl is held: Step, Shift step with Shift, Rotate step for Rot fields and the
+--                   rings. A typed step applies when you leave the field or the overlay closes, an
+--                   invalid one goes back to the current step
 --   Atmo objects:   the atmo's size (AtmoLayer.maxAtmo), every one is drawn: the game's graphics
 --                   settings set how many shapes it draws a frame. Typed like the steps
 --   Shortcuts:      heading with a "?", hovering it lists the keyboard and mouse shortcuts
@@ -16,7 +16,6 @@ if MGE.settingsOverlay and not MGE.settingsOverlay.destroyed then return end
 local Widgets = MGE.Widgets
 local Rows = MGE.EditorRows
 local Camera = MGE.Camera
-local Gizmo = MGE.Gizmo
 
 ---@class MgeSetting
 ---@field label string
@@ -43,18 +42,24 @@ local SETTINGS = {
 ---@field max number largest value accepted
 ---@field whole boolean? rounded down to a whole number
 
----@param key "step"|"rotateStep" field on Gizmo
-local function gizmoField(label, key, max)
-    return { label = label, min = 0, max = max, get = function() return Gizmo[key] end, set = function(v) Gizmo[key] = v end }
+-- snapping (MGE.Config): the mouse wheel over a number field (ui/editor_rows.lua) and the gizmo's Ctrl snap
+-- (utils/gizmo.lua) use the same steps
+local Config = MGE.Config
+---@param label string
+---@param key "wheelStep"|"wheelFineStep"|"rotateStep" field on Config
+---@param max number
+local function stepField(label, key, max)
+    return { label = label, min = 0, max = max, get = function() return Config[key] end, set = function(v) Config[key] = v end }
 end
 
 ---@type MgeNumberSetting[]
 local SNAP_STEPS = {
-    gizmoField("Move / scale step", "step", 100),
-    gizmoField("Rotate step", "rotateStep", 180),
+    stepField("Step", "wheelStep", 1000),
+    stepField("Shift step", "wheelFineStep", 1000),
+    stepField("Rotate step", "rotateStep", 180),
 }
-local SNAP_INFO = "Hold Ctrl while dragging the gizmo.\nMove: units. Scale: the size multiplies in these\n" ..
-    "steps (0.5: x1, x1.5, x2...). Rotate: degrees."
+local SNAP_INFO = "Wheel over a number field, or Ctrl while\ndragging the gizmo. Hold Shift for the\n" ..
+    "Shift step (rotation: 1 degree)."
 
 -- atmo objects (utils/atmo_layer.lua): the atmo's size. MGE draws every one, the game draws only so
 -- many shapes a frame, how many depends on its graphics settings (lowest: 10 000)
@@ -68,18 +73,6 @@ local ATMO_INFO = "How many objects the atmo holds. MGE draws every one,\n" ..
     "but the game draws only so many shapes a frame:\nlower graphics settings draw more. Above 256 you may\n" ..
     "need lower graphics to see them all."
 
--- the mouse wheel over a number field (ui/editor_rows.lua): its step, with Shift the fine one (MGE.Config)
-local Config = MGE.Config
----@type MgeNumberSetting[]
-local WHEEL_FIELDS = {
-    { label = "Step", min = 0, max = 1000,
-        get = function() return Config.wheelStep end, set = function(v) Config.wheelStep = v end },
-    { label = "Shift step", min = 0, max = 1000,
-        get = function() return Config.wheelFineStep end, set = function(v) Config.wheelFineStep = v end },
-}
-local WHEEL_INFO = "Wheel over a number field adds the step (up)\nor takes it away (down), applied right away.\n" ..
-    "Hold Shift for the fine step."
-
 -- shortcut list, shown by the "?" next to the Shortcuts heading (the toolbar used to have it)
 local SHORTCUTS = table.concat({
     "F1: show / hide window",
@@ -91,9 +84,9 @@ local SHORTCUTS = table.concat({
     "Delete: delete selected, of the shown list (asks first)",
     "Shift + Z / Y: undo / redo",
     "Number fields apply when you leave them (or Enter), Esc drops the typing",
-    "Wheel over a number field: + / - the wheel step, Shift: the fine step (one undo step a scroll)",
+    "Wheel over a number field: + / - the step, Shift: the Shift step (one undo step a scroll)",
     "Alt + Q / W / E: Move / Rotate / Scale gizmo on / off",
-    "Ctrl while dragging the gizmo: snap steps (above)",
+    "Ctrl while dragging the gizmo: snap to the steps, Ctrl + Shift: the Shift step",
     "Drag (off the gizmo) / wheel: orbit / zoom camera",
     "Shift + drag: box select what shows, Ctrl + Shift + drag: everything inside",
 }, "\n")
@@ -108,11 +101,10 @@ local SETTING_H = ROW_H + ROW_GAP -- a row, its explanation is its "?" (like the
 local SECTION_H = px(26) -- section heading
 local SNAP_H = SECTION_H + #SNAP_STEPS * SETTING_H
 local ATMO_H = SECTION_H + #ATMO_FIELDS * SETTING_H
-local WHEEL_H = SECTION_H + #WHEEL_FIELDS * SETTING_H
 local SHORTCUTS_H = SECTION_H + px(4)
 local CLOSE_H = Widgets.ROW_H
 local LABEL_W = px(150)
-local panelH = TITLE_H + (#SETTINGS + 1) * SETTING_H + SNAP_H + WHEEL_H + ATMO_H + SHORTCUTS_H + CLOSE_H + PAD * 2 -- + UI size
+local panelH = TITLE_H + (#SETTINGS + 1) * SETTING_H + SNAP_H + ATMO_H + SHORTCUTS_H + CLOSE_H + PAD * 2 -- + UI size
 
 local overlay = TBMenu:spawnWindowOverlay(true) -- true: a click on the dark background closes it
 MGE.settingsOverlay = overlay
@@ -301,8 +293,7 @@ local function addNumberSection(name, fields, infoText)
     end
 end
 
-addNumberSection("Gizmo snapping", SNAP_STEPS, SNAP_INFO) -- three steps, one explanation: on the heading
-addNumberSection("Mouse wheel", WHEEL_FIELDS, WHEEL_INFO)
+addNumberSection("Snapping", SNAP_STEPS, SNAP_INFO) -- three steps, one explanation: on the heading
 addNumberSection("Atmo objects", ATMO_FIELDS, ATMO_INFO)
 
 -- Shortcuts heading with the "?" right after the text, hovering it lists them

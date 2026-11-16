@@ -203,8 +203,7 @@ local function addToggle(label, key, help)
 end
 addToggle("Terrain", "terrain","Terrain of compiled maps (.bsp displacements),\n" ..
     "dust2's ground: slabs under it, neighbours joined.")
-addToggle("Clips", "clips", "Player clips: the map's invisible walls, ramps\nover stairs, smoothed corners. Colored like\n" ..
-    "what they cover. The big lids under the sky\nare left out.")
+addToggle("Clips", "clips", "Player clips: invisible walls, ramps over stairs.\nThe big lids under the sky are left out.")
 
 local info = panel:addChild({
     pos = { PAD, y + 4 },

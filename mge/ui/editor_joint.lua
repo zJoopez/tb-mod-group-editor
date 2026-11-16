@@ -1,10 +1,15 @@
 -- Joints list's Properties tab. Enter in a field applies it to every selected joint as one undo step,
 -- like the object rows. Joints have no live setter, so each change saves and reloads. Which objects a
 -- joint links is set on the Link tab (ui/editor_link.lua)
---   Pos:      the anchor, where the game joins them. Like the Core tab's Pos: the selected joints'
+--   Pos:      the anchor, the point it turns around. Like the Core tab's Pos: the selected joints'
 --             center, a typed axis moves them together so the center gets there (as the Move gizmo
---             does, Joints.target in utils/joints.lua). Recenter (the last row) puts each halfway between its two objects
---   Axis:     the axis line, typed as the file writes it
+--             does, Joints.target in utils/joints.lua). Recenter (the last row) puts each halfway
+--             between its two objects. Without a pos line ("none") the game locks the two objects
+--             together (mge_tests/joint_nopos.tbm): MGE leaves it so, a typed value or Recenter
+--             makes it a hinge (Joints.setPosAxis starts from the midpoint)
+--   Axis:     the axis line, a world-space direction (mge_tests/joint_axis.tbm: rotating an object
+--             doesn't turn it, so MGE turns it with rotated objects, utils/transforms.lua). Its length
+--             matters: 0 0 90 throws the object around
 --   Range, Strength, Velocity, Type (jointtype), Visible: the env_obj_joint lines of those names, a row each
 -- Placeholders show the current values: "mixed" when the joints differ, DEFAULTS for a missing line.
 -- Selected empty slots are left out
@@ -70,12 +75,20 @@ end
 ---@param count integer numbers in the prop
 ---@param help string
 local function numberRow(holder, joints, label, name, key, count, help)
-    local hints = {}
-    for i = 1, count do hints[i] = hintOf(joints, key, i, count) end
+    local hints, exact = {}, {}
+    for i = 1, count do
+        hints[i] = hintOf(joints, key, i, count)
+        -- shared value: the wheel steps from it exactly (an axis like 0.6084998164 shows 0.61)
+        local shared = Rows.sharedChoice(joints, function(joint)
+            local value = valueOf(joint, key)
+            return value and Joints.parseNumbers(value, count)[i]
+        end)
+        exact[i] = type(shared) == "number" and shared or nil
+    end
     inwuts[name] = Rows.createInputRow(label, holder, function(inputs, index)
         local value = tonumber(inputs[index].textfieldstr[1])
         if value then Joints.setComponent(selectedJoints(), key, index, count, value) end
-    end, hints, help)
+    end, hints, help, nil, { exact = exact })
 end
 
 ---Sets a whole prop to one value on the selected joints
@@ -86,29 +99,34 @@ local function setAll(key, value)
 end
 
 ---Pos row: the selected joints' center (the gizmo's pivot), a typed axis moves them together so the
----center gets there. Joints without a pos line get the typed value (nothing to move from)
+---center gets there. Joints without a pos line start from their objects' midpoint (Joints.setPosAxis)
 ---@param holder UIElement
 ---@param joints FileParserEnvObjJoint[]
 local function buildPos(holder, joints)
     local target = Joints.target(joints)
-    local hints = target and Rows.formatHints(target.pivot()) or { "-", "-", "-" }
+    local hints = target and Rows.formatHints(target.pivot()) or { "none", "none", "none" }
+    -- the wheel steps from the exact center; locked joints only ("none"): from their objects' midpoint
+    local exact = target and target.pivot()
+    if not exact then
+        local sum, n = { 0, 0, 0 }, 0
+        for _, joint in ipairs(joints) do
+            local a, b = Joints.objectById(joint.obj1), Joints.objectById(joint.obj2)
+            if a and b then
+                local m = Joints.parseNumbers(Joints.midpoint(a, b), 3)
+                for k = 1, 3 do sum[k] = sum[k] + m[k] end
+                n = n + 1
+            end
+        end
+        if n > 0 then exact = { sum[1] / n, sum[2] / n, sum[3] / n } end
+    end
     inwuts.jointPos = Rows.createInputRow("Pos", holder, function(inputs, index)
         local value = tonumber(inputs[index].textfieldstr[1])
-        if not value then return end
-        local list = selectedJoints()
-        local now = Joints.target(list) -- read again: a reload replaces the joint tables
-        if not now then
-            Joints.setComponent(list, "pos", index, 3, value)
-            return
-        end
-        local offset = { 0, 0, 0 }
-        offset[index] = value - now.pivot()[index]
-        now.moveBy(offset)
+        -- the list read again: a reload replaces the joint tables
+        if value then Joints.setPosAxis(selectedJoints(), index, value) end
     end, hints,
-        "Anchor: where the game joins the two objects, in\n" ..
-        "world coordinates. Several joints: their center,\n" ..
-        "they move together. The Move gizmo (Alt + Q)\n" ..
-        "drags them, Recenter puts each between its objects.")
+        "The point it turns around (world coordinates).\n" ..
+        "None: the game locks the two objects together,\n" ..
+        "a typed value makes it a hinge there.", nil, { exact = exact or nil })
 end
 
 ---Type row: the jointtype line, a whole number
@@ -147,12 +165,12 @@ local function buildJoints(holder)
 
     buildPos(holder, joints)
     numberRow(holder, joints, "Axis", "jointAxis", "axis", 3,
-        "The axis line, three numbers as the file writes\n" ..
-        "them (mods use both directions like 0 1 0 and\n" ..
-        "angles like 0 -90 0).")
+        "Turning direction in world space, any numbers\n" ..
+        "(0 0 1, 0.5 0 1...), negative reverses it. Very\n" ..
+        "big ones like 0 0 90 can make it unstable.")
     numberRow(holder, joints, "Range", "jointRange", "range", 2,
-        "Rotation limits, high then low as the file writes\n" ..
-        "them (e.g. 3.6 -3.6).")
+        "Limits, high then low (1.5: 90 degrees, 3: 180).\n" ..
+        "4 -4 with a motor: keeps turning.")
     numberRow(holder, joints, "Strength", "jointStrength", "strength", 1,
         "The joint's strength (its motor force).")
     numberRow(holder, joints, "Velocity", "jointVelocity", "velocity", 1,
@@ -161,7 +179,7 @@ local function buildJoints(holder)
     buildVisible(holder, joints)
     Rows.createToggleButtonRow("", holder, {
         { label = "Recenter", active = false, onClick = function() Joints.centerPos(selectedJoints()) end },
-    }, "Moves each selected joint's anchor halfway\nbetween the two objects it links.")
+    }, "Puts each selected joint's anchor halfway\nbetween its two objects (a locked one: a hinge).")
 end
 
 ---@type EditorPanelModule

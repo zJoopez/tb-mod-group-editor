@@ -121,12 +121,12 @@ T.test("sky clips", function()
     local sky = solid(90, { -2000, -2000, 700 }, { 2000, 2000, 764 }, SKY)
     local floor = solid(1, { -1000, -1000, -16 }, { 1000, 1000, 0 })
     local lid = solid(2, { -500, -500, 448 }, { 500, 500, 576 }, CLIP)          -- 124 under the sky
-    local wall = solid(3, { 600, -500, 0 }, { 616, 500, 700 }, CLIP)            -- thin, up to the sky
-    local block = solid(4, { -900, -900, 300 }, { -700, -700, 700 }, CLIP)      -- taller than wide
+    local wall = solid(3, { 600, -500, 0 }, { 616, 500, 700 }, CLIP)            -- thin: a wall
+    local block = solid(4, { -900, -900, 300 }, { -700, -700, 700 }, CLIP)      -- narrower than width
     local ramp = solid(5, { -500, 600, 0 }, { 0, 900, 24 }, CLIP)               -- wide and flat, far below
 
     local r = convert(vmf({ sky, floor, lid, wall, block, ramp }), { clips = true, merge = false, simplify = false })
-    T.eq(r.report.dropped.skyClip, 1, "the lid is a sky clip")
+    T.eq(r.report.dropped.skyClip, 1, "the lid")
     T.eq(#r.objects, 4, "floor, wall, block and ramp kept")
     for _, obj in ipairs(r.objects) do T.ok(not obj.lines[1].raw:find("brush 2 "), "lid not written") end
 
@@ -171,6 +171,13 @@ T.test("sky clips", function()
     local cap = solid(11, { -500, -500, 440 }, { 500, 500, 680 }, CLIP)
     r = convert(vmf({ sky, floor, ledge, cap }), { clips = true, merge = false, simplify = false })
     T.eq(r.report.dropped.skyClip, 1, "on a roof, 20 under the sky: a lid")
+
+    -- a clip over steps under the open sky: the top step reaches its top, kept
+    local steps = { sky, floor }
+    for i = 1, 4 do steps[#steps + 1] = solid(20 + i, { (i - 1) * 64, 0, 0 }, { i * 64, 128, i * 32 }) end
+    steps[#steps + 1] = solid(14, { 0, 0, 0 }, { 256, 128, 128 }, CLIP)
+    r = convert(vmf(steps), { clips = true, merge = false, simplify = false })
+    T.eq(r.report.dropped.skyClip, 0, "a clip over stairs stays")
 end)
 
 T.test("terrain slabs follow the outline", function()
@@ -298,9 +305,11 @@ T.test("sky clips: clip ceiling", function()
     T.eq(r.report.dropped.skyClip, 8, "8 clips sharing z 512 over nearly everything: lids")
     r = convert(town(7), opts)
     T.eq(r.report.dropped.skyClip, 0, "7 share it: not a ceiling")
-    -- a thick invisible wall from the ground up to the ceiling: kept
+    -- an invisible wall from the ground up to the ceiling: taller than wide, kept
     r = convert(town(8, { { { -1000, -1000, 0 }, { -860, -700, 512 }, CLIP } }), opts)
-    T.eq(r.report.dropped.skyClip, 8, "a tall wall up to the ceiling stays")
+    T.eq(r.report.dropped.skyClip, 8, "a thick wall up to the ceiling: kept")
+    r = convert(town(8, { { { -1000, -1000, 0 }, { -960, -700, 512 }, CLIP } }), opts)
+    T.eq(r.report.dropped.skyClip, 8, "a thin wall up to the ceiling: kept")
     -- a roof wholly over the clips (indoor, nuke): kept
     r = convert(town(8, { { { -1000, -100, 600 }, { 1000, 300, 640 } } }), opts)
     T.eq(r.report.dropped.skyClip, 0, "under a roof: kept")

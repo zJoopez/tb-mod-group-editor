@@ -169,3 +169,22 @@ T.test("player sections as written stay as they are", function()
     T.ok(not p.sharedPlayers, "no shared parts: nothing changes")
     T.eq(count(FileHandler.modText(p), "player %d"), 2, "the same models still in their own sections")
 end)
+
+T.test("ensureVersion: a mod without a version line gets the modmaker's", function()
+    T.files["old.tbm"] = "#!/usr/bin/toribash\ngamerule\n   engageplayerpos 0\n"
+    local p = FileHandler.ParseMod("old.tbm")
+    T.ok(FileHandler.ensureVersion(p), "added")
+    local lines = {}
+    for line in (FileHandler.modText(p) .. "\n"):gmatch("([^\n]*)\n") do lines[#lines + 1] = line end
+    T.eq(lines[1], "#!/usr/bin/toribash", "the #! line stays first")
+    T.eq(lines[2], "version " .. FileHandler.MOD_VERSION, "version right after it")
+    T.ok(not FileHandler.ensureVersion(p), "not added twice")
+    T.files["plain.tbm"] = "gamerule\n   sumo 1\n"
+    local q = FileHandler.ParseMod("plain.tbm")
+    FileHandler.ensureVersion(q)
+    T.ok(FileHandler.modText(q):match("^version " .. FileHandler.MOD_VERSION .. "\n"), "no #! line: version first")
+    T.files["v12.tbm"] = "#!/usr/bin/toribash\nversion 12\ngamerule\n   sumo 1\n"
+    local r = FileHandler.ParseMod("v12.tbm")
+    T.ok(not FileHandler.ensureVersion(r), "a mod's own version is kept")
+    T.eq(count(FileHandler.modText(r), "version"), 1, "one version line")
+end)
