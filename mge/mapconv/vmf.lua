@@ -1,6 +1,6 @@
 -- Map converter (mapconv): reads Valve Map Format files (.vmf: Hammer's map sources, or a .bsp
--- decompiled with BSPSource) into brushes and point entities. Pure Lua, no game calls: the command
--- line tool (tools/mapconv.lua) runs it too. Plan and status: docs/map-import-plan.md
+-- decompiled with BSPSource) into brushes and point entities. Pure Lua, no game calls: the tests run
+-- it outside the game. Plan and status: docs/map-import-plan.md
 MGE.MapConv = MGE.MapConv or {}
 local MapConv = MGE.MapConv
 
@@ -75,6 +75,9 @@ end
 ---@field role "solid"|"clip"|"drop"? set by readers that know it (bsp.lua: contents flags)
 ---@field reason string? why a dropped brush is dropped
 ---@field sky boolean? a sky brush (bsp.lua: sky surface flags; .vmf sky brushes are found by material)
+---@field nonSolid boolean? its entity isn't solid in normal play (Vmf.nonSolidEntity): dropped
+---@field model integer? .bsp: the brush model it's in, 0 the world (*1, *2... are entities')
+---(MapConv.brushRole)
 
 ---@class MapEntity
 ---@field classname string
@@ -137,17 +140,30 @@ local function readSolid(node, entity)
     return brush
 end
 
+---A brush entity players don't bump into in normal play (MapBrush.nonSolid): one that starts disabled
+---(StartDisabled 1: CS:GO's Retakes walls, func_brush "retake.asite" on de_train) or a func_brush that's
+---never solid (Solidity 1: fade and decoration brushes, de_train's A site floor piece)
+---@param props table<string, string>
+---@return boolean
+function Vmf.nonSolidEntity(props)
+    if tonumber(props.StartDisabled or props.startdisabled) == 1 then return true end
+    return props.classname == "func_brush" and tonumber(props.Solidity or props.solidity) == 1
+end
+
 ---Solids of a world or entity block. Solids hidden in the editor (hidden blocks) are still compiled
 ---into the map, so they count
 ---@param node VmfNode
 ---@param entity string
 ---@param brushes MapBrush[]
-local function collectSolids(node, entity, brushes)
+---@param nonSolid boolean? the entity isn't solid in normal play
+local function collectSolids(node, entity, brushes, nonSolid)
     for _, child in ipairs(node.children) do
         if child.name == "solid" then
-            table.insert(brushes, readSolid(child, entity))
+            local brush = readSolid(child, entity)
+            brush.nonSolid = nonSolid or nil
+            table.insert(brushes, brush)
         elseif child.name == "hidden" then
-            collectSolids(child, entity, brushes)
+            collectSolids(child, entity, brushes, nonSolid)
         end
     end
 end
@@ -160,7 +176,7 @@ local function readBlocks(node, map)
             collectSolids(child, "worldspawn", map.brushes)
         elseif child.name == "entity" then
             local classname = child.props.classname or ""
-            collectSolids(child, classname, map.brushes)
+            collectSolids(child, classname, map.brushes, Vmf.nonSolidEntity(child.props))
             table.insert(map.entities, { classname = classname, origin = readVector(child.props.origin), props = child.props })
         elseif child.name == "hidden" then -- a whole entity hidden in the editor
             readBlocks(child, map)

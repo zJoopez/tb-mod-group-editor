@@ -4,6 +4,8 @@ Status (2026-11-12): **Phase 0 answered. Phases 1 and 4 and the `.bsp` reader ar
 
 Update (2026-11-13, after the user's in-game testing): **props, the ledge-shell join, see-through red clips and the overlay's Nogrip toggle were removed.** Clips are now always colored like the geometry they cover. The props code (`mapconv/props.lua`: static props, `.vpk` / packed-zip model reading, the `.models` cache) is in git history at commit `de2ce06`. The sections below keep their measurements, marked where a feature is gone. The `.models` files in `assets/maps` aren't read any more and can be deleted.
 
+Update (2026-11-15): **the command-line tool (`tools/mapconv.lua`) was removed**, conversion is in game only (Misc list → Convert map). Its asset-file output went with it: `MapConv.toText`, the file header, the `source` option and the keep-position tag (`MGE.KEEP_POSITION_TAG`): Import puts every asset in front of the camera. Sections below that mention the command line describe what it was. Also gone: the Center first budget option; Floors first is always on (see Budget order).
+
 Goal: a community tool that turns a brush-based level from another game (Source `.vmf`, later Quake-family `.map`) into:
 
 1. **Collision**: up to ~250 static `env_obj` boxes, imported through MGE like any asset and fine-tuned by hand.
@@ -129,14 +131,12 @@ How to run it: `lua5.1 mge/tools/mapconv.lua map.vmf [--scale 0.035] [--budget 2
   - The bar shows live counts (boxes of the budget, how many over).
   - **MGE's window is hidden** while placing and shown again afterwards. The bar replaces it:
     - Row 1: Region | Map, then Move | Rotate | Scale (lit like the toolbar, through `Gizmo.modeListeners`), then Settings | Convert.
-    - Row 2: **Floors first** | **Center first**.
+    - Row 2: **Simplify** | **Covered** (Floors first and Center first were here until 2026-11-15).
     - Row 3: the info line.
 
-    While placing, Shift+Q/W/E still work, other shortcuts and F1 do nothing, and the gizmo, highlight and world-click gates allow the view through.
-  - **Budget order** (`MapConv.priority`, also `--no-floors-first` / `--center-first` on the command line):
-    - **Floors first** (default on): a box's walkable top (a face within ~45° of up) counts 3× extra, so floors and terrain beat equally big walls.
-    - **Center first** (default off): the score is divided by `1 + (d/reach)²`, where `d` is the distance from the region's middle across. That's half at the middle of a side and a third at a corner.
-    - The toggles are kept across maps in `overlayState`.
+    While placing, Alt+Q/W/E still work, other shortcuts and F1 do nothing, and the gizmo, highlight and world-click gates allow the view through.
+  - **Budget order** (`MapConv.priority`): a box's walkable top (a face within ~45° of up) counts 3× extra, so floors and terrain beat equally big walls. Always on since 2026-11-15: it was the Floors first toggle (default on), and Center first (the region's middle first) was dropped as rarely used, with their `--no-floors-first` / `--center-first` command-line flags.
+    - The Simplify and Covered toggles are kept across maps in `overlayState`.
     - The region's height already cuts roofs and ceilings.
   - **Draw order** within `maxDraws` (the user set 500, `contextLimit` 250): region, kept fills, over-budget fills, context, then outlines on the biggest kept boxes with what's left.
   - **On the ground:** the anchor's height is always worked out so the lowest kept box sits at z = `lift`. It's redone after every region or map change. Map Move's up/down changes only the lift (clamped ≥ 0, so nothing ends up under the game's floor), and the live drag preview is clamped the same way. The lift is kept with the placement.
@@ -394,6 +394,17 @@ Later the same day, every other defusal and hostage map in CS:GO Legacy was copi
 - Newer maps such as cs_agency, de_boyard and de_chalice have few brushes for their size. Much of their geometry is probably models (props), which the converter doesn't read, so expect holes.
 - "Boxes under the ground" in these runs only means the T spawn isn't the map's lowest point. A region with its own anchor doesn't have that.
 - cache is the heaviest: most of its floors are terrain. Expect its Place view to take noticeably longer to open than dust2's. Not yet tried in game.
+
+### Brush entities at the map's middle (the user, de_train, 2026-11-15)
+
+- **Seen:** on de_train, the train cars ended up piled at one spot.
+- **Cause:** a compiled map stores a brush entity's model (func_brush, func_breakable, func_rotating...) around its own origin, and its `origin` and `angles` keys place it. `bsp.lua` read the brushes but never applied those keys, so every such entity sat at the map's 0 0 0.
+- **Size of it:** de_train had 260 of its 300 func_brush brushes there, dust2 all 25. 26 of the 27 maps have placed brush entities, and 11 use `angles` (mostly yaw; cs_assault has pitch and roll).
+- **Fix:** `Bsp.placeModel` / `Bsp.placePlane` turn each model plane by the angles (Source's order: roll about x, pitch about y, yaw about z, positive pitch looks down) and move it by the origin. After it, de_train has 11 func_brush brushes near 0 0 0 (worldspawn has 35 there anyway).
+- **Tests:** `test_bsp.lua` covers the move and each angle's direction. The rotation follows Source's convention but wasn't compared against a known placement: check a turned func_brush in game (de_train's cars, mirage, overpass).
+- **.vmf:** not affected. Hammer files store brushes where they are in the map.
+- **Then (same day):** a few clip walls still stood in de_train's middle. They were placed right. They were CS:GO Retakes walls: func_brush `retake.asite` / `retake.bsite` / `brush.blocker`, `StartDisabled 1`, off in normal play. Also never-solid func_brush (`Solidity 1`: trims, a wide piece on A site, area portal fades) became solid boxes.
+- **Fix:** `Vmf.nonSolidEntity` flags brushes of an entity that starts disabled, or a never-solid func_brush (`MapBrush.nonSolid`, .bsp and .vmf). `MapConv.brushRole` drops them with the non-solid entities. de_train drops 134 brushes (21 walls, 113 never-solid); dust2 11, nuke 52, other maps up to about 30.
 
 ## Testing
 

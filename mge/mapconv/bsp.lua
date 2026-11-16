@@ -3,6 +3,8 @@
 -- compiled map keeps its brushes for collision: planes per side, and contents flags that say what is
 -- solid for players (walls, floors, grates, glass) and what is a player clip. Which entity a brush
 -- belongs to comes from the BSP tree of each brush model (*1, *2... in the entities' "model" key).
+-- A brush entity's model is stored around its own origin: its "origin" and "angles" keys put it in the
+-- map (Bsp.placeModel). Without them every func_brush (de_train's train cars) sat at the map's 0 0 0.
 -- Terrain (displacements) has no brushes: its grids of points come as map.terrain, boxfit.lua turns
 -- them into slabs. Only the lumps used are read (a map file is mostly packed textures: dust2 is 325 MB,
 -- 9 MB of it is read). Reference: developer.valvesoftware.com/wiki/BSP_(Source)
@@ -31,7 +33,7 @@ local SURF_SKY2D, SURF_SKY = 0x2, 0x4
 ---@param bits integer
 ---@return boolean
 local function has(flags, bits)
-    return flags % (bits * 2) >= bits -- plain math: the command line tool runs without the bit library
+    return flags % (bits * 2) >= bits -- plain math: the tests run on plain Lua 5.1, without the game's bit library
 end
 
 -- little endian readers on a lump's bytes, pos counts from 1 like string.byte
@@ -271,6 +273,33 @@ local function readTerrain(lumps, planes, texinfo)
     return terrain
 end
 
+---Where a brush entity's model goes in the map: its "angles" (pitch yaw roll, degrees: Source turns by
+---roll about x, then pitch about y, then yaw about z) and its "origin". nil when both are missing or zero
+---@param props table<string, string> the entity's keys
+---@return { rot: number[][], origin: number[] }?
+function Bsp.placeModel(props)
+    local origin = MapConv.Vmf.readVector(props.origin) or { 0, 0, 0 }
+    local angles = MapConv.Vmf.readVector(props.angles) or { 0, 0, 0 }
+    if origin[1] == 0 and origin[2] == 0 and origin[3] == 0 and angles[1] == 0 and angles[2] == 0 and angles[3] == 0 then
+        return nil
+    end
+    local Mat3 = MGE.Mat3
+    local rot = Mat3.mul(Mat3.rotZ(math.rad(angles[2])),
+        Mat3.mul(Mat3.rotY(math.rad(angles[1])), Mat3.rotX(math.rad(angles[3]))))
+    return { rot = rot, origin = origin }
+end
+
+---A model-space plane (n . p = d) in the map: the points turn and move, so the normal turns and the
+---distance gains the normal's part of the move
+---@param plane { n: number[], d: number }
+---@param place { rot: number[][], origin: number[] }
+---@return { n: number[], d: number }
+function Bsp.placePlane(plane, place)
+    local n = MGE.Mat3.apply(place.rot, plane.n)
+    local o = place.origin
+    return { n = n, d = plane.d + n[1] * o[1] + n[2] * o[2] + n[3] * o[3] }
+end
+
 ---@param read BspReader see Bsp.stringReader, Bsp.fileReader
 ---@param fileSize integer
 ---@return MapFile map brushes come with their role set (MapBrush.role, see MapConv.brushRole),
@@ -282,12 +311,20 @@ function Bsp.parse(read, fileSize)
     -- entities: KeyValues blocks without names
     local text = lumps.get(LUMP.ENTITIES, 1):gsub("%z.*$", "")
     local modelClass = { [0] = "worldspawn" }
+    local modelPlace = {} -- model index -> Bsp.placeModel's, for entities placed away from 0 0 0
+    local modelNonSolid = {} -- model index -> true: its entity isn't solid in normal play (MapBrush.nonSolid)
     for _, block in ipairs(MapConv.Vmf.parseTree(text).children) do
         local props = block.props
         local classname = props.classname or ""
         table.insert(map.entities, { classname = classname, origin = MapConv.Vmf.readVector(props.origin), props = props })
         local model = tonumber((props.model or ""):match("^%*(%d+)$"))
-        if model then modelClass[model] = classname end
+        if model then
+            modelClass[model] = classname
+            if model > 0 then
+                modelPlace[model] = Bsp.placeModel(props)
+                modelNonSolid[model] = MapConv.Vmf.nonSolidEntity(props) or nil
+            end
+        end
     end
 
     local planeBytes, planeCount = lumps.get(LUMP.PLANES, 20)
@@ -304,7 +341,9 @@ function Bsp.parse(read, fileSize)
     for b = 0, brushCount - 1 do
         local pos = 1 + b * 12
         local firstSide, numSides, contents = i32(brushes, pos), i32(brushes, pos + 4), i32(brushes, pos + 8)
-        local brush = { id = tostring(b), entity = modelClass[owner[b] or 0] or "worldspawn", sides = {} }
+        local brush = { id = tostring(b), entity = modelClass[owner[b] or 0] or "worldspawn", sides = {},
+            model = owner[b] or 0, nonSolid = modelNonSolid[owner[b] or 0] } -- model: brush model index (0 the world)
+        local place = modelPlace[owner[b] or 0]
         local sky = false
         for s = firstSide, math.min(firstSide + numSides, sideCount) - 1 do
             local sp = 1 + s * 8
@@ -313,6 +352,7 @@ function Bsp.parse(read, fileSize)
             local bevel = sides:byte(sp + 6) ~= 0 -- extra planes the compiler adds for collision, not faces
             if info and (has(info.flags, SURF_SKY) or has(info.flags, SURF_SKY2D)) then sky = true end
             if plane and not bevel then
+                if place then plane = Bsp.placePlane(plane, place) end
                 table.insert(brush.sides, { plane = plane, material = info and info.material or "", displacement = false })
             end
         end

@@ -51,8 +51,7 @@
 ---@field MAX_NONSTATIC_OBJECTS integer
 ---@field MAX_ENV_JOINTS integer env_obj_joint ids 1-24
 ---@field MIN_SIDE number smallest object side written, zero sides crash physics
----@field KEEP_POSITION_TAG string asset file line: Import keeps the objects' positions (converted maps)
----@field MapConv table map converter (mapconv/*.lua), nil in game until MGE.loadMapConv: Advanced tab's Map row, also tools/mapconv.lua
+---@field MapConv table map converter (mapconv/*.lua), nil in game until MGE.loadMapConv: Advanced tab's Map row
 ---@field loadMapConv fun(): table loads the map converter the first time it's needed, returns MGE.MapConv
 ---@field isPlacing fun(): boolean the map placement view is open (it hides the window, gizmo and camera keep working)
 ---@field saveOverlay UIElement? open name prompt (ui/save_overlay.lua)
@@ -108,7 +107,7 @@ function MGE.isPlacing()
     return MGE.MapPlace ~= nil and MGE.MapPlace.active == true
 end
 
--- map converter, pure Lua shared with tools/mapconv.lua. Needs mat3 / file_handler / mod_export
+-- map converter, pure Lua (the tests run it outside the game). Needs mat3 / file_handler / mod_export
 local MAPCONV_MODULES = { "mapconv/vmf.lua", "mapconv/bsp.lua", "mapconv/brush.lua",
     "mapconv/boxfit.lua", "mapconv/merge.lua", "mapconv/convert.lua" }
 

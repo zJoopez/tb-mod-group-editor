@@ -1,5 +1,5 @@
-# Builds the release zip: mge/ with the script, LICENSE, README, tools/mapconv.lua and the sample
-# assets. Unzipped into data/script it gives data/script/mge/mge.lua, loaded with /ls mge/mge.lua.
+# Builds the release zip: mge/ with the script, LICENSE, README and the sample assets.
+# Unzipped into data/script it gives data/script/mge/mge.lua, loaded with /ls mge/mge.lua.
 #
 #   powershell -ExecutionPolicy Bypass -File mge/tools/package.ps1            -> data/script/mge.zip
 #   powershell -ExecutionPolicy Bypass -File mge/tools/package.ps1 -Out x.zip

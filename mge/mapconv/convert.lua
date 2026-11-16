@@ -37,9 +37,6 @@ local formatNumbers = FileHandler.formatNumbers
 ---@field simplifyFill number share of a joined slab its parts must cover, 0-1
 ---@field dropHidden boolean leave out boxes entirely inside another box (Merge.hidden): nothing changes in game
 ---@field dropCovered boolean also leave out boxes COVERED_SHARE covered by other boxes together
----@field floorsFirst boolean budget order: what can be stood on counts extra (MapConv.priority)
----@field centerFirst boolean budget order: the nearer the region's middle the better (MapConv.priority)
----@field source string? file name written in the header
 
 ---@type MapConvOptions
 MapConv.DEFAULTS = {
@@ -62,19 +59,15 @@ MapConv.DEFAULTS = {
     simplifyFill = 0.75, -- edges must line up, so this only limits gaps between parts
     dropHidden = true, -- dust2 B site and its approaches: 60 of 247 boxes, mostly stairs inside their ramp clips
     dropCovered = false, -- 33 more there, but the uncovered 5% can be a visible ledge: check the preview
-    floorsFirst = true,
-    centerFirst = false,
 }
 
--- floorsFirst: the walkable top's area counts this many times extra
+-- budget order (MapConv.priority): the walkable top's area counts this many times extra
 local FLOOR_WEIGHT = 3
 
 -- dropCovered: a box goes when at least this share of its inside is covered by other boxes together
 local COVERED_SHARE = 0.95
 MapConv.COVERED_SHARE = COVERED_SHARE
 
--- marks an asset file whose objects keep their positions on import (ui/assets.lua)
-local KEEP_POSITION_TAG = MGE.KEEP_POSITION_TAG
 
 -- brush entities that aren't solid for players: volumes, markers, effects
 local DROP_CLASSES = {
@@ -173,7 +166,8 @@ end
 ---@return "solid"|"clip"|"drop" role
 ---@return string? reason when dropped
 function MapConv.brushRole(brush, options)
-    if droppedClass(brush.entity) then return "drop", "entity" end
+    -- not solid for players: by class, or the entity's keys (starts disabled, never solid)
+    if droppedClass(brush.entity) or brush.nonSolid then return "drop", "entity" end
     local allDrop, allClip = true, true
     for _, side in ipairs(brush.sides) do
         local name = shortName(side.material)
@@ -317,7 +311,6 @@ end
 ---@class MapConvResult
 ---@field objects FileParserEnvObj[] static boxes, ids 1..n (the import gives them real ids)
 ---@field report MapConvReport
----@field header string[] comment lines for the asset file
 
 ---@class MapConvPiece: MapConvBox
 ---@field at number[] middle of the brush / terrain grid it came from, what the region tests
@@ -797,24 +790,13 @@ function MapConv.walkableArea(box)
     return area
 end
 
----Budget order of a box, bigger first: MapConv.score. With floorsFirst its walkable top counts
----FLOOR_WEIGHT times extra, so a floor beats an equally big wall (a ceiling slab's top counts too:
----a lower region leaves those out). With centerFirst it's divided down by its distance across from
----the region's middle: half at the middle of the region's side, a third at its corner
+---Budget order of a box, bigger first: MapConv.score, with its walkable top counting FLOOR_WEIGHT times
+---extra, so a floor beats an equally big wall (a ceiling slab's top counts too: a lower region leaves
+---those out). Floors first was a toggle once, and Center first an option: always on / dropped (2026-11-15)
 ---@param box MapBox
----@param options MapConvOptions
 ---@return number
-function MapConv.priority(box, options)
-    local score = MapConv.score(box)
-    if options.floorsFirst then score = score + FLOOR_WEIGHT * MapConv.walkableArea(box) end
-    local r = options.region
-    if options.centerFirst and r then
-        local cx, cy = (r.min[1] + r.max[1]) / 2, (r.min[2] + r.max[2]) / 2
-        local reach = math.max(r.max[1] - r.min[1], r.max[2] - r.min[2], 1) / 2
-        local dx, dy = box.center[1] - cx, box.center[2] - cy
-        score = score / (1 + (dx * dx + dy * dy) / (reach * reach))
-    end
-    return score
+function MapConv.priority(box)
+    return MapConv.score(box) + FLOOR_WEIGHT * MapConv.walkableArea(box)
 end
 
 ---The boxes a conversion writes: pieces in the region (by where they came from), merged, without
@@ -864,7 +846,7 @@ function MapConv.select(pieces, options, report)
         end
     end
     local scores = {}
-    for _, box in ipairs(sized) do scores[box] = MapConv.priority(box, opts) end
+    for _, box in ipairs(sized) do scores[box] = MapConv.priority(box) end
     table.sort(sized, function(a, b) return scores[a] > scores[b] end)
     local kept, cut = {}, {}
     for i, box in ipairs(sized) do
@@ -997,21 +979,7 @@ function MapConv.convert(map, options, pieces, piecesReport)
     local anchor, anchorFrom = pickAnchor(map, kept, opts)
     report.anchor, report.anchorFrom = anchor, anchorFrom
     local objects = MapConv.objects(kept, anchor, opts, report)
-    local header = {
-        "# converted by MGE mapconv" .. (opts.source and (" from " .. opts.source) or ""),
-        "# scale " .. FileHandler.formatNumber(opts.scale) .. ", yaw " .. FileHandler.formatNumber(opts.yaw)
-            .. ", anchor " .. formatNumbers(anchor[1], anchor[2], anchor[3]) .. " (" .. anchorFrom .. ")",
-        KEEP_POSITION_TAG,
-        "",
-    }
-    return { objects = objects, report = report, header = header }
-end
-
----The asset file's text (FileHandler writes it like any mod)
----@param result MapConvResult
----@return string
-function MapConv.toText(result)
-    return FileHandler.modText({ ignores = result.header, env_obj = result.objects, env_obj_joint = {} }) .. "\n"
+    return { objects = objects, report = report }
 end
 
 ---Map to brushes and entities, by format: Source .bsp (a .bsp name or a VBSP header, errors on a

@@ -5,7 +5,7 @@
 -- step. The view's Settings button comes back here. The Map button opens the file picker over it.
 -- Empty fields use the converter's defaults (shown as placeholders). Typed values, the picked map and
 -- each map's placement are kept while the script runs. Clicking outside, Cancel or Esc closes it,
--- MGE.quit too (MGE.mapOverlay). Same converter as tools/mapconv.lua, plan: docs/map-import-plan.md
+-- MGE.quit too (MGE.mapOverlay). Plan: docs/map-import-plan.md
 if MGE.mapOverlay and not MGE.mapOverlay.destroyed then return end
 
 local Widgets = MGE.Widgets
@@ -23,8 +23,6 @@ local RUN_HOOK = MGE.hookname .. "_mapconv" -- one-shot draw2d hook that runs th
 ---@field clips boolean
 ---@field terrain boolean
 ---@field placements table<string, MapPlacement> where each map was placed last, by path
----@field floorsFirst boolean? the placement view's budget order toggles, nil: the converter's default
----@field centerFirst boolean?
 ---@field simplify boolean? the placement view's Simplify toggle
 ---@field dropCovered boolean? the placement view's Covered toggle
 ---@field cache { key: string, map: MapFile, pieces: MapConvPiece[], report: MapConvReport }? see loadPieces
@@ -229,10 +227,8 @@ end
 ---@return MapConvOptions? options
 ---@return string? error
 local function readOptions()
-    local options = { clips = state.clips, terrain = state.terrain, source = state.path }
-    -- the placement view's budget order toggles, kept from its last use
-    if state.floorsFirst ~= nil then options.floorsFirst = state.floorsFirst end
-    if state.centerFirst ~= nil then options.centerFirst = state.centerFirst end
+    local options = { clips = state.clips, terrain = state.terrain }
+    -- the placement view's toggles (Simplify, Covered), kept from its last use
     if state.simplify ~= nil then options.simplify = state.simplify end
     if state.dropCovered ~= nil then options.dropCovered = state.dropCovered end
     for _, field in ipairs(FIELDS) do
@@ -331,7 +327,7 @@ local function place(options)
         state.placements[path] = { region = p.region, anchor = p.anchor, yaw = p.yaw, lift = p.lift }
         state.texts.scale = fieldText(p.scale, 4)
         -- for every map
-        state.floorsFirst, state.centerFirst, state.simplify = p.floorsFirst, p.centerFirst, p.simplify
+        state.simplify = p.simplify
         state.dropCovered = p.dropCovered
     end
     overlay:kill()

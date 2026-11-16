@@ -48,14 +48,6 @@ HL2, Garry's Mod) into static boxes. Put maps in `mge/mge/assets/maps`. You pick
 to convert and where it goes in the world, then Convert adds the boxes. A mod holds 256 objects, so
 pick a region (one bombsite, not a whole map).
 
-The same converter runs outside the game:
-
-```
-lua5.1 mge/tools/mapconv.lua <map.vmf|map.bsp> [options]
-```
-
-`--help` lists the options. The result goes to `assets/obj`, and Import keeps its position.
-
 ### Atmo: scenery beyond 256 objects (experimental)
 
 A mod holds 256 objects. Scenery beyond that goes in the mod's **atmo**: objects the game draws without

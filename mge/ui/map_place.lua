@@ -58,8 +58,6 @@ local COLORS = {
 ---@field yaw number
 ---@field scale number
 ---@field lift number
----@field floorsFirst boolean the bar's budget order toggles
----@field centerFirst boolean
 ---@field simplify boolean the bar's Simplify toggle (Merge.flat)
 ---@field dropCovered boolean the bar's Covered toggle (Merge.hidden with MapConv.COVERED_SHARE)
 
@@ -372,8 +370,6 @@ local function placed(s)
         yaw = s.options.yaw,
         scale = s.options.scale,
         lift = s.lift,
-        floorsFirst = s.options.floorsFirst == true,
-        centerFirst = s.options.centerFirst == true,
         simplify = s.options.simplify ~= false,
         dropCovered = s.options.dropCovered == true,
     }
@@ -442,7 +438,7 @@ end
 ---Bar at the top, MGE's window is hidden meanwhile:
 ---  Region | Map (what the gizmo edits), Move | Rotate | Scale (the gizmo tool: the window's toolbar
 ---  isn't shown), Settings | Convert
----  Floors first | Center first (the budget's order, MapConv.priority)
+---  Simplify | Covered (what the budget holds)
 ---  counts
 local function buildBar()
     local px = Widgets.px -- MGE's overall size (Widgets.UI_SCALE)
@@ -471,10 +467,8 @@ local function buildBar()
         light(edits[1], editing == "region")
         light(edits[2], editing == "map")
         for i, mode in ipairs({ "move", "rotate", "scale" }) do light(tools[i], Gizmo.mode == mode) end
-        light(toggles[1], session.options.floorsFirst == true)
-        light(toggles[2], session.options.centerFirst == true)
-        light(toggles[3], session.options.simplify ~= false)
-        light(toggles[4], session.options.dropCovered == true)
+        light(toggles[1], session.options.simplify ~= false)
+        light(toggles[2], session.options.dropCovered == true)
         setInfo()
     end
     refreshBar = refresh
@@ -503,8 +497,6 @@ local function buildBar()
     end
     local toggleRow = bar:addChild({ pos = { pad, pad + rowH + 4 }, size = { inner, toggleH } })
     toggles = Widgets.buttonRow(toggleRow, 0, toggleH, {
-        { label = "Floors first", onClick = function() flip("floorsFirst") end },
-        { label = "Center first", onClick = function() flip("centerFirst") end },
         { label = "Simplify", onClick = function()
             session.options.simplify = session.options.simplify == false -- nil (default) counts as on
             reselect()
@@ -512,10 +504,8 @@ local function buildBar()
         end },
         { label = "Covered", onClick = function() flip("dropCovered") end },
     }, 4, Widgets.TEXT_SCALE_SMALL)
-    TBMenu:displayPopup(toggles[1], "Over the budget, what can be stood on goes in\nbefore equally big walls and ceilings")
-    TBMenu:displayPopup(toggles[2], "Over the budget, the middle of the region goes in\nfirst, its edges are left out first")
-    TBMenu:displayPopup(toggles[3], "Joins nearly flat neighbouring slabs (terrain floors,\nfloor tiles) into bigger ones: far fewer boxes")
-    TBMenu:displayPopup(toggles[4], "Also leaves out boxes " .. math.floor(MapConv.COVERED_SHARE * 100 + 0.5) ..
+    TBMenu:displayPopup(toggles[1], "Joins nearly flat neighbouring slabs (terrain floors,\nfloor tiles) into bigger ones: far fewer boxes")
+    TBMenu:displayPopup(toggles[2], "Also leaves out boxes " .. math.floor(MapConv.COVERED_SHARE * 100 + 0.5) ..
         "% covered by other boxes\ntogether. Boxes inside one other box always go")
     info = bar:addChild({ pos = { pad, pad + rowH + 4 + toggleH + 4 }, size = { inner, Widgets.INFO_HEIGHT + 4 } })
     table.insert(Gizmo.modeListeners, refresh)
@@ -538,7 +528,7 @@ function MapPlace.start(s)
     all.dropHidden, all.dropCovered = false, false -- the grey context doesn't need them: 0.3 s on dust2
     -- the same pieces (the overlay keeps them per map) and options give the same context: kept, so
     -- Settings and Place again don't merge the whole map again (0.3 s on dust2)
-    local key = table.concat({ tostring(all.merge), all.minSize, tostring(all.floorsFirst) }, "|")
+    local key = table.concat({ tostring(all.merge), all.minSize }, "|")
     if contextCache and contextCache.pieces == s.pieces and contextCache.key == key then
         allContext = contextCache.boxes
     else

@@ -1,5 +1,5 @@
--- mapconv/*.lua: hand-written .vmf maps through the whole conversion (what tools/mapconv.lua and the
--- Convert Map overlay run), checked against the boxes they should give
+-- mapconv/*.lua: hand-written .vmf maps through the whole conversion (what the Convert Map overlay
+-- runs), checked against the boxes they should give
 local T = ...
 local MapConv = MGE.MapConv
 local FileHandler = MGE.FileHandler
@@ -76,22 +76,6 @@ end)
 T.test("ungrippable flag", function()
     local r = convert(vmf({ solid(1, { 0, 0, 0 }, { 64, 64, 64 }) }), { ungrippable = true })
     T.eq(r.objects[1].props.flag, tostring(MGE.FLAGS.STATIC + MGE.FLAGS.UNGRIPPABLE), "static + ungrippable")
-end)
-
-T.test("asset text keeps its position on import", function()
-    local r = convert(vmf({ solid(1, { 0, 0, 0 }, { 64, 64, 64 }), solid(2, { 0, 200, 0 }, { 64, 264, 64 }) }),
-        { source = "test.vmf" })
-    T.files["map.tbm"] = MapConv.toText(r)
-    local parsed = FileHandler.ParseMod("map.tbm")
-    T.eq(#parsed.env_obj, 2, "objects read back")
-    -- the check ui/assets.lua makes before Import
-    local keep = false
-    for _, line in ipairs(parsed.ignores) do
-        if line:match("^%s*(%S+)") == MGE.KEEP_POSITION_TAG then keep = true end
-    end
-    T.ok(keep, "keep-position tag in the header")
-    T.ok(parsed.ignores[1]:find("from test.vmf", 1, true), "source in the header")
-    T.eq(parsed.env_obj[2].props.sides, r.objects[2].props.sides, "values survive the round trip")
 end)
 
 T.test("merge", function()
