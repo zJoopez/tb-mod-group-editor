@@ -89,20 +89,37 @@ function WorldSelect.measureProjection()
     local right = normalize(cross(forward, { 0, 0, 1 })) or { 1, 0, 0 } -- straight down: any right works
     local up = cross(right, forward)
 
-    -- measure the projection: screen offset = M * (sideways / depth) for points around the target
-    local cx, cy, cz = get_screen_pos(target[1], target[2], target[3])
-    if cx == nil or cz ~= 0 then return nil end
-    local e = dist * 0.05
-    local rx, ry = get_screen_pos(target[1] + right[1] * e, target[2] + right[2] * e, target[3] + right[3] * e)
-    local ux, uy = get_screen_pos(target[1] + up[1] * e, target[2] + up[2] * e, target[3] + up[3] * e)
-    if rx == nil or ux == nil then return nil end
-    local k = dist / e -- 1 / (sideways / depth) of the measured points
-    local m11, m21 = (rx - cx) * k, (ry - cy) * k
-    local m12, m22 = (ux - cx) * k, (uy - cy) * k
-    local det = m11 * m22 - m12 * m21
-    if math.abs(det) < 1e-9 then return nil end
-    return { eye = eye, forward = forward, right = right, up = up, cx = cx, cy = cy,
-        m11 = m11, m12 = m12, m21 = m21, m22 = m22, det = det }
+    -- measure the projection: screen offset = M * (sideways / depth) for points around the target.
+    -- get_screen_pos gives whole pixels: measured 5% of the distance out (about 50 pixels) the half pixel
+    -- of rounding made M up to 1% off, handles far from the screen center a few pixels, a little
+    -- different every frame while the camera moved: the gizmo shook until it stopped. Points on both
+    -- sides, a quarter of the distance out: the pairs' average is the center, their difference M, the
+    -- rounding about 10 times smaller. Closer in when those would be off screen
+    local function at(dir, e)
+        local x, y, z = get_screen_pos(target[1] + dir[1] * e, target[2] + dir[2] * e, target[3] + dir[3] * e)
+        if x == nil or z ~= 0 then return nil end
+        return x, y
+    end
+    for _, share in ipairs({ 0.25, 0.05 }) do
+        local e = dist * share
+        local rx1, ry1 = at(right, e)
+        local rx2, ry2 = at(right, -e)
+        local ux1, uy1 = at(up, e)
+        local ux2, uy2 = at(up, -e)
+        if rx1 and rx2 and ux1 and ux2 then
+            local k = dist / (2 * e) -- 1 / (sideways / depth) between the pair's points
+            local m11, m21 = (rx1 - rx2) * k, (ry1 - ry2) * k
+            local m12, m22 = (ux1 - ux2) * k, (uy1 - uy2) * k
+            local det = m11 * m22 - m12 * m21
+            if math.abs(det) < 1e-9 then return nil end
+            -- the target sits halfway between each pair (same depth: right and up are across the view)
+            local cx = (rx1 + rx2 + ux1 + ux2) / 4
+            local cy = (ry1 + ry2 + uy1 + uy2) / 4
+            return { eye = eye, forward = forward, right = right, up = up, cx = cx, cy = cy,
+                m11 = m11, m12 = m12, m21 = m21, m22 = m22, det = det }
+        end
+    end
+    return nil
 end
 
 ---Camera ray through a screen position, for a measured projection (works outside draw3d)

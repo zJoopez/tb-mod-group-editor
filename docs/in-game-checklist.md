@@ -29,6 +29,12 @@ through this before `tools/package.ps1`. Tick what you checked and move items yo
 - [ ] The wheel over Pos / Rot / Scale, a joint's Axis and Range, and player Density steps from the real
       value, not the 2-decimal placeholder: an axis of `0.6084998164` steps to `1.1085`, not `1.11`.
 
+### Gizmo steadiness
+- [ ] Orbit and zoom with the gizmo off-center (an object not in the middle of the screen): the gizmo no
+      longer shakes while the camera moves. Clicking handles still hits them.
+- [ ] After a change (the reload), the gizmo doesn't shake while the camera settles. If it still does,
+      the camera position and the drawn frame disagree for a moment, a second cause to probe.
+
 ### Joints
 - [ ] Pos on a joint without a `pos` line (katana.tbm) shows "none". Typing a value puts the anchor at the
       objects' midpoint with that axis, and the objects then hinge there.
