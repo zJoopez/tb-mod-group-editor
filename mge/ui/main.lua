@@ -38,7 +38,7 @@ end
 --   bar, left:   the list tabs (over the panel, the active one joins the list under it), Mods, Rules
 --   bar, right:  the tools, close (the list's buttons are under the list: Main.setListActions)
 --   panel:       the list (LIST_ROWS rows, no bars of its own), the editor tabs and panel
---   footer:      counters, credits, the mod name
+--   footer:      counters, messages (MGE.say), the mod name
 -- The game's view stays free under the panel. It was a movable window, 710 tall with a drag bar, margins
 -- and its own tab / list bars: at 1.6x it didn't fit and the list kept 2 rows
 -- sizes in layout units, Widgets.px scales them by MGE's overall size (Widgets.UI_SCALE)
@@ -199,7 +199,7 @@ local listTabNames = {
     { id = "atmo", label = "Atmo" }, -- atmo objects: drawn only, the mod's .atmo file (utils/atmo.lua)
     { id = "joints", label = "Joints" },
     { id = "players", label = "Players" },
-    { id = "misc", label = "Misc" }, -- the whole mod: message, shader, reindex, convert map (ui/editor_misc.lua)
+    { id = "misc", label = "World" }, -- the whole mod: message, shader, convert map, Reset all (ui/editor_misc.lua)
 }
 local listTabItems = {}
 for i, tab in ipairs(listTabNames) do
@@ -279,7 +279,7 @@ local TAB_SETS = {
         { id = "generate", label = "Generate" },
     },
     players = { { id = "player", label = "Core" } },
-    misc = { { id = "misc", label = "Misc" } },
+    misc = { { id = "misc", label = "Core" } }, -- the World list's one tab
     joints = { { id = "jointLink", label = "Link" }, { id = "joint", label = "Properties" } },
 }
 -- every tab is as wide as an object tab, so a list with fewer tabs lines up with the objects' row
@@ -336,49 +336,69 @@ updateContentHeight(tabPanel.size.h)
 
 -- footer: one row along the bottom of the screen over the game's view, no background, a child of the panel
 -- reaching past its edges like the top bar. Left: the counters, middle: the latest message (MGE.say: chat
--- isn't shown with the HUD off) or the credits, right: the mod Save writes
+-- isn't shown with the HUD off, up to 3 stacked), right: the mod Save writes
 -- Placed by Main.fitScreen, like the top bar's width
 local FOOTER_EDGE = px(8) -- from the screen's sides
-local CREDITS_W = px(380) -- the middle: room for a message
-local CREDITS = "Project Mod Group Editor by joopez"
-local MESSAGE_SHOW, MESSAGE_FADE = 4, 1 -- seconds a message shows, then fades back to the credits
+local MESSAGE_W = px(380) -- the middle: room for a message (the credits are on the World list)
+local MESSAGE_SHOW, MESSAGE_FADE = 7, 1 -- seconds a message shows, then fades
+local MESSAGE_MAX = 3 -- messages shown at once: the newest in the footer's middle, older ones stacked above it
 ---@return UIElement
 local function addFooterPart()
     return Main.window:addChild({ pos = { 0, 0 }, size = { 1, FOOTER_H } })
 end
 local limitsRow = addFooterPart() -- object, dynamic id and joint usage, set by setDynamicStrings
-local creditsRow = addFooterPart()
-creditsRow.uiColor = { 0, 0, 0, 1 } -- black like the rest of the footer (FOOTER_COLOR, set below)
+local messageRow = addFooterPart() -- the newest message
+messageRow.uiColor = { 0, 0, 0, 0 } -- black like the rest of the footer (FOOTER_COLOR, set below), see-through without one
 local fileRow = addFooterPart() -- the file Save writes, unsaved changes
 local shown = {} -- what the file row shows (below)
 
----@type { text: string, at: number }? the latest message while it shows
-local message = nil
----@type string? what the middle has laid out (Widgets.infoText fits the text to the width once)
-local middleText = nil
+-- the message rows, bottom up: the footer's middle (the newest), then the older ones above it (placed by
+-- Main.fitScreen). Empty without messages
+---@type UIElement[]
+local messageRows = { messageRow }
+for i = 2, MESSAGE_MAX do
+    local row = addFooterPart()
+    row.uiColor = { 0, 0, 0, 0 } -- black like the footer, see-through until it has a message
+    messageRows[i] = row
+end
 
----MGE.say's footer half: the message in the middle, one line, without chat color codes
+---@type { text: string, at: number }[] the messages that show, oldest first (at most MESSAGE_MAX)
+local messages = {}
+---@type (string|false)[] what each message row has laid out (Widgets.infoText fits the text to the width once)
+local rowTexts = {}
+
+---MGE.say's footer half: the message in the middle, one line, without chat color codes. The ones before it
+---move up, at most MESSAGE_MAX show. The same text as the newest again only restarts its time
 ---@param text string
 function MGE.onMessage(text)
     text = text:gsub("%^%d%d", ""):gsub("%s*\n%s*", "  ")
-    message = { text = text, at = os.clock_real() }
+    local now, newest = os.clock_real(), messages[#messages]
+    if newest and newest.text == text then
+        newest.at = now
+        return
+    end
+    messages[#messages + 1] = { text = text, at = now }
+    if #messages > MESSAGE_MAX then table.remove(messages, 1) end
 end
 
-Widgets.addDrawBefore(creditsRow, function()
-    local text, alpha = CREDITS, 1
-    if message then
-        local age = os.clock_real() - message.at
-        if age < MESSAGE_SHOW + MESSAGE_FADE then
-            text = message.text
-            if age > MESSAGE_SHOW then alpha = 1 - (age - MESSAGE_SHOW) / MESSAGE_FADE end
-        else
-            message = nil
-        end
+Widgets.addDrawBefore(messageRow, function()
+    local now = os.clock_real()
+    -- each one shows MESSAGE_SHOW seconds, then fades for MESSAGE_FADE, on its own clock
+    for i = #messages, 1, -1 do
+        if now - messages[i].at >= MESSAGE_SHOW + MESSAGE_FADE then table.remove(messages, i) end
     end
-    creditsRow.uiColor[4] = alpha -- the text reads the row's color as it draws
-    if text ~= middleText then
-        Widgets.infoText(creditsRow, text)
-        middleText = text
+    for k, row in ipairs(messageRows) do
+        local m = messages[#messages - k + 1] -- row 1 the newest
+        local text, alpha = false, 0 ---@type string|false, number
+        if m then
+            local age = now - m.at
+            text, alpha = m.text, age > MESSAGE_SHOW and 1 - (age - MESSAGE_SHOW) / MESSAGE_FADE or 1
+        end
+        row.uiColor[4] = alpha -- the text reads the row's color as it draws
+        if text and text ~= rowTexts[k] then
+            Widgets.infoText(row, text)
+            rowTexts[k] = text
+        end
     end
 end)
 
@@ -390,13 +410,18 @@ function Main.fitScreen()
     w, h = w or WIN_W or 1280, h or WIN_H or 720
     topBar.size.w = w
     topBar:moveTo(0, 0) -- updates its children's positions
-    local sideW = (w - CREDITS_W) / 2 - FOOTER_EDGE - BAR_SEP
-    for _, part in ipairs({ { limitsRow, FOOTER_EDGE, sideW }, { creditsRow, (w - CREDITS_W) / 2, CREDITS_W },
+    local sideW = (w - MESSAGE_W) / 2 - FOOTER_EDGE - BAR_SEP
+    for _, part in ipairs({ { limitsRow, FOOTER_EDGE, sideW }, { messageRow, (w - MESSAGE_W) / 2, MESSAGE_W },
         { fileRow, w - FOOTER_EDGE - sideW, sideW } }) do
         part[1].size.w = part[3]
         part[1]:moveTo(part[2], h - FOOTER_H)
     end
-    middleText = nil -- the middle lays its text out again for the new width
+    -- the older messages stacked above the footer's middle, as wide
+    for k = 2, #messageRows do
+        messageRows[k].size.w = MESSAGE_W
+        messageRows[k]:moveTo((w - MESSAGE_W) / 2, h - FOOTER_H * k)
+    end
+    rowTexts = {} -- the message rows lay their text out again for the new width
     shown = {} -- the file row lays its text out again for its new width
     if Main.refreshCounters then Main.refreshCounters() end
 end
@@ -703,8 +728,7 @@ local function createObjSelector()
         obj_selector_container:addChild({
             pos = { Widgets.px(8), 0 },
             size = { obj_selector_container.size.w - Widgets.px(16), obj_selector_container.size.h },
-        }):addAdaptedText("Things about the whole mod, not the selected objects:\n" ..
-            "its message, the atmo's shader, ids and converting a map", nil, nil, Widgets.FONT, CENTERMID,
+        }):addAdaptedText("There's only one world\n ...for now", nil, nil, Widgets.FONT, CENTERMID,
             Widgets.TEXT_SCALE_SMALL, nil, nil)
     else
         obj_selector.create(obj_selector_container, ModData.parsed.env_obj)

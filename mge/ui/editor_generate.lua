@@ -156,7 +156,7 @@ local function planFromFields(factors)
         if atmo then
             note = "no room in the atmo (Settings > Max atmo objects)"
         elseif MGE.ModData.freeCount() > 0 then
-            note = "no free dynamic ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. " for joined pieces: Joints 0, or Reindex (Misc)"
+            note = "no free dynamic ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. " for joined pieces: Joints 0, or Reindex (Advanced)"
         else
             note = "no free object ids"
         end

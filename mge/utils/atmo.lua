@@ -23,7 +23,7 @@ local Atmo = {
     ---@type { name: string?, text: string?, header: string[] } the source's atmo file: its name, its text
     ---as last read or written (Atmo.text: nil when there is none), its own lines (shader, opt...)
     state = { header = {} },
-    ---counts changes to state.header made in place (the Misc list's shader): the footer's file row compares
+    ---counts changes to state.header made in place (the World list's shader): the footer's file row compares
     ---it to know the atmo changed
     headerVersion = 0,
 }
@@ -177,7 +177,7 @@ function Atmo.saveAction(text, count, target, saved, exists)
 end
 
 ---What the atmo file would hold: its objects, and its shader line counts as one (an atmo with just a
----shader, set on the Misc list, is still worth a file)
+---shader, set on the World list, is still worth a file)
 ---@return integer
 function Atmo.contentCount()
     local count = #(ModData.parsed.atmo or {})
@@ -213,7 +213,7 @@ end
 ---The layer from the mod's atmo file, replacing what's there (opening a mod). No file: an empty layer
 ---@param modPath string? under data/mod
 -- The atmo's shader shown live: the game loads a world shader with `lws <name>.inc` (its Shaders & Atmos
--- menu does the same). The mod's atmo shader (a `shader` line) is loaded when the mod opens and when the Misc
+-- menu does the same). The mod's atmo shader (a `shader` line) is loaded when the mod opens and when the World
 -- list sets it; without one, and when MGE closes, the player's own shader comes back: the one loaded when MGE
 -- started (after the game's atmo was unloaded), kept in a global over a restart
 ---@type string? data/shader file the game had when MGE started, "" for none

@@ -1,5 +1,6 @@
--- Advanced tab: Friction, Bounce, Hardness, Flags, Model. To atmo is on the Core tab (ui/editor_core.lua), Ids
--- (Reindex) and Map (Convert map) on the Misc list (ui/editor_misc.lua): they're about the whole mod
+-- Advanced tab: Friction, Bounce, Hardness, Flags, Model, Ids (Reindex: all objects, here next to the Objects
+-- list so the ids are seen changing). To atmo is on the Core tab (ui/editor_core.lua), Map (Convert map) on
+-- the World list (ui/editor_misc.lua): it's about the whole mod
 local Rows = MGE.EditorRows
 local Widgets = MGE.Widgets
 local ModData = MGE.ModData
@@ -168,9 +169,38 @@ local function buildModel(holder, selected)
     Widgets.popupBelow(none, "No model (remove)")
 end
 
+---Dynamic objects can end up above id 48 (the footer warns), this moves them down and static
+---objects up, as far as ids allow. Acts on all objects, not the selection: on this tab, next to the
+---Objects list, the ids can be seen changing
+local function reindex()
+    local moved, left = ModData.reindex()
+    if left > 0 then
+        MGE.say("reindex: " .. left .. " dynamic objects still above id " .. MGE.MAX_NONSTATIC_OBJECTS ..
+            ", make some static")
+    end
+    if moved == 0 then
+        MGE.say("reindex: nothing to move")
+        return
+    end
+    History.commit()
+    MGE.apply()
+    MGE.say("reindex moved " .. moved .. " objects")
+end
+
+---Ids row, built once: its button acts on all objects, nothing to refresh
+---@param holder UIElement
+local function buildIdRow(holder)
+    Rows.begin()
+    createToggleButtonRow("Ids", holder, {
+        { label = "Reindex", active = false, onClick = reindex },
+    }, "Moves dynamic objects to ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. ", static above.\n" ..
+        "Acts on all objects, joints follow.")
+end
+
 ---@type EditorPanelModule
 return {
     fixed = {
+        { build = buildIdRow, panel = "advanced", row = 5, rows = 1 },
     },
     blocks = {
         { name = "advancedProps", build = buildAdvancedProps, panel = "advanced", row = 0, rows = 3 },

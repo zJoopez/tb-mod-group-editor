@@ -51,7 +51,7 @@ local MODULES = {
     dofile(MGE.scriptPath .. "ui/editor_link.lua"), -- the Joints list's Link tab
     dofile(MGE.scriptPath .. "ui/editor_joint.lua"), -- the Joints list's Properties tab
     dofile(MGE.scriptPath .. "ui/editor_atmo.lua"), -- the Atmo list's Atmo tab
-    dofile(MGE.scriptPath .. "ui/editor_misc.lua"), -- the Misc list's panel
+    dofile(MGE.scriptPath .. "ui/editor_misc.lua"), -- the World list's panel
 }
 
 local ROW_H = MGE.Widgets.ROW_H
@@ -67,7 +67,7 @@ local PANELS = {
     jointLink = { height = PANEL_H }, -- the Joints list's Link tab
     joint = { height = PANEL_H }, -- the Joints list's Properties tab
     atmo = { height = PANEL_H }, -- the Atmo list's Atmo tab
-    misc = { height = PANEL_H }, -- the Misc list's panel
+    misc = { height = PANEL_H }, -- the World list's panel
 }
 
 -- collected from the modules: fixed and rebuilt blocks, rebuilt block names in build order, input lists

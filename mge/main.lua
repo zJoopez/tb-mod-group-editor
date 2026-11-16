@@ -148,9 +148,62 @@ local ModData = MGE.ModData
 local History = MGE.History
 local Atmo = MGE.Atmo
 
+---How well a mod file matches the world: +1 for each of its objects where the game has one at its pos line,
+----1 for each one elsewhere or missing. Read when the match begins, the objects are where their file puts them
+---@param path string under data/mod
+---@return number
+local function worldMatch(path)
+    local ok, parsed = pcall(FileHandler.ParseMod, MGE.modFolder .. path)
+    if not ok or not parsed then return -math.huge end
+    local score = 0
+    for _, obj in ipairs(parsed.env_obj or {}) do
+        local x, y, z = (obj.props.pos or ""):match("(%S+)%s+(%S+)%s+(%S+)")
+        x, y, z = tonumber(x), tonumber(y), tonumber(z)
+        if x then
+            local lx, ly, lz = get_obj_pos(obj.id - 1)
+            local close = lx and math.abs(lx - x) < 0.01 and math.abs(ly - y) < 0.01 and math.abs(lz - z) < 0.01
+            score = score + (close and 1 or -1)
+        end
+    end
+    return score
+end
+
+---The loaded mod's path under data/mod. The game gives only its file name (get_game_rules().mod), and
+---find_mod returns the first file with that name: /lm modmaker/katana read Combat/Weapons/katana.tbm. So
+---the other places it could be are checked too (modmaker/, the folder of the source or of the mod before),
+---and with more than one the file whose objects are where the world has them wins (find_mod's on a tie)
+---@param name string the mod gamerule
+---@return string?
+local function resolveModPath(name)
+    local found = find_mod(name)
+    local file = tostring(name or ""):match("([^/\\]+)$")
+    if not file or file == "" then return found end
+    if not file:match("%.tbm$") then file = file .. ".tbm" end
+    local candidates, seen = {}, {}
+    local function add(path)
+        if path and not seen[path] and Files.Exists(MGE.modFolder .. path) then
+            seen[path] = true
+            candidates[#candidates + 1] = path
+        end
+    end
+    add(found)
+    add(MGE.saveFolder .. file)
+    for _, before in ipairs({ MGE.sourcePath or "", MGE.modPath or "" }) do
+        local folder = before:match("^(.*[/\\])") -- "" for a file in data/mod itself
+        add((folder or "") .. file)
+    end
+    if #candidates <= 1 then return candidates[1] or found end
+    local best, bestScore = candidates[1], worldMatch(candidates[1])
+    for i = 2, #candidates do
+        local score = worldMatch(candidates[i])
+        if score > bestScore then best, bestScore = candidates[i], score end
+    end
+    return best
+end
+
 function MGE.updateSource()
     MGE.modName = get_game_rules().mod
-    MGE.modPath = find_mod(MGE.modName)
+    MGE.modPath = resolveModPath(MGE.modName)
     if (MGE.modPath == "modmaker/modmaker.tbm") then MGE.modPath = "modmaker.tbm" end --fixes modmaker setting a wrong path
     ModData.reloadObjects()
 end
@@ -595,7 +648,7 @@ add_hook("key_down", MGE.hookname, function(key)
             MGE.Main.toggleSelectAllJoints()
         elseif tab == "atmo" then
             MGE.Main.toggleSelectAllAtmo()
-        elseif tab ~= "misc" then -- the Misc list has nothing to select
+        elseif tab ~= "misc" then -- the World list has nothing to select
             MGE.Main.toggleSelectAll()
         end
         return 1

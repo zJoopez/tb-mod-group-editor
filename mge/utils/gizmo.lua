@@ -188,7 +188,7 @@ local function gizmoTarget()
     if MGE.overlayOpen and MGE.overlayOpen() then return nil end
     -- something else has the gizmo (the map placement view, ui/map_place.lua), nil: no gizmo
     if Gizmo.targetOverride then return Gizmo.targetOverride(Gizmo.mode) end
-    if Main.listTab == "misc" then return nil end -- the Misc list is about the whole mod, not a selection
+    if Main.listTab == "misc" then return nil end -- the World list is about the whole mod, not a selection
     if Main.listTab == "joints" then
         -- the selected joints' anchors, Move only, on both of the list's tabs
         if Gizmo.mode ~= "move" then return nil end

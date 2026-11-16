@@ -35,7 +35,22 @@ through this before `tools/package.ps1`. Tick what you checked and move items yo
       edges lined up. Near the right edge it moves left, at the bottom of the screen it opens above.
 - [ ] The top bar's popups still open under and to the left, and the "?" icons still open to the right.
 
-### Misc: Reset all
+### Footer messages
+- [ ] A message shows about 7 seconds, then fades. Several quick ones (a save: "gamerules saved", "saved
+      ...") stack up to 3: the newest in the footer's middle, older ones above it, each fading on its own.
+- [ ] The same message twice only restarts its time. Without messages the footer's middle is empty.
+- [ ] The credits ("Project Mod Group Editor by joopez") are on the World list's last row (its Core tab).
+- [ ] After a resolution change the stacked lines still sit above the footer's middle.
+
+### Mods with the same name in different folders
+- [ ] `/lm modmaker/katana` makes MGE show and save `modmaker/katana.tbm` (the sword at -3.72 3.37),
+      `/lm Combat/Weapons/katana` the game's one. Save on the modmaker one writes it in place.
+
+### Reindex on the Advanced tab
+- [ ] Objects list > Advanced: the Ids row (Reindex) is under Model, and the object list next to it shows
+      the ids change after Reindex. The World list has Message, Shader, Map, Mod and the credits.
+
+### World: Reset all
 - [ ] Reset all with unsaved changes asks first, Cancel keeps everything. Continue loads the classic mod.
 - [ ] Without unsaved changes it loads classic right away. MGE then shows the classic mod (2 players, no
       objects, no atmo) and editing and saving it works like any other mod.

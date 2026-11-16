@@ -1,12 +1,12 @@
--- Misc list tab's panel: things about the whole mod, not the selected objects
+-- World list tab's panel: things about the whole mod, not the selected objects
 --   Message: the mod's `message` line (the game shows it in chat when the mod loads), one of the mod file's
 --            lines before its objects (ModData.parsed.ignores). Typed, Enter applies it, empty removes it
 --   Shader:  the atmo file's `shader` line (utils/atmo.lua: Atmo.state.header), a data/shader/<name>.inc. Loaded
 --            in the game right away (Atmo.applyShader); players get it when they load the mod's atmo (Shaders &
 --            Atmos > Atmos), Save writes it
---   Ids:     Reindex (it was on the Advanced tab: acts on all objects, not the selection)
 --   Map:     Convert map (it was on the Advanced tab: adds a whole map, not about the selection)
 --   Mod:     Reset all: loads the classic mod (/lm classic), asks first with unsaved changes
+--   Credits: the last row
 local Rows = MGE.EditorRows
 local Widgets = MGE.Widgets
 local ModData = MGE.ModData
@@ -134,32 +134,6 @@ local function buildFileRows(holder)
     Widgets.popupBelow(none, "No shader (remove)")
 end
 
----Dynamic objects can end up above id 48 (the footer warns), this moves them down and static
----objects up, as far as ids allow. Acts on all objects, not the selection
-local function reindex()
-    local moved, left = ModData.reindex()
-    if left > 0 then
-        MGE.say("reindex: " .. left .. " dynamic objects still above id " .. MGE.MAX_NONSTATIC_OBJECTS ..
-            ", make some static")
-    end
-    if moved == 0 then
-        MGE.say("reindex: nothing to move")
-        return
-    end
-    History.commit()
-    MGE.apply()
-    MGE.say("reindex moved " .. moved .. " objects")
-end
-
----Ids row, built once: its button acts on all objects, nothing to refresh
----@param holder UIElement
-local function buildIdRow(holder)
-    Rows.begin()
-    createToggleButtonRow("Ids", holder, {
-        { label = "Reindex", active = false, onClick = reindex },
-    }, "Moves dynamic objects to ids 1-" .. MGE.MAX_NONSTATIC_OBJECTS .. ", static above.\n" ..
-        "Acts on all objects, joints follow.")
-end
 
 ---Map row, built once: opens the Convert Map overlay (ui/map_overlay.lua)
 ---@param holder UIElement
@@ -204,12 +178,19 @@ local function buildModRow(holder)
     }, "Loads the classic mod (/lm classic): a fresh start.\nAsks first when there are unsaved changes.")
 end
 
+---Credits on the panel's last row (they were in the footer's middle, which now only shows messages)
+---@param holder UIElement
+local function buildCredits(holder)
+    local line = holder:addChild({ pos = { 0, 0 }, size = { holder.size.w, holder.size.h } })
+    line:addAdaptedText("Project Mod Group Editor by joopez", nil, nil, Widgets.FONT, CENTERMID, Widgets.TEXT_SCALE_SMALL)
+end
+
 ---@type EditorPanelModule
 return {
     fixed = {
-        { build = buildIdRow, panel = "misc", row = 2, rows = 1 },
-        { build = buildMapRow, panel = "misc", row = 3, rows = 1 },
-        { build = buildModRow, panel = "misc", row = 4, rows = 1 },
+        { build = buildCredits, panel = "misc", row = 7, rows = 1 },
+        { build = buildMapRow, panel = "misc", row = 2, rows = 1 },
+        { build = buildModRow, panel = "misc", row = 3, rows = 1 },
     },
     blocks = {
         { name = "miscFile", build = buildFileRows, panel = "misc", row = 0, rows = 2 },

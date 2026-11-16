@@ -134,7 +134,7 @@ function ScrollList.create(parent, rect, items, buildRow, toReload, emptyText, p
     local rows = {}
     if #items == 0 then
         if emptyText then
-            -- centered in the whole list, like the Misc list's note
+            -- centered in the whole list, like the World list's note
             local empty = listMainView:addChild({
                 pos = { 5, 0 },
                 size = { listMainView.size.w - 10, listMainView.size.h },
