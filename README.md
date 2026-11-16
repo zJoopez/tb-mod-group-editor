@@ -21,7 +21,7 @@ The window has five lists, each with its own tabs.
 
 | List | Tabs |
 |---|---|
-| **Objects** | **Core**: position, rotation, scale, color, mass, shape, visibility, To atmo. **Advanced**: friction, bounce, flags, model, reindexing ids. **Thrust**: frames, direction, axes. **Generate**: rows, rings and grids of new objects. |
+| **Objects** | **Core**: position, rotation, scale, color, mass, shape, visibility, To atmo. **Advanced**: friction, bounce, flags, model, reindexing ids. **Thrust**: frames, direction, axes. **Generate**: rows, rings and grids of new objects, each piece turned with Rot or the Rotate gizmo. |
 | **Atmo** | **Core**: position, rotation, scale, color, shape, To objects, Save atmo. **Advanced**: depth, graphics levels, kept lines. **Generate**: as on Objects. |
 | **Joints** | **Link**: the two objects a joint connects, picked in the list or, with Pick from world on, in the world. **Properties**: position, axis, range, strength, velocity, type. |
 | **Players** | Start position, rotation, scale and body parts of each player. |

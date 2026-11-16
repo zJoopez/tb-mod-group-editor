@@ -134,7 +134,6 @@ local function buildFileRows(holder)
     Widgets.popupBelow(none, "No shader (remove)")
 end
 
-
 ---Map row, built once: opens the Convert Map overlay (ui/map_overlay.lua)
 ---@param holder UIElement
 local function buildMapRow(holder)
@@ -188,9 +187,9 @@ end
 ---@type EditorPanelModule
 return {
     fixed = {
-        { build = buildCredits, panel = "misc", row = 7, rows = 1 },
         { build = buildMapRow, panel = "misc", row = 2, rows = 1 },
         { build = buildModRow, panel = "misc", row = 3, rows = 1 },
+        { build = buildCredits, panel = "misc", row = 8, rows = 1 },
     },
     blocks = {
         { name = "miscFile", build = buildFileRows, panel = "misc", row = 0, rows = 2 },

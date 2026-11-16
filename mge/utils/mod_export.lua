@@ -422,8 +422,8 @@ function ModData.reloadObjects()
         FileHandler.splitSharedPlayers(ModData.parsed, count)
         rebaseModels()
         ModData.jointIds = getJointIds(ModData.parsed.env_obj_joint)
-    else
-        MGE.say("Mod not found")
+    elseif tostring(MGE.modName or ""):match("%.tbm$") then
+        MGE.say("Mod not found") -- the built-in classic (gamerule "classic", no .tbm) has no file: nothing to say
     end
     ModData.parsed.atmo = atmo
 

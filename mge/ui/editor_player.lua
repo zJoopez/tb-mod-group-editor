@@ -76,6 +76,16 @@ local function applyTyped(inputs, key, list, current)
     end
 end
 
+---@type table<string, UIElement?> Pos / Rot / Scale names by gizmo tool, lit for the active one like the Core
+---tab's (rebuilt with the rows)
+local gizmoLabels = {}
+
+---Lights the name of the row the active gizmo tool changes (toolbar, Alt + Q / W / E)
+local function highlightGizmoLabels()
+    for mode, label in pairs(gizmoLabels) do Rows.setHighlighted(label, mode == MGE.Gizmo.mode) end
+end
+table.insert(MGE.Gizmo.modeListeners, highlightGizmoLabels)
+
 ---Pos / Rot / Scale rows for the players, rebuilt when the selection, the gamerules or the mod change
 ---(placeholders show the current values)
 ---@param holder UIElement
@@ -93,21 +103,23 @@ local function buildPlayer(holder)
         posHelp = "Center of " .. whom(list) .. " from the dojo center."
         rotHelp = "Rotation of " .. whom(list) .. " in whole degrees."
     end
-    inwuts.playerPos = createInputRow("Pos", holder, function(_, i)
+    local _
+    inwuts.playerPos, _, gizmoLabels.move = createInputRow("Pos", holder, function(_, i)
         if #list > 0 then Players.setShownPos(list, readInputs(inwuts.playerPos, i)) end
     end, pos and formatHints(pos) or NOT_SET, posHelp, nil, { exact = pos }) -- the wheel steps from the exact center
-    inwuts.playerRot = createInputRow("Rot", holder, function(_, i)
+    inwuts.playerRot, _, gizmoLabels.rotate = createInputRow("Rot", holder, function(_, i)
         if #list > 0 then Players.setShownRot(list, readInputs(inwuts.playerRot, i)) end
     end, rot and wholeHints(rot) or NOT_SET, rotHelp, nil, { whole = true, angle = true })
     -- Scale: the size compared to the default body (Players.size), a typed size scales to it (several
     -- players: their average, the differences stay). Rebuilt with Pos / Rot so it shows the new size
     local size = #list > 0 and Players.groupSize(list) or nil
-    inwuts.playerScale = createInputRow("Scale", holder, function()
+    inwuts.playerScale, _, gizmoLabels.scale = createInputRow("Scale", holder, function()
         local typed = tonumber(inwuts.playerScale[1].textfieldstr[1])
         if not typed or typed <= 0 or not size or size <= 0 then return end
         Players.scaleBy(list, typed / size)
     end, { size and Rows.formatHint(size) or "-" },
         "Size of " .. whom(list) .. " (default body 1).\nBigger is heavier.", nil, { exact = { size } })
+    highlightGizmoLabels()
 end
 
 -- part rows: input name, label, mod line, help

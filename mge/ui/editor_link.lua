@@ -4,13 +4,13 @@
 -- picked one takes it out, at most two. Off, a world click selects the object on the Objects list. Which
 -- one is first doesn't matter to the game. Nothing changes in the mod until Create (an empty slot) or
 -- Update (a joint's new objects), so a stray click can't rewire a joint.
---   rows 0-5: every object, picked ones pale, static ones faint, on pages when there are more than
+--   rows 0-6: every object, picked ones pale, static ones faint, on pages when there are more than
 --             fit. Linking one above id MAX_NONSTATIC_OBJECTS reindexes it down (Joints.linkSlots)
 --                                                                               (block jointLinkGrid)
---   row 6:    Pick from world (its popup is the tab's help)
---   row 7:    Reset (the saved link; Delete is in the list's bar), Create / Update: its popup says what
+--   row 7:    Pick from world (its popup is the tab's help)
+--   row 8:    Reset (the saved link; Delete is in the list's bar), Create / Update: its popup says what
 --             it would do. Create with nothing picked makes two default objects joined in the slot
---                                                                     (rows 6-7: block jointLinkButtons)
+--                                                                     (rows 7-8: block jointLinkButtons)
 -- A pick only rebuilds the buttons, the grid restyles its cells in place: rebuilding it would scroll it
 -- back to the top. Selecting another slot rebuilds both.
 -- Has its own buttons (Reset: the draft back to the saved link).
@@ -110,7 +110,7 @@ local function buildGrid(holder)
     local rect = { x = 0, y = 0, w = holder.size.w, h = holder.size.h }
     if #objects == 0 then
         local empty = holder:addChild({ pos = { rect.x, rect.y }, size = { rect.w, rect.h } })
-        empty:addAdaptedText("No objects: Create 2 new ones", nil, nil, MGE.Widgets.FONT, CENTERMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
+        empty:addAdaptedText("Mod has no objects\nLinking needs 2", nil, nil, MGE.Widgets.FONT, CENTERMID, MGE.Widgets.TEXT_SCALE_SMALL, nil, nil)
         return
     end
     local ScrollList = MGE.ScrollList
@@ -210,7 +210,7 @@ end
 ---@type EditorPanelModule
 return {
     blocks = {
-        { name = "jointLinkGrid", build = buildGrid, panel = "jointLink", row = 0, rows = 6 },
-        { name = "jointLinkButtons", build = buildButtons, panel = "jointLink", row = 6, rows = 2 },
+        { name = "jointLinkGrid", build = buildGrid, panel = "jointLink", row = 0, rows = 7 },
+        { name = "jointLinkButtons", build = buildButtons, panel = "jointLink", row = 7, rows = 2 },
     },
 }

@@ -36,3 +36,44 @@ T.test("gap between neighbours", function()
     T.near(pieces[2].pos[1] - pieces[1].pos[1], 1.5, 1e-9, "first to second")
     T.near(pieces[3].pos[1] - pieces[2].pos[1], 1.5, 1e-9, "second to third")
 end)
+
+T.test("rotation turns each piece around its own center, the layout stays", function()
+    local Mat3 = MGE.Mat3
+    -- a straight line of 3 (2 long) along X, each piece turned 90 degrees around Z: they stand across the
+    -- line where they were, 2 apart along X still
+    local plain = ShapeGen.plan(3, 0, 0, { 2, 1, 1 }, { 0, 0 }, { align = "center" })
+    local pieces, bounds = ShapeGen.plan(3, 0, 0, { 2, 1, 1 }, { 0, 0 },
+        { align = "center", rotation = Mat3.rotZ(math.rad(90)) })
+    T.near(pieces[2].pos[1] - pieces[1].pos[1], 2, 1e-9, "neighbours still 2 apart along X")
+    T.near(pieces[2].pos[2] - pieces[1].pos[2], 0, 1e-9, "not moved along Y")
+    T.nearList({ pieces[1].frame[1][1], pieces[1].frame[2][1], pieces[1].frame[3][1] }, { 0, 1, 0 }, 1e-9,
+        "each piece's X axis turned to Y")
+    T.near(bounds.max[2] - bounds.min[2], 2, 1e-9, "as wide as a piece is long")
+    T.near(bounds.min[3], 0, 1e-9, "on the floor")
+    T.near((bounds.min[1] + bounds.max[1]) / 2, 0, 1e-9, "centered in x")
+    local x, y, z = Mat3.toEulerXYZ(pieces[2].frame)
+    T.nearList({ math.deg(x), math.deg(y), math.deg(z) }, { 0, 0, 90 }, 1e-6, "rot line: turned 90 around Z")
+    -- no rotation: the plain shape, exactly
+    T.nearList(plain[3].pos, ShapeGen.plan(3, 0, 0, { 2, 1, 1 }, { 0, 0 }, { align = "center" })[3].pos, 0,
+        "without Rot nothing changes")
+end)
+
+T.test("a world turn of the first piece (Rotate gizmo) becomes the pieces' own rotation", function()
+    local Mat3 = MGE.Mat3
+    -- a bend (90 over 2 pieces): the first piece is tilted, a world turn around Z must turn it around world Z
+    local q = Mat3.rotZ(math.rad(30))
+    local plain = ShapeGen.plan(2, 0, 90, { 1, 1, 1 }, { 0, 0 })
+    local turned = ShapeGen.plan(2, 0, 90, { 1, 1, 1 }, { 0, 0 }, { firstTurn = q })
+    local want = Mat3.mul(q, plain[1].frame)
+    for r = 1, 3 do
+        T.nearList(turned[1].frame[r], want[r], 1e-9, "first piece: world turn applied, row " .. r)
+    end
+    -- on top of a Rot already there
+    local rot = Mat3.rotX(math.rad(20))
+    local both = ShapeGen.plan(2, 0, 90, { 1, 1, 1 }, { 0, 0 }, { rotation = rot, firstTurn = q })
+    local withRot = ShapeGen.plan(2, 0, 90, { 1, 1, 1 }, { 0, 0 }, { rotation = rot })
+    want = Mat3.mul(q, withRot[1].frame)
+    for r = 1, 3 do
+        T.nearList(both[1].frame[r], want[r], 1e-9, "on top of Rot, row " .. r)
+    end
+end)

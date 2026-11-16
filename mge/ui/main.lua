@@ -50,8 +50,8 @@ local BAR_GAP = Widgets.GAP -- between the bar's buttons, the same gap as everyw
 local BAR_SEP = px(14) -- between its groups
 local EDITOR_TABS_H = px(20)
 local TAB_PADDING = px(6) -- space between a tab panel's edge and its content
--- the editor area: fits the panels (8 rows each, PANELS in ui/editor.lua)
-local EDITOR_H = 8 * Widgets.ROW_H
+-- the editor area: fits the panels (Widgets.PANEL_ROWS rows each, PANELS in ui/editor.lua)
+local EDITOR_H = Widgets.PANEL_ROWS * Widgets.ROW_H
 local FOOTER_H = Widgets.INFO_HEIGHT + px(4) -- the footer row along the screen's bottom
 local LIST_ROWS = 6 -- the list's height, it scrolls; fewer when the panel wouldn't fit the screen (below)
 local rowH = Widgets.LIST_ROW_H -- ScrollList.rowHeight (loaded below) is the same
@@ -318,7 +318,7 @@ local function listHasTab(list, id)
     return false
 end
 
--- the editor area inside the tab panel: fits the panels (8 rows each, see PANELS in ui/editor.lua)
+-- the editor area inside the tab panel: fits the panels (Widgets.PANEL_ROWS rows each, see PANELS in ui/editor.lua)
 local areaH = EDITOR_H
 local tabPanel = content:addChild({
     pos = defaultPos,
@@ -368,16 +368,15 @@ local messages = {}
 local rowTexts = {}
 
 ---MGE.say's footer half: the message in the middle, one line, without chat color codes. The ones before it
----move up, at most MESSAGE_MAX show. The same text as the newest again only restarts its time
+---move up, at most MESSAGE_MAX show. A text already showing moves to the middle with its time restarted
+---instead of showing twice (a save says "gamerules saved" again after "saved ...")
 ---@param text string
 function MGE.onMessage(text)
     text = text:gsub("%^%d%d", ""):gsub("%s*\n%s*", "  ")
-    local now, newest = os.clock_real(), messages[#messages]
-    if newest and newest.text == text then
-        newest.at = now
-        return
+    for i = #messages, 1, -1 do
+        if messages[i].text == text then table.remove(messages, i) end
     end
-    messages[#messages + 1] = { text = text, at = now }
+    messages[#messages + 1] = { text = text, at = os.clock_real() }
     if #messages > MESSAGE_MAX then table.remove(messages, 1) end
 end
 

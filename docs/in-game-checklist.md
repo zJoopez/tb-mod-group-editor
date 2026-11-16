@@ -43,8 +43,13 @@ through this before `tools/package.ps1`. Tick what you checked and move items yo
 - [ ] After a resolution change the stacked lines still sit above the footer's middle.
 
 ### Mods with the same name in different folders
+MGE reads the path the mod gamerule names (`mge/tools/modpath_probe.lua` measured it), `find_mod` only for
+a bare name with no file at that path.
 - [ ] `/lm modmaker/katana` makes MGE show and save `modmaker/katana.tbm` (the sword at -3.72 3.37),
-      `/lm Combat/Weapons/katana` the game's one. Save on the modmaker one writes it in place.
+      `/lm Combat/Weapons/katana` the game's one, `/lm katana` the game's one too.
+- [ ] `/lm modmaker` shows the root `data/mod/modmaker.tbm`, `/lm modmaker/modmaker` the one in modmaker/.
+- [ ] `/lm modmaker/classic` and `/lm downloads/classic` show their own objects, `/lm classic` (and Reset
+      all) the built-in classic: empty list, "Not saved to a mod yet", no "Mod not found" in chat.
 
 ### Reindex on the Advanced tab
 - [ ] Objects list > Advanced: the Ids row (Reindex) is under Model, and the object list next to it shows
@@ -54,6 +59,7 @@ through this before `tools/package.ps1`. Tick what you checked and move items yo
 - [ ] Reset all with unsaved changes asks first, Cancel keeps everything. Continue loads the classic mod.
 - [ ] Without unsaved changes it loads classic right away. MGE then shows the classic mod (2 players, no
       objects, no atmo) and editing and saving it works like any other mod.
+- [ ] With a saved `modmaker/classic.tbm` that has objects, Reset all still shows an empty object list.
 
 ### Applying a field by clicking another one
 - [ ] Type a joint's Range (or any field that reloads the mod: Axis, an object's Mass), then click another
@@ -65,6 +71,17 @@ through this before `tools/package.ps1`. Tick what you checked and move items yo
       longer shakes while the camera moves. Clicking handles still hits them.
 - [ ] After a change (the reload), the gizmo doesn't shake while the camera settles. If it still does,
       the camera position and the drawn frame disagree for a moment, a second cause to probe.
+
+### Taller panels, Generate Rot, lit gizmo rows
+- [ ] Every editor panel is a row taller (9 rows) and the window still fits on screen at each UI size. The
+      Link tab's buttons and the World list's credits are on the new last row.
+- [ ] Generate: a Rot row above the buttons. Typed angles turn each piece around its own center (like Size),
+      the chain stays laid out, on the floor. The Rotate gizmo (Alt + W) turns the pieces and writes Rot; Ctrl
+      snaps to the rotate step. Reset empties Rot too, Generate makes the turned pieces.
+- [ ] Generate's rows: Align, Amount, Gap, Angle, Position, Rot, Size, Increment, buttons. The Rotate gizmo's
+      rings sit on the first piece's axes (like Scale's handles) and turn the pieces around them.
+- [ ] The row the active gizmo tool changes is lit: Generate's Position (Move), Rot (Rotate), Size (Scale);
+      the Players panel's Pos, Rot, Scale. Switching tools moves the light.
 
 ### Spawning at the look-at point
 - [ ] Opening and closing the Generate tab repeatedly leaves the preview and the camera where they are,

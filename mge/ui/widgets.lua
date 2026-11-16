@@ -35,6 +35,7 @@ Widgets.BUTTON_TEXT_SCALE = 0.45 * Widgets.UI_SCALE -- buttons' text (Widgets.bu
 Widgets.TITLE_SCALE = 0.7 * Widgets.UI_SCALE -- the overlays' titles (Settings, Convert Map, the file picker...)
 -- height of an editor row (label, inputs or buttons, "?"), the editor tabs and the reset button
 Widgets.ROW_H = Widgets.px(24)
+Widgets.PANEL_ROWS = 9 -- editor panels' height in rows, all the same (the tallest: Generate). ui/main.lua sizes the area by it
 -- height of a list row (the object grid's rows, the Players list, the file picker): ScrollList.rowHeight
 Widgets.LIST_ROW_H = Widgets.px(20)
 -- space between the cells of a grid-like row: the number fields' (they sit this far apart), the object grid's

@@ -132,8 +132,8 @@ local function create(view, fullList, mode)
     }, list, {
         label = function(obj) return (atmo and "A" or "") .. tostring(obj.id) end,
         -- an empty mod / atmo: what adds some (the buttons under the list)
-        emptyText = atmo and "No atmo objects: New, Import, or To atmo (Advanced tab)"
-            or "No objects: New, Import or Generate",
+        emptyText = atmo and "Atmo has no objects\nTry adding some"
+            or "Mod has no objects\nTry adding some",
         isSelected = function(obj) return obj.selected end,
         onClick = function(obj, additive)
             local selected = ModData.clickSelect(obj, additive)

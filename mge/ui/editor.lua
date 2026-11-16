@@ -55,9 +55,9 @@ local MODULES = {
 }
 
 local ROW_H = MGE.Widgets.ROW_H
--- panel heights, all as tall as the tallest (Generate, 8 rows). The editor area in ui/main.lua fits them.
+-- panel heights, all as tall as the tallest (Generate, Widgets.PANEL_ROWS rows). The editor area in ui/main.lua fits them.
 -- No Reset inputs button: the editor's fields empty themselves once applied (ui/editor_rows.lua)
-local PANEL_H = 8 * ROW_H
+local PANEL_H = MGE.Widgets.PANEL_ROWS * ROW_H
 local PANELS = {
     core = { height = PANEL_H },
     advanced = { height = PANEL_H },

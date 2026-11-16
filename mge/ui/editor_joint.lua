@@ -18,7 +18,7 @@ local Rows = MGE.EditorRows
 local Joints = MGE.Joints
 local inwuts = Rows.inputs
 
-local ROWS = 8 -- the panel's height in rows (PANELS in ui/editor.lua)
+local ROWS = MGE.Widgets.PANEL_ROWS -- the panel's height in rows (PANELS in ui/editor.lua)
 
 local INPUT_LISTS = { "jointPos", "jointAxis", "jointRange", "jointStrength", "jointVelocity", "jointType" }
 

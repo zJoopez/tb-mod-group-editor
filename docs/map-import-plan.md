@@ -4,7 +4,7 @@ Status (2026-11-12): **Phase 0 answered. Phases 1 and 4 and the `.bsp` reader ar
 
 Update (2026-11-13, after the user's in-game testing): **props, the ledge-shell join, see-through red clips and the overlay's Nogrip toggle were removed.** Clips are now always colored like the geometry they cover. The props code (`mapconv/props.lua`: static props, `.vpk` / packed-zip model reading, the `.models` cache) is in git history at commit `de2ce06`. The sections below keep their measurements, marked where a feature is gone. The `.models` files in `assets/maps` aren't read any more and can be deleted.
 
-Update (2026-11-15): **the command-line tool (`tools/mapconv.lua`) was removed**, conversion is in game only (Misc list → Convert map). Its asset-file output went with it: `MapConv.toText`, the file header, the `source` option and the keep-position tag (`MGE.KEEP_POSITION_TAG`): Import puts every asset in front of the camera. Sections below that mention the command line describe what it was. Also gone: the Center first budget option; Floors first is always on (see Budget order).
+Update (2026-11-15): **the command-line tool (`tools/mapconv.lua`) was removed**, conversion is in game only (World list → Convert map; it was the Misc list). Its asset-file output went with it: `MapConv.toText`, the file header, the `source` option and the keep-position tag (`MGE.KEEP_POSITION_TAG`): Import puts every asset in front of the camera. Sections below that mention the command line describe what it was. Also gone: the Center first budget option; Floors first is always on (see Budget order).
 
 Goal: a community tool that turns a brush-based level from another game (Source `.vmf`, later Quake-family `.map`) into:
 

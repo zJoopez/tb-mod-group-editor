@@ -1,6 +1,8 @@
 -- Generate tab: lines, ramps, loops, stairs and pyramids made of default objects (geometry in utils/shape_gen.lua),
--- placed in front of the camera, or where the Position row says. The Move gizmo drags the preview, the
--- Scale gizmo sizes its pieces (Size and Increment, along the first piece's axes) (Camera follow on: the camera looks at the shape when the tab opens and after every change). Amount's
+-- placed in front of the camera, or where the Position row says. Rot turns every piece around its own center
+-- (like Size: the source object). The Move gizmo drags the preview, the Rotate gizmo turns its pieces (the Rot fields), the
+-- Scale gizmo sizes its pieces (Size and Increment, along the first piece's axes); the row each tool
+-- changes is lit (Camera follow on: the camera looks at the shape when the tab opens and after every change). Amount's
 -- second field joins each two
 -- neighbouring pieces: 1 joint between their centers, 2 at their edges like a door's hinges
 -- (ShapeGen.joints). Joined pieces are made dynamic, static ones wouldn't move at the joints
@@ -118,19 +120,43 @@ local function piecesCenter(pieces)
     return c
 end
 
+---The Rot row's angles in degrees (empty fields: 0)
+---@return number[]
+local function typedAngles()
+    local angles = {} ---@type number[]
+    for k = 1, 3 do
+        local input = (inwuts.generateRot or {})[k]
+        local value = input and not input.destroyed and tonumber(input.textfieldstr[1])
+        angles[k] = value or 0
+    end
+    return angles
+end
+
+---The Rot row as a rotation, like the Core tab's Rot (rotX(x) * rotY(y) * rotZ(z)), nil for none
+---@return number[][]?
+local function typedRotation()
+    local a = typedAngles()
+    if a[1] == 0 and a[2] == 0 and a[3] == 0 then return nil end
+    local Mat3 = MGE.Mat3
+    return Mat3.mul(Mat3.rotX(math.rad(a[1])), Mat3.mul(Mat3.rotY(math.rad(a[2])), Mat3.rotZ(math.rad(a[3]))))
+end
+
 ---Pieces for the typed values (empty fields use their placeholders), same for the preview and Generate.
 ---Placed in front of the camera and moved as far as the gizmo moved the preview, then moved on the
 ---axes typed in the Position row: those are the center the Pos row would show for the generated
 ---pieces, counted from the dojo center (MGE.POS_ORIGIN)
 ---Values that can't make a shape (Amount 1 or less, too many pieces or joints, an increment that
 ---shrinks pieces to nothing) give one default object instead: flat, the typed Size, no joints
+---Every piece is turned by the Rot row around its own center (like Size: the source object turned), a
+---Rotate drag in progress on top; the shape is then placed by its bounds: on the floor, centered
 ---@param factors number[]? a Scale gizmo drag in progress: Size and Increment multiplied per axis
+---@param turn number[][]? a Rotate gizmo drag in progress: the first piece's world turn (ShapeGen firstTurn)
 ---@return GeneratePiece[] pieces
 ---@return string? note why it's one default object instead of the shape (nil for Amount 1 or less)
 ---@return number[] center where the shape is, Pos-row style
 ---@return GenerateJoint[] joints between neighbouring pieces, where they end up
 ---@return number[] middle the middle of the shape's bounds, world: what the camera looks at
-local function planFromFields(factors)
+local function planFromFields(factors, turn)
     local function reader(fields)
         return function(i) return fields[i] and not fields[i].destroyed and tonumber(fields[i].textfieldstr[1]) end
     end
@@ -178,7 +204,7 @@ local function planFromFields(factors)
     local ShapeGen = MGE.ShapeGen
     local angle = single and 0 or (typed(FIELD.angle) or GENERATE_ANGLE)
     local pieces, bounds = ShapeGen.plan(amount, typed(FIELD.gap) or 0, angle, sides,
-        { 0, 0 }, { increment = increment, align = align })
+        { 0, 0 }, { increment = increment, align = align, rotation = typedRotation(), firstTurn = turn })
     if not anchor then anchorToView() end
     ---@cast anchor -nil
     -- the first shape there picks the point (far enough to fit it on screen), later ones keep it
@@ -218,6 +244,8 @@ local positionHints = { "0.00", "0.00", "0.00" }
 local liveOffset = nil
 ---@type number[]? a Scale drag in progress: the preview is planned with these factors every frame
 local liveFactors = nil
+---@type number[][]? a Rotate drag in progress: the preview is planned turned by it every frame
+local liveRotation = nil
 
 ---@param list UIElement[]?
 ---@param parts string[] texts are added to it
@@ -234,6 +262,7 @@ local function fieldsKey()
     addTexts(inwuts.generateAmount, parts)
     addTexts(inwuts.generate, parts)
     addTexts(inwuts.generatePos, parts)
+    addTexts(inwuts.generateRot, parts)
     return table.concat(parts, "|")
 end
 
@@ -291,7 +320,7 @@ end
 MGE.Highlight.preview = function()
     if not tabOpen() then
         previewShown = false
-        liveOffset, liveFactors = nil, nil
+        liveOffset, liveFactors, liveRotation = nil, nil, nil
         return nil
     end
     if not previewShown then -- the tab just opened: the shape goes where the camera looks now
@@ -305,8 +334,9 @@ MGE.Highlight.preview = function()
         Rows.refreshBlocks({ "generateAmount" })
     end
     if fieldsKey() ~= previewKey then replan() end
-    if liveFactors and previewPieces then -- a Scale drag: the shape as it would be, planned each frame
-        local pieces, _, _, joints = planFromFields(liveFactors)
+    -- a Scale or Rotate drag: the shape as it would be, planned each frame
+    if (liveFactors or liveRotation) and previewPieces then
+        local pieces, _, _, joints = planFromFields(liveFactors, liveRotation)
         local anchors = {}
         for i, joint in ipairs(joints or {}) do anchors[i] = joint.pos end
         return pieces, anchors
@@ -377,27 +407,54 @@ local function scaleBy(factors)
     replan()
 end
 
+---Gizmo Rotate released on the preview: the first piece turned by it in the world, as the pieces' own
+---rotation in the Rot fields (rotX * rotY * rotZ like the Core tab's Rot). The first piece's frame is
+---bend * R: R' = bend^T Q bend R, with bend = frame R^T that's R frame^T Q frame. Planned again: on the
+---floor, centered
+---@param rotation number[][] the world turn Q
+local function rotateBy(rotation)
+    liveRotation = nil
+    if not tabOpen() or not previewPieces or not previewPieces[1] then return end
+    local Mat3 = MGE.Mat3
+    local current = typedRotation() or Mat3.IDENTITY
+    local frame = previewPieces[1].frame
+    local turned = Mat3.mul(current, Mat3.mul(Mat3.transpose(frame), Mat3.mul(rotation, frame)))
+    local x, y, z = Mat3.toEulerXYZ(turned)
+    local angles = { math.deg(x), math.deg(y), math.deg(z) }
+    for k, input in ipairs(inwuts.generateRot or {}) do
+        if not input.destroyed then
+            local text = string.format("%.2f", angles[k]):gsub("0+$", ""):gsub("%.$", "")
+            if text == "-0" then text = "0" end
+            input.textfieldstr[1], input.textfieldindex = text, #text
+        end
+    end
+    replan()
+end
+
 -- While the preview is shown it has the gizmo (not the selection): Move drags it, Scale sizes its
--- pieces (the Size and Increment fields) along the first piece's axes, Rotate shows no gizmo. After
--- Generate there's no preview until a value changes, the gizmo is back on the selection (the
--- generated pieces)
+-- pieces (the Size and Increment fields) along the first piece's axes, Rotate turns every piece around its
+-- center as the first one turns in the world (the Rot fields). After Generate there's no preview until a value changes, the gizmo is
+-- back on the selection (the generated pieces)
 MGE.Gizmo.previewTarget = function(mode)
     if not (previewShown and previewPieces and tabOpen()) then return nil end
-    if mode ~= "move" and mode ~= "scale" then return false end
+    if mode ~= "move" and mode ~= "scale" and mode ~= "rotate" then return false end
     local pieces = previewPieces -- the pivot stays where the drag started, even if the plan changes
-    local function clear() liveOffset, liveFactors = nil, nil end
+    local middle = previewMiddle
+    local function clear() liveOffset, liveFactors, liveRotation = nil, nil, nil end
     return {
         scalable = true,
-        pivot = function() return piecesCenter(pieces) end,
-        -- Scale: the first piece's axes, its sides are the Size fields. Move: the world's
-        frame = function() return mode == "scale" and pieces[1].frame or MGE.Mat3.IDENTITY end,
+        -- Rotate: the middle of its bounds, it's placed by them (on the floor, centered) after turning
+        pivot = function() return mode == "rotate" and middle or piecesCenter(pieces) end,
+        -- Scale and Rotate: the first piece's axes (Size is along them, Rot turns the pieces around them:
+        -- a ring turns them around their own axis). Move: the world's
+        frame = function() return mode ~= "move" and pieces[1].frame or MGE.Mat3.IDENTITY end,
         previewMove = function(offset) liveOffset = offset end,
-        previewRotate = function() end,
+        previewRotate = function(rotation) liveRotation = rotation end,
         previewScale = function(factors) liveFactors = factors end,
         liveSides = function() return nil end,
         restoreLive = clear,
         moveBy = moveBy,
-        rotateByMatrix = clear,
+        rotateByMatrix = rotateBy,
         scaleBy = scaleBy,
     }
 end
@@ -498,38 +555,89 @@ local function buildAmount(holder)
     end
 end
 
----Generate panel: gap, angle, piece size and increment. Nothing depends on the selection,
----placeholders show the values empty fields use
+---@type table<string, UIElement?> the names of the rows the gizmo's tools change on the preview: Position
+---(move), Size (scale). Lit for the active tool like the Core tab's Pos / Rot / Scale, rebuilt with the rows
+local gizmoLabels = {}
+
+---Lights the name of the row the active gizmo tool changes (toolbar, Alt + Q / W / E)
+local function highlightGizmoLabels()
+    for mode, label in pairs(gizmoLabels) do Rows.setHighlighted(label, mode == MGE.Gizmo.mode) end
+end
+table.insert(MGE.Gizmo.modeListeners, highlightGizmoLabels)
+
+-- the fields of the two blocks below, inwuts.generate puts them together in FIELD's order: gap, angle,
+-- size x y z, increment x y z (Position and Rot sit between the blocks, like the Core tab's Pos / Rot / Scale)
+local bendInputs, sizeInputs = {}, {}
+
+local function joinGenerateInputs()
+    local inputs = {}
+    for _, list in ipairs({ bendInputs, sizeInputs }) do
+        for _, input in ipairs(list) do inputs[#inputs + 1] = input end
+    end
+    inwuts.generate = inputs
+end
+
+---@param list UIElement[]
+---@param row UIElement[]
+local function addAll(list, row)
+    for _, input in ipairs(row) do list[#list + 1] = input end
+end
+
+---Gap and Angle rows (the chain's bend). Nothing depends on the selection, placeholders show the values
+---empty fields use
 ---@param holder UIElement
-local function buildGenerate(holder)
+local function buildBend(holder)
     Rows.begin()
     local function apply() generate() end
-    local inputs = {}
-    local function add(row)
-        for _, input in ipairs(row) do table.insert(inputs, input) end
-    end
-    add(createInputRow("Gap", holder, apply, { "0.00" }, "Space between pieces, negative overlaps.", nil, FORM))
-    add(createInputRow("Angle", holder, apply, { tostring(GENERATE_ANGLE) },
+    bendInputs = {}
+    addAll(bendInputs, createInputRow("Gap", holder, apply, { "0.00" }, "Space between pieces, negative overlaps.", nil, FORM))
+    addAll(bendInputs, createInputRow("Angle", holder, apply, { tostring(GENERATE_ANGLE) },
         "Total bend: 0 line, 90 quarter pipe, 360 loop.", nil, { mode = "form", angle = true }))
-    add(createInputRow("Size", holder, apply, formatHints(defaultSides()),
-        "First piece's size, empty: the default object's.\nThe Scale gizmo on the preview sets it too.", nil, FORM))
-    add(createInputRow("Increment", holder, apply, { "0.00", "0.00", "0.00" },
+    joinGenerateInputs()
+end
+
+---Size and Increment rows (the pieces' sizes), under Position and Rot like the Core tab's Scale
+---@param holder UIElement
+local function buildSize(holder)
+    Rows.begin()
+    local function apply() generate() end
+    sizeInputs = {}
+    local row, _, sizeLabel = createInputRow("Size", holder, apply, formatHints(defaultSides()),
+        "First piece's size, empty: the default object's.\nThe Scale gizmo on the preview sets it too.", nil, FORM)
+    addAll(sizeInputs, row)
+    gizmoLabels.scale = sizeLabel
+    addAll(sizeInputs, createInputRow("Increment", holder, apply, { "0.00", "0.00", "0.00" },
         "Added to each next piece's size, negative shrinks.\nThe Scale gizmo scales it along with Size.", nil, FORM))
-    inwuts.generate = inputs
+    joinGenerateInputs()
+    highlightGizmoLabels()
 end
 
 ---Position row (rebuilt when the shape moves): placeholders show where the shape is now
 ---@param holder UIElement
 local function buildPosition(holder)
     Rows.begin()
-    inwuts.generatePos = createInputRow("Position", holder, function() generate() end, positionHints,
+    local _
+    inwuts.generatePos, _, gizmoLabels.move = createInputRow("Position", holder, function() generate() end, positionHints,
         "Center from the dojo center, empty: in front of\nthe camera. The Move gizmo drags the preview too.", nil, FORM)
+    highlightGizmoLabels()
+end
+
+---Rot row, built once: every piece's own rotation in degrees (empty: 0), like Size: the source object
+---turned (rotX * rotY * rotZ, the Core tab's Rot). The Rotate gizmo on the preview sets it too
+---@param holder UIElement
+local function buildRot(holder)
+    Rows.begin()
+    local _
+    inwuts.generateRot, _, gizmoLabels.rotate = createInputRow("Rot", holder, function() generate() end,
+        { "0", "0", "0" }, "Turns each piece around its center (degrees),\nlike Size. The Rotate gizmo turns them too.",
+        nil, { mode = "form", angle = true })
+    highlightGizmoLabels()
 end
 
 ---Empties the tab's fields: the preview goes back to the defaults (placeholders). Its fields keep their text
 ---(form fields, ui/editor_rows.lua), this is how they're cleared
 local function resetFields()
-    for _, key in ipairs({ "generate", "generateAmount", "generatePos" }) do
+    for _, key in ipairs({ "generate", "generateAmount", "generatePos", "generateRot" }) do
         for _, input in ipairs(inwuts[key] or {}) do
             if not input.destroyed then input:clearTextfield() end
         end
@@ -552,13 +660,17 @@ end
 ---@type EditorPanelModule
 return {
     fixed = {
-        { build = buildGenerate, panel = "generate", row = 2, rows = 4 },
-        { build = buildButtons, panel = "generate", row = 7, rows = 1 },
+        -- Align, Amount, Gap, Angle, then Position, Rot, Size, Increment like the Core tab's Pos / Rot /
+        -- Scale, the buttons last
+        { build = buildBend, panel = "generate", row = 2, rows = 2 },
+        { build = buildRot, panel = "generate", row = 5, rows = 1 },
+        { build = buildSize, panel = "generate", row = 6, rows = 2 },
+        { build = buildButtons, panel = "generate", row = 8, rows = 1 },
     },
     blocks = {
         { name = "generateAlign", build = buildAlign, panel = "generate", row = 0, rows = 1 },
         { name = "generateAmount", build = buildAmount, panel = "generate", row = 1, rows = 1 },
-        { name = "generatePos", build = buildPosition, panel = "generate", row = 6, rows = 1 },
+        { name = "generatePos", build = buildPosition, panel = "generate", row = 4, rows = 1 },
     },
-    inputs = { fixed = { "generate" }, rebuilt = { "generateAmount", "generatePos" } },
+    inputs = { fixed = { "generate", "generateRot" }, rebuilt = { "generateAmount", "generatePos" } },
 }

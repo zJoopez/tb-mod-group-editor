@@ -44,6 +44,11 @@ local ALIGN_LIFT = { ["in"] = -1, out = 1, center = 0 }
 ---@class GenerateOptions
 ---@field increment number[]? added to the sides of each next piece, default 0 0 0
 ---@field align GenerateAlign? default "out"
+---@field rotation number[][]? every piece's own rotation (the Generate tab's Rot, like Size: the source
+---object turned), in the piece's frame: each piece turns around its own center, the chain's layout (where
+---the pieces are along the bend) stays. The bounds it's placed by follow the turned pieces. Default none
+---@field firstTurn number[][]? a world rotation for the first piece (a Rotate gizmo drag on the preview):
+---added to rotation as the turn in the piece's frame that gives the first piece that world turn
 
 ---Sides of piece i (from 0)
 ---@param sides number[]
@@ -86,13 +91,21 @@ local function planGenerate(amount, gap, angle, sides, center, options)
     local liftHalves = ALIGN_LIFT[options.align] or ALIGN_LIFT.out
     local step = math.rad(angle) / amount
     local axis = { 0, -1, 0 } -- turning around -Y tilts X up toward Z
+    -- the pieces' own rotation, in their frame. nil: none (the plain shape's numbers stay exactly as they were)
+    local rotation = options.rotation
+    if options.firstTurn then
+        -- world turn Q of the first piece (frame bend1 * R): bend1 * R' = Q * bend1 * R, R' = bend1^T Q bend1 R
+        local bend1 = rotationAbout(axis, step * 0.5)
+        local local1 = Mat3.mul(Mat3.transpose(bend1), Mat3.mul(options.firstTurn, bend1))
+        rotation = rotation and Mat3.mul(local1, rotation) or local1
+    end
     local vertex = { 0, 0, 0 } -- on the line the pieces touch along, each piece starts where it is
     local pieces = {}
     local min, max = { math.huge, math.huge, math.huge }, { -math.huge, -math.huge, -math.huge }
     for i = 0, amount - 1 do
         local s = pieceSides(sides, increment, i)
-        local turn = rotationAbout(axis, step * (i + 0.5))
-        local dir, up = Mat3.apply(turn, { 1, 0, 0 }), Mat3.apply(turn, { 0, 0, 1 })
+        local bend = rotationAbout(axis, step * (i + 0.5))
+        local dir, up = Mat3.apply(bend, { 1, 0, 0 }), Mat3.apply(bend, { 0, 0, 1 })
         local lift = liftHalves * s[3] / 2 -- out: the piece sits on the line, in: hangs under it
         -- each piece has a stretch of the line as long as itself and the gap, turned to the stretch's
         -- direction: it sits in the stretch's middle, half the gap before and after it. At its start (the
@@ -101,6 +114,8 @@ local function planGenerate(amount, gap, angle, sides, center, options)
         local pos = {}
         for k = 1, 3 do pos[k] = vertex[k] + dir[k] * (s[1] + gap) / 2 + up[k] * lift end
         for k = 1, 3 do vertex[k] = vertex[k] + dir[k] * (s[1] + gap) end
+        -- the piece's own rotation (Rot), in its frame: it turns around its center, it stays where it is
+        local turn = rotation and Mat3.mul(bend, rotation) or bend
         -- box corners, for the shape's bounds
         for cx = -1, 1, 2 do
             for cy = -1, 1, 2 do
