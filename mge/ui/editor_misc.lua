@@ -6,6 +6,7 @@
 --            Atmos > Atmos), Save writes it
 --   Ids:     Reindex (it was on the Advanced tab: acts on all objects, not the selection)
 --   Map:     Convert map (it was on the Advanced tab: adds a whole map, not about the selection)
+--   Mod:     Reset all: loads the classic mod (/lm classic), asks first with unsaved changes
 local Rows = MGE.EditorRows
 local Widgets = MGE.Widgets
 local ModData = MGE.ModData
@@ -179,11 +180,36 @@ local function buildMapRow(holder)
         "CS:GO, TF2...) into static boxes, added where\nthe map puts them. Maps go in assets/maps.")
 end
 
+---Starts over from the game's classic mod (/lm classic): objects, joints, players, rules and the atmo
+---all go back to it, like loading any mod. Asks first when there are unsaved changes
+local function resetAll()
+    if MGE.overlayOpen() then return end
+    local function load()
+        MGE.say("loading classic")
+        MGE.loadMod("classic")
+    end
+    if MGE.hasUnsavedChanges() then
+        MGE.confirm("Load the classic mod? Unsaved changes to this mod and its atmo are lost.", load)
+    else
+        load()
+    end
+end
+
+---Mod row, built once: Reset all
+---@param holder UIElement
+local function buildModRow(holder)
+    Rows.begin()
+    createToggleButtonRow("Mod", holder, {
+        { label = "Reset all", active = false, onClick = resetAll },
+    }, "Loads the classic mod (/lm classic): a fresh start.\nAsks first when there are unsaved changes.")
+end
+
 ---@type EditorPanelModule
 return {
     fixed = {
         { build = buildIdRow, panel = "misc", row = 2, rows = 1 },
         { build = buildMapRow, panel = "misc", row = 3, rows = 1 },
+        { build = buildModRow, panel = "misc", row = 4, rows = 1 },
     },
     blocks = {
         { name = "miscFile", build = buildFileRows, panel = "misc", row = 0, rows = 2 },

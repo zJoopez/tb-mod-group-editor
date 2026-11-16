@@ -25,7 +25,7 @@ The window has five lists, each with its own tabs.
 | **Atmo** | **Core**: position, rotation, scale, color, shape, To objects, Save atmo. **Advanced**: depth, graphics levels, kept lines. **Generate**: as on Objects. |
 | **Joints** | **Link**: the two objects a joint connects, picked in the list or, with Pick from world on, in the world. **Properties**: position, axis, range, strength, velocity, type. |
 | **Players** | Start position, rotation, scale and body parts of each player. |
-| **Misc** | The mod's message, the atmo's shader, reindexing ids, map import. |
+| **Misc** | The mod's message, the atmo's shader, reindexing ids, map import, Reset all (loads the classic mod). |
 
 - Number fields apply what you type when you leave them (click elsewhere) or press Enter, then show the
   new value as their placeholder. Esc while typing drops it. The Generate tab's fields keep their text:

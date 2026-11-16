@@ -35,6 +35,11 @@ through this before `tools/package.ps1`. Tick what you checked and move items yo
       edges lined up. Near the right edge it moves left, at the bottom of the screen it opens above.
 - [ ] The top bar's popups still open under and to the left, and the "?" icons still open to the right.
 
+### Misc: Reset all
+- [ ] Reset all with unsaved changes asks first, Cancel keeps everything. Continue loads the classic mod.
+- [ ] Without unsaved changes it loads classic right away. MGE then shows the classic mod (2 players, no
+      objects, no atmo) and editing and saving it works like any other mod.
+
 ### Applying a field by clicking another one
 - [ ] Type a joint's Range (or any field that reloads the mod: Axis, an object's Mass), then click another
       field: the value applies without rows of other tabs flashing in the panel, and the clicked field
