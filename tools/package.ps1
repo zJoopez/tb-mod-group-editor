@@ -6,6 +6,13 @@
 #   or double-click tools/build.cmd (keeps the window open to show the result)
 #
 #   ... -KeepComments                                                            -> the .lua files as they are
+#   ... -Publish                        -> also commits the zip's contents on top of origin/main and pushes it
+#
+# -Publish: main holds the release build, not the source. Its files are replaced with the zip's (stripped
+# comments, no docs/tests/tools) in one commit "Release build from <branch> (<sha>)" on top of origin/main,
+# pushed, and local main moved to it. Done in a temporary worktree, the current checkout isn't touched.
+# Uncommitted changes to shipped files stop it (main would get code no commit has); nothing is
+# committed when main already matches the build. Not with -KeepComments.
 #
 # What goes in: the files git tracks (as they are in the working tree), minus the developer-only ones
 # below, plus $SampleAssets (assets/ is gitignored: converted maps and the user's own exports stay out).
@@ -19,9 +26,12 @@ param(
     [string]$Lua = "$env:LOCALAPPDATA\Programs\Lua51\lua5.1.exe",
     [string]$Luac = "$env:LOCALAPPDATA\Programs\Lua51\luac5.1.exe",
     [switch]$SkipTests,
-    [switch]$KeepComments
+    [switch]$KeepComments,
+    [switch]$Publish,
+    [string]$Remote = "origin"
 )
 $ErrorActionPreference = "Stop"
+if ($Publish -and $KeepComments) { throw "-Publish ships the stripped build, leave out -KeepComments" }
 
 $repo = Split-Path -Parent $PSScriptRoot # mge/ (the repo), tools/ is in it
 if (-not $Out) { $Out = Join-Path (Split-Path -Parent $repo) "mge.zip" } # next to the repo, in data/script
@@ -48,7 +58,14 @@ try {
     }
 
     $dirty = git status --porcelain --untracked-files=no
-    if ($dirty) { Write-Warning "uncommitted changes go into the zip:`n$($dirty -join "`n")" }
+    if ($Publish) {
+        # changes to developer-only files don't reach main, only the shipped ones matter
+        $shipped = @($dirty | ForEach-Object { $_.Substring(3) } |
+            Where-Object { $path = $_; -not ($DevOnly | Where-Object { $path -match $_ }) })
+        if ($shipped.Count -gt 0) {
+            throw "commit these first, -Publish only ships committed code:`n$($shipped -join "`n")"
+        }
+    } elseif ($dirty) { Write-Warning "uncommitted changes go into the zip:`n$($dirty -join "`n")" }
     $untracked = @(git ls-files --others --exclude-standard -- "mge.lua" "mge" | Where-Object { $_ -match "\.lua$" })
     if ($untracked.Count -gt 0) {
         throw "untracked .lua files would be missing from the zip (git add them):`n$($untracked -join "`n")"
@@ -108,6 +125,52 @@ try {
     if ($strip) {
         Write-Host ("comments stripped from {0} .lua files: {1} KB -> {2} KB, code checked unchanged" -f `
             $stripped, [math]::Round($before / 1KB), [math]::Round($after / 1KB))
+    }
+
+    if ($Publish) {
+        $branch = (git rev-parse --abbrev-ref HEAD).Trim()
+        $source = (git rev-parse --short HEAD).Trim()
+        git fetch -q $Remote main
+        if ($LASTEXITCODE -ne 0) { throw "git fetch $Remote main failed, nothing published" }
+        if (-not (git branch -r --contains HEAD)) {
+            Write-Warning "$source isn't pushed to $Remote yet, the release commit names a sha GitHub won't have"
+        }
+        $work = Join-Path ([System.IO.Path]::GetTempPath()) ("mge-publish-" + [guid]::NewGuid())
+        git worktree add -q --detach $work "$Remote/main"
+        if ($LASTEXITCODE -ne 0) { throw "git worktree add failed, nothing published" }
+        try {
+            Push-Location $work
+            try {
+                # main = exactly the zip: drop every tracked file, then unpack the zip's mge/ folder here
+                git rm -rq .
+                if ($LASTEXITCODE -ne 0) { throw "git rm failed, nothing published" }
+                $unpacked = "$work-zip"
+                Expand-Archive -Path $Out -DestinationPath $unpacked
+                Copy-Item -Path (Join-Path $unpacked "mge\*") -Destination $work -Recurse -Force
+                Remove-Item $unpacked -Recurse -Force
+                git -c core.safecrlf=false add -A # stripped files are LF: no "LF will be replaced" per file
+                git diff --cached --quiet
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "$Remote/main already matches this build, nothing published"
+                } else {
+                    Write-Host (git diff --cached --shortstat)
+                    git commit -q -m "Release build from $branch ($source)" `
+                        -m "Same contents as the release zip from tools/package.ps1."
+                    if ($LASTEXITCODE -ne 0) { throw "git commit failed, nothing published" }
+                    git push -q $Remote HEAD:main
+                    if ($LASTEXITCODE -ne 0) { throw "git push failed, nothing published" }
+                    $release = (git rev-parse --short HEAD).Trim()
+                    Write-Host "published $release to $Remote/main"
+                    # keep local main in step, unless it's checked out somewhere (git refuses, main stays behind)
+                    git branch -f main $release
+                    if ($LASTEXITCODE -ne 0) { Write-Warning "local main not moved, pull it to catch up" }
+                }
+            } finally {
+                Pop-Location
+            }
+        } finally {
+            git worktree remove --force $work
+        }
     }
 } finally {
     Pop-Location
