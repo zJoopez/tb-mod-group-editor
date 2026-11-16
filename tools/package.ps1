@@ -3,6 +3,7 @@
 #
 #   powershell -ExecutionPolicy Bypass -File mge/tools/package.ps1            -> data/script/mge.zip
 #   powershell -ExecutionPolicy Bypass -File mge/tools/package.ps1 -Out x.zip
+#   or double-click tools/build.cmd (keeps the window open to show the result)
 #
 #   ... -KeepComments                                                            -> the .lua files as they are
 #
@@ -29,9 +30,10 @@ if (-not $Out) { $Out = Join-Path (Split-Path -Parent $repo) "mge.zip" } # next 
 $DevOnly = @("^\.gitignore$", "^docs/", "^tests/", "^tools/")
 # examples shipped with the release (assets/ isn't tracked)
 $SampleAssets = @(
-    "mge/assets/obj/force.tbm", "mge/assets/obj/katana.tbm", "mge/assets/obj/pins.tbm",
-    "mge/assets/obj/scooter.tbm", "mge/assets/player/car.tbm", "mge/assets/player/fat.tbm",
-    "mge/assets/atmo/pillars.atmo" # also makes the folder Export writes atmo pieces to
+    "mge/assets/obj/katana.tbm", "mge/assets/obj/paddle.tbm", "mge/assets/obj/scooter.tbm",
+    "mge/assets/player/bnt.tbm", "mge/assets/player/car.tbm", "mge/assets/player/fat.tbm",
+    "mge/assets/player/mma.tbm",
+    "mge/assets/atmo/Tori_top.atmo" # also makes the folder Export writes atmo pieces to
 )
 
 Push-Location $repo
